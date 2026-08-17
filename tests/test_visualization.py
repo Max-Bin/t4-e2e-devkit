@@ -350,6 +350,31 @@ class TestTrajectoryKinds:
             "prediction", "ground_truth", "history", "pdm_reference",
         }
 
+    def test_fixed_bev_legend_has_stable_t4_vocabulary(self):
+        import matplotlib.pyplot as plt
+
+        from t4_e2e_devkit.visualization import add_fixed_bev_legend
+
+        figure, ax = plt.subplots()
+        try:
+            legend = add_fixed_bev_legend(
+                ax,
+                trajectory_roles=("history", "prediction"),
+            )
+            assert [text.get_text() for text in legend.get_texts()] == [
+                "history",
+                "prediction",
+                "ego",
+                "car",
+                "truck",
+                "bus",
+                "bicycle",
+                "pedestrian",
+                "Goal Pose",
+            ]
+        finally:
+            plt.close(figure)
+
 
 @pytest.mark.data
 class TestWindowSuppliedTrajectories:

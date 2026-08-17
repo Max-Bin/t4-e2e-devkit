@@ -49,6 +49,7 @@ from t4_e2e_devkit.visualization.lidar import (
     subsample_lidar_pc,
 )
 from t4_e2e_devkit.visualization.plots import (
+    add_fixed_bev_legend,
     add_score_panel,
     configure_bev_ax,
     describe_scene,
@@ -67,6 +68,7 @@ from t4_e2e_devkit.visualization.plots import (
 
 __all__ = [
     # bev
+    "add_fixed_bev_legend",
     "add_annotations_to_bev_ax",
     "add_bev_status_text",
     "add_box_to_bev_ax",

@@ -78,6 +78,11 @@ It draws:
 - tracked-object velocity arrows in the same colour as their boxes;
 - the destination marker and vehicle status text.
 
+When a legend is enabled, its semantic entries are fixed across frames: both
+trajectory roles and all five T4 agent classes remain present even when a class
+is temporarily outside the view. This keeps BEV videos from resizing or
+changing their legend as traffic changes.
+
 Missing map or annotation fields are not replaced with geometry at the origin.
 The reader raises for missing required fields, while a scene without optional
 future data simply omits that layer.

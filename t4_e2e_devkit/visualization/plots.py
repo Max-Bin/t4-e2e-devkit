@@ -30,6 +30,7 @@ from t4_e2e_devkit.common.constants import (
     SEGMENT_POINT_DIM,
 )
 from t4_e2e_devkit.common.dataclasses import EgoShape, MapTensors, PDMResults, T4Scene, Trajectory
+from t4_e2e_devkit.common.enums import T4TrackLabel
 from t4_e2e_devkit.visualization.bev import (
     add_annotations_to_bev_ax,
     add_bev_status_text,
@@ -49,8 +50,11 @@ from t4_e2e_devkit.visualization.camera import (
     camera_grid_layout,
 )
 from t4_e2e_devkit.visualization.config import (
+    BEV_AGENT_COLORS,
     BEV_PLOT_CONFIG,
     CAMERAS_PLOT_CONFIG,
+    EGO_COLOR,
+    GOAL_COLOR,
     SCORE_PANEL_CONFIG,
     TRAJECTORY_CONFIG,
 )
@@ -85,6 +89,108 @@ def configure_bev_ax(ax, view_range: float, config: Optional[Dict[str, Any]] = N
         ax.set_xlabel("X [m]", fontsize=9)
         ax.set_ylabel("Y [m]", fontsize=9)
     return ax
+
+
+def add_fixed_bev_legend(
+    ax,
+    *,
+    trajectory_roles: Sequence[str] = (
+        "history",
+        "ground_truth",
+        "prediction",
+        "pdm_reference",
+    ),
+    include_ego: bool = True,
+    include_agents: bool = True,
+    include_goal: bool = True,
+    loc: str = "lower right",
+    fontsize: float = 8,
+    framealpha: float = 0.85,
+    ncol: int = 2,
+):
+    """Attach a deterministic BEV legend with a fixed semantic vocabulary.
+
+    A frame-by-frame legend built from ``ax.get_legend_handles_labels()``
+    changes size whenever an agent class disappears from view.  That is
+    especially distracting in a video.  This helper creates proxy artists for
+    the requested roles and all five T4 agent classes, so callers can keep the
+    legend content and geometry constant across frames.
+
+    ``trajectory_roles`` is deliberately an explicit argument rather than
+    inferred from the artists on ``ax``.  A video renderer can pass one stable
+    tuple for every frame, while a one-off plot can request only the roles it
+    actually displays.
+    """
+    from matplotlib.lines import Line2D
+    from matplotlib.patches import Patch
+
+    handles = []
+    labels = []
+    for role in trajectory_roles:
+        if role not in TRAJECTORY_CONFIG:
+            raise ValueError(
+                f"unknown trajectory role {role!r}; expected one of "
+                f"{sorted(TRAJECTORY_CONFIG)}"
+            )
+        settings = TRAJECTORY_CONFIG[role]
+        marker = settings.get("marker") or None
+        handles.append(
+            Line2D(
+                [0],
+                [0],
+                color=settings["color"],
+                alpha=settings["alpha"],
+                linewidth=settings["line_width"],
+                linestyle=settings["line_style"],
+                marker=marker,
+                markersize=5 if marker else 0,
+            )
+        )
+        labels.append(str(settings["label"]))
+
+    if include_ego:
+        handles.append(
+            Patch(facecolor=EGO_COLOR, edgecolor="black", alpha=0.55, linewidth=1.2)
+        )
+        labels.append("ego")
+
+    if include_agents:
+        for track_label in T4TrackLabel:
+            handles.append(
+                Patch(
+                    facecolor=BEV_AGENT_COLORS[int(track_label)],
+                    edgecolor="black",
+                    alpha=0.5,
+                    linewidth=1.0,
+                )
+            )
+            labels.append(track_label.name.lower())
+
+    if include_goal:
+        handles.append(
+            Line2D(
+                [0],
+                [0],
+                color=GOAL_COLOR,
+                linewidth=2.0,
+                marker=">",
+                markersize=6,
+            )
+        )
+        labels.append("Goal Pose")
+
+    return ax.legend(
+        handles,
+        labels,
+        loc=loc,
+        fontsize=fontsize,
+        framealpha=framealpha,
+        ncol=ncol,
+        borderpad=0.8,
+        labelspacing=0.45,
+        columnspacing=1.0,
+        handletextpad=0.5,
+    )
 
 
 def render_prediction_bev(
@@ -290,7 +396,23 @@ def plot_bev_frame(
         )
     ax.set_title(title if title is not None else describe_scene(scene), fontsize=10)
     if settings["legend"]:
-        ax.legend(loc=settings["legend_loc"], fontsize=8, framealpha=0.75)
+        legend_roles = [
+            role
+            for role in ("history", "ground_truth", "prediction", "pdm_reference")
+            if role in supplied_trajectories
+        ]
+        if settings.get("show_history", True) and "history" not in legend_roles:
+            legend_roles.insert(0, "history")
+        add_fixed_bev_legend(
+            ax,
+            trajectory_roles=legend_roles,
+            include_agents=frame.annotations is not None,
+            include_goal=scene.goal_pose is not None,
+            loc=settings["legend_loc"],
+            fontsize=8,
+            framealpha=0.75,
+            ncol=int(settings.get("legend_ncol", 2)),
+        )
     figure.tight_layout()
     return figure, ax
 
