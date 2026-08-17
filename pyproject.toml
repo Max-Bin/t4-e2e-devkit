@@ -49,7 +49,7 @@ dev = [
 # uv-native development environment. The optional ``dev`` extra above stays
 # for pip users; this group is what ``uv sync``/``uv run`` consume. Matplotlib
 # and OpenCV are test dependencies because visualization and video-backed
-# camera paths are part of the repository's contract tests.
+# camera paths are part of the public reader interface.
 [dependency-groups]
 dev = [
     "pytest>=8.2,<9",

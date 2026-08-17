@@ -322,6 +322,29 @@ def _cmd_merge_workers(argv: Sequence[str]) -> int:
     return merge_main(list(argv))
 
 
+def _cmd_evaluate(argv: Sequence[str]) -> int:
+    from t4_e2e_devkit.script.evaluate import main as evaluate_main
+
+    return evaluate_main(list(argv))
+
+
+def _cmd_merge_evaluation(argv: Sequence[str]) -> int:
+    from t4_e2e_devkit.script.merge_evaluation import main as merge_main
+
+    return merge_main(list(argv))
+
+
+def _cmd_dashboard(argv: Sequence[str]) -> int:
+    parser = argparse.ArgumentParser(prog="t4e2e dashboard")
+    parser.add_argument("results_dir", help="ignored results or report directory")
+    parser.add_argument("--out", default=None, help="HTML output path")
+    args = parser.parse_args(argv)
+    from t4_e2e_devkit.visualization.dashboard import write_results_dashboard
+
+    print(write_results_dashboard(args.results_dir, args.out))
+    return 0
+
+
 def _cmd_report_closed_loop(argv: Sequence[str]) -> int:
     parser = argparse.ArgumentParser(prog="t4e2e report-closed-loop")
     parser.add_argument("report_dir", help="evaluation report directory")
@@ -337,6 +360,8 @@ COMMANDS = {
     "agents": (_cmd_agents, "list registered agents"),
     "datalist": (_cmd_datalist, "build a data list from a T4 root"),
     "pdm-cache": (_cmd_pdm_cache, "build the PDM-Closed reference cache"),
+    "evaluate": (_cmd_evaluate, "evaluate independent metric families"),
+    "merge-evaluation": (_cmd_merge_evaluation, "merge evaluation rank reports"),
     "evaluate-closed-loop": (
         _cmd_evaluate_closed_loop,
         "evaluate sensor-replay closed loop",
@@ -344,6 +369,7 @@ COMMANDS = {
     "merge-closed-loop": (_cmd_merge_closed_loop, "merge closed-loop rank reports"),
     "merge-workers": (_cmd_merge_workers, "merge distributed worker manifests"),
     "report-closed-loop": (_cmd_report_closed_loop, "render a local closed-loop HTML report"),
+    "dashboard": (_cmd_dashboard, "render a local results dashboard"),
     "train": (
         lambda argv: _forward("t4_e2e_devkit.script.run_training", argv),
         "train an agent (hydra)",

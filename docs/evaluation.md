@@ -46,11 +46,13 @@ components = scorer.score_proposals(
 
 | backend | use |
 |---|---|
+| `auto` | use GPU when CUDA is available, otherwise CPU |
 | `gpu` | batched scoring for large runs or training |
 | `cpu` | audit implementation for environments without CUDA |
 
-The backend is selected explicitly. A GPU request never falls back to the CPU
-path silently. `compare_backends` scores the same windows on both paths and
+The batch command defaults to `auto`, which selects the GPU path when CUDA is
+available and the CPU audit path otherwise. An explicit GPU request never falls
+back silently. `compare_backends` scores the same windows on both paths and
 reports the largest per-component difference.
 
 ## Metric families
@@ -101,23 +103,71 @@ replayed-agent collisions, geometry events and timeout from the scene and annota
 rollout harnesses can still pass explicit event data; unavailable events are
 omitted instead of reported as false zeros.
 
-## Running a score
+## Batch evaluation
 
 ```bash
-uv run t4e2e score \
-  agent=my_agent \
-  data_list=/path/to/val.json \
-  experiment_name=validation \
-  backend=cpu
+uv run t4e2e evaluate /path/to/val.json \
+  --agent my_agent \
+  --output-dir results/evaluation \
+  --families open_loop pdm tier4
 ```
 
-The command writes `per_window.csv` for PDM, `open_loop.csv` for trajectory
-errors, and `tier4.csv` when requested. The aggregate report keeps the same
-families under `pdm`, `open_loop`, `tier4` and `closed_loop`. Failed windows are
-written separately instead of being silently omitted.
+The command writes one JSON record per row under `records/`, one CSV per
+requested family, `aggregate.json`, `aggregate.yaml`, `run.json`, a worker
+manifest and `failures.csv`. Families remain separate under `pdm`, `open_loop`
+and `tier4`; there is no combined score. Failed rows are recorded and excluded
+from successful-family means rather than silently omitted.
 
-The PDM reference cache is optional for GPU evaluation and can be supplied for
-an explicit CPU/offline run. Its geometry settings must match the scorer.
+For an offline CPU run, provide the matching PDM reference cache explicitly:
+
+```bash
+uv run t4e2e evaluate /path/to/val.json \
+  --agent my_agent \
+  --output-dir results/evaluation \
+  --backend cpu \
+  --pdm-reference-cache-dir /path/to/pdm-cache \
+  --maps-root /path/to/maps \
+  --scene-tags-root /path/to/scene-tags \
+  --attach-map-ids
+```
+
+The cache is optional for GPU evaluation, which computes the reference online.
+Map and scene-tag roots are side metadata inputs; they are not copied into
+result artifacts.
+
+### Rank execution and resume
+
+Ranks are deterministic partitions of the data-list rows. A rank directory is
+complete only after its `run.json` and worker manifest are written:
+
+```bash
+uv run t4e2e evaluate /path/to/val.json --agent my_agent \
+  --output-dir results/evaluation/rank-0 \
+  --rank 0 --world-size 4 --workers 2 --worker-backend process --resume
+
+uv run t4e2e merge-evaluation \
+  --input-dir results/evaluation/rank-0 results/evaluation/rank-1 \
+              results/evaluation/rank-2 results/evaluation/rank-3 \
+  --output-dir results/evaluation/merged
+```
+
+`--workers` selects serial, thread or local process execution within one rank.
+`--rank/--world-size` are the only distributed coordination inputs; no
+scheduler or tracking service is required. `--resume` reuses successful rows
+only when their token and resolved configuration fingerprint match. The merge
+rejects missing or duplicate ranks, stale records, duplicate tokens and
+manifests whose task set differs from the records. Use `--allow-incomplete`
+only for an intentionally partial report.
+
+The local dashboard has no external dependency:
+
+```bash
+uv run t4e2e dashboard results/evaluation/merged \
+  --out results/evaluation/merged/dashboard.html
+```
+
+The output directory is ignored by Git. An HTML output outside the results
+directory still links to its source CSV/JSON files with relative paths.
 
 ## Closed-loop rollout
 
@@ -140,7 +190,7 @@ uv run t4e2e evaluate-closed-loop \
 The command writes `closed_loop.csv`, `aggregate.json`, `aggregate.yaml`,
 `closed_loop_ticks.csv`, `run.json`, `report.html`, and one artifact per row under
 `rollouts/`, and a rank manifest. Rank outputs are merged with
-`t4e2e merge-closed-loop`; the merge checks the common configuration and token
+`uv run t4e2e merge-closed-loop`; the merge checks the common configuration and token
 uniqueness before recomputing the aggregate.
 `failures.csv` records rows that exhausted their retry budget. Closed-loop
 metrics remain in their own report section and are never folded into PDM or

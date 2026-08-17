@@ -24,6 +24,11 @@ from t4_e2e_devkit.planning.simulation.interfaces import (
     ReplayTrafficPolicy,
 )
 from t4_e2e_devkit.planning.simulation.manager import SimulationRequest, T4SimulationManager
+from t4_e2e_devkit.planning.simulation.runtime import (
+    SimulationRunner,
+    SimulationSetup,
+    StepSimulationTimeController,
+)
 from t4_e2e_devkit.planning.simulation.trajectory.trajectory_sampling import TrajectorySampling
 
 
@@ -174,3 +179,105 @@ def test_simulation_manager_runs_ordered_requests_with_lifecycle_hooks():
     assert len(lifecycle.starts) == 2
     assert len(lifecycle.steps) == 3
     assert len(lifecycle.ends) == 2
+
+
+def test_generic_simulation_keeps_state_observation_and_callbacks_aligned():
+    class Scenario:
+        initial_ego_state = 0
+
+    class Observation:
+        def __init__(self):
+            self.reset_count = 0
+            self.initialized = 0
+            self.indices = []
+
+        def reset(self):
+            self.reset_count += 1
+
+        def initialize(self):
+            self.initialized += 1
+
+        def get_observation(self, iteration, history):
+            del history
+            self.indices.append(iteration.index)
+            return f"observation-{iteration.index}"
+
+    class Planner:
+        observation_type = str
+
+        def __init__(self):
+            self.reset_count = 0
+            self.initialized = 0
+            self.inputs = []
+
+        def reset(self):
+            self.reset_count += 1
+
+        def initialize(self, initialization):
+            del initialization
+            self.initialized += 1
+
+        def compute_trajectory(self, planner_input):
+            self.inputs.append(planner_input)
+            return planner_input.iteration.index
+
+    class Controller:
+        def __init__(self):
+            self.state = 0
+            self.reset_count = 0
+
+        def reset(self):
+            self.reset_count += 1
+            self.state = 0
+
+        def update_state(self, trajectory, iteration):
+            assert trajectory == iteration.index
+            self.state += 1
+            return self.state
+
+    class Callback:
+        def __init__(self):
+            self.events = []
+
+        def on_simulation_start(self, setup):
+            self.events.append("start")
+
+        def on_initialization_end(self, setup, planner):
+            self.events.append("initialized")
+
+        def on_simulation_step(self, sample):
+            self.events.append((sample.ego_state, sample.observation))
+
+        def on_simulation_end(self, setup, planner, history):
+            self.events.append("end")
+
+    observation = Observation()
+    planner = Planner()
+    controller = Controller()
+    callback = Callback()
+    setup = SimulationSetup(
+        scenario=Scenario(),
+        planner=planner,
+        observation=observation,
+        ego_controller=controller,
+        time_controller=StepSimulationTimeController(0, 100_000, 2),
+        callbacks=(callback,),
+    )
+
+    history = SimulationRunner().run(setup)
+
+    assert [(sample.ego_state, sample.observation) for sample in history] == [
+        (0, "observation-0"),
+        (1, "observation-1"),
+    ]
+    assert observation.indices == [0, 1]
+    assert len(planner.inputs) == 2
+    assert observation.reset_count == planner.reset_count == controller.reset_count == 1
+    assert observation.initialized == planner.initialized == 1
+    assert callback.events == [
+        "start",
+        "initialized",
+        (0, "observation-0"),
+        (1, "observation-1"),
+        "end",
+    ]

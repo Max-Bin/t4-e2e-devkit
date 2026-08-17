@@ -3,6 +3,8 @@
 from __future__ import annotations
 
 import json
+import os
+import tempfile
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any, Iterable, Optional, Sequence
@@ -67,7 +69,19 @@ class WorkerManifest:
     def write(self, path: str | Path) -> Path:
         output = Path(path)
         output.parent.mkdir(parents=True, exist_ok=True)
-        output.write_text(json.dumps(self.as_dict(), indent=2, sort_keys=True) + "\n", encoding="utf-8")
+        descriptor, temporary = tempfile.mkstemp(prefix=f".{output.name}.", dir=str(output.parent))
+        try:
+            with os.fdopen(descriptor, "w", encoding="utf-8") as stream:
+                json.dump(self.as_dict(), stream, indent=2, sort_keys=True)
+                stream.write("\n")
+                stream.flush()
+                os.fsync(stream.fileno())
+            os.replace(temporary, output)
+        finally:
+            try:
+                Path(temporary).unlink()
+            except FileNotFoundError:
+                pass
         return output
 
     @classmethod
@@ -115,15 +129,30 @@ class DistributedExecutor:
         tasks: Iterable[WorkerTask],
         *,
         manifest_path: Optional[str | Path] = None,
+        resume: bool = True,
     ) -> list[WorkerResult]:
         values = list(tasks)
+        previous: dict[str, WorkerResult] = {}
+        if resume and manifest_path is not None and Path(manifest_path).is_file():
+            saved = WorkerManifest.read(manifest_path)
+            if saved.run_id != self.config.run_id or saved.rank != self.config.rank or saved.world_size != self.config.world_size:
+                raise ValueError("resume manifest does not belong to this distributed rank")
+            requested_ids = {task.task_id for task in values}
+            previous = {
+                result.task_id: result
+                for result in saved.results
+                if result.succeeded and result.task_id in requested_ids
+            }
         with WorkerPool(
             workers=self.config.workers,
             rank=self.config.rank,
             world_size=self.config.world_size,
             backend=self.config.backend,
         ) as pool:
-            results = pool.run_tasks(values)
+            results = pool.run_tasks(values, skip_task_ids=tuple(previous))
+        if previous:
+            results = list(previous.values()) + results
+            results.sort(key=lambda result: result.task_id)
         manifest = WorkerManifest(
             run_id=self.config.run_id,
             rank=self.config.rank,

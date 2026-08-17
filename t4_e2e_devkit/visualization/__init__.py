@@ -66,6 +66,8 @@ from t4_e2e_devkit.visualization.plots import (
     save_figure,
 )
 
+from .dashboard import ResultsDashboard, write_results_dashboard
+
 __all__ = [
     # bev
     "add_fixed_bev_legend",
@@ -113,4 +115,6 @@ __all__ = [
     "render_prediction_bev",
     "reference_trajectories",
     "save_figure",
+    "ResultsDashboard",
+    "write_results_dashboard",
 ]

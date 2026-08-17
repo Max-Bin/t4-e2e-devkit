@@ -141,6 +141,18 @@ class T4Scenario:
         return self._scene.scene_metadata.scene_dir
 
     @property
+    def scenario_name(self) -> str:
+        """NuPlan-shaped scenario identifier for reports and runner keys."""
+
+        return self.token
+
+    @property
+    def map_api(self) -> Optional[T4MapAPI]:
+        """:return: the optional source-map facade."""
+
+        return self._map_api
+
+    @property
     def scenario_type(self) -> str:
         """:return: semantic tag summary, or ``"t4"`` when untagged."""
         events = sorted({event for tag in self._scene.scene_metadata.scene_tags for event in tag.events})
@@ -512,14 +524,16 @@ class T4Scenario:
         if self._scene.future_ego_poses is not None:
             future = np.asarray(self._scene.future_ego_poses, dtype=np.float32)
             poses[1 : len(future) + 1] = future
+        timestamps = self._iteration_timestamps(len(poses))
         velocity = np.zeros((len(poses), 2), dtype=np.float32)
         acceleration = np.zeros((len(poses), 2), dtype=np.float32)
         if len(poses) > 1:
-            velocity[1:] = np.diff(poses[:, :2], axis=0) / self._interval_length
+            intervals = np.diff(timestamps).astype(np.float64) / 1.0e6
+            intervals = np.maximum(intervals, 1.0e-9)
+            velocity[1:] = np.diff(poses[:, :2], axis=0) / intervals[:, None]
             velocity[0] = velocity[1]
-        if len(poses) > 2:
-            acceleration[2:] = np.diff(velocity[1:], axis=0) / self._interval_length
-            acceleration[:2] = acceleration[2]
+            acceleration[1:] = np.diff(velocity, axis=0) / intervals[:, None]
+            acceleration[0] = acceleration[1]
         statuses = [
             EgoStatus(
                 ego_pose=poses[index],
@@ -535,9 +549,26 @@ class T4Scenario:
         return self._future_statuses
 
     def _timestamp_at_iteration(self, iteration: int) -> int:
+        values = self._scene.scene_metadata.timestamps_us
+        index = self._scene.current_frame_index + int(iteration)
+        if values is not None and 0 <= index < len(values):
+            return int(values[index])
         if int(iteration) == 0:
             return int(self._scene.current_frame.timestamp_us)
-        return int(self._scene.current_frame.timestamp_us + int(iteration) * self._interval_length * 1.0e6)
+        return int(
+            self._scene.current_frame.timestamp_us
+            + int(iteration) * self._interval_length * 1.0e6
+        )
+
+    def _iteration_timestamps(self, count: int) -> np.ndarray:
+        values = self._scene.scene_metadata.timestamps_us
+        start = self._scene.current_frame_index
+        if values is not None and start + count <= len(values):
+            return np.asarray(values[start : start + count], dtype=np.int64)
+        return np.asarray(
+            [self._timestamp_at_iteration(index) for index in range(count)],
+            dtype=np.int64,
+        )
 
     def _sample_indices(
         self,
@@ -548,11 +579,10 @@ class T4Scenario:
     ) -> np.ndarray:
         """Return inclusive offsets, uniformly covering the requested horizon.
 
-        ``num_samples`` is the number of intervals in the returned sequence;
-        the current sample is always included as offset zero.  Thus a request
-        for two samples over a four-second horizon returns offsets ``[0, 20,
-        40]`` at a 0.1-second source rate instead of silently shortening the
-        horizon to the first two frames.
+        ``num_samples`` is the number of returned states; the current sample is
+        included as offset zero. Thus a request for two samples over a
+        four-second horizon returns the two endpoints ``[0, 40]`` at a
+        0.1-second source rate.
         """
 
         if available < 0:
@@ -572,9 +602,11 @@ class T4Scenario:
         else:
             if num_samples < 0:
                 raise ValueError("num_samples must be non-negative")
-            intervals = min(int(num_samples), horizon_steps)
+            count = min(int(num_samples), horizon_steps + 1)
+            if count == 0:
+                return np.zeros((0,), dtype=np.int64)
             values = np.rint(
-                np.linspace(0, horizon_steps, intervals + 1, dtype=np.float64)
+                np.linspace(0, horizon_steps, count, dtype=np.float64)
             ).astype(np.int64)
             # A coarse source grid can round two requested points to the same
             # frame.  Returning a unique, ordered sequence is less surprising

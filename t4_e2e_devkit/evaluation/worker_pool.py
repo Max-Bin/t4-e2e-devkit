@@ -155,13 +155,24 @@ class WorkerPool:
             return future
         return executor.submit(_execute_task, task, self.rank, 0)
 
-    def run_tasks(self, tasks: Iterable[WorkerTask]) -> List[WorkerResult]:
-        """Run tasks in input order and return failures as data."""
+    def run_tasks(
+        self,
+        tasks: Iterable[WorkerTask],
+        *,
+        skip_task_ids: Optional[Sequence[str]] = None,
+    ) -> List[WorkerResult]:
+        """Run this rank's tasks in input order and return failures as data."""
 
         values = list(tasks)
+        task_ids = [task.task_id for task in values]
+        if len(task_ids) != len(set(task_ids)):
+            raise ValueError("worker tasks contain duplicate task IDs")
         if self.world_size > 1:
             indices = rank_indices(len(values), self.rank, self.world_size)
             values = [values[index] for index in indices]
+        if skip_task_ids is not None:
+            skipped = {str(task_id) for task_id in skip_task_ids}
+            values = [task for task in values if task.task_id not in skipped]
         if not values:
             return []
         return self._run_local_tasks(values)

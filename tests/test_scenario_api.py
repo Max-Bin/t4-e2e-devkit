@@ -63,17 +63,17 @@ def test_scenario_samples_keep_the_requested_horizon():
     assert scenario.get_time_point(2) == 400_000
 
     past = scenario.get_past_ego_statuses(time_horizon=0.2, num_samples=1)
-    np.testing.assert_allclose([status.ego_pose[0] for status in past], [-0.2, 0.0])
+    np.testing.assert_allclose([status.ego_pose[0] for status in past], [0.0])
 
     future = scenario.get_future_ego_statuses(time_horizon=0.4, num_samples=2)
-    np.testing.assert_allclose([status.ego_pose[0] for status in future], [0.0, 0.2, 0.4])
+    np.testing.assert_allclose([status.ego_pose[0] for status in future], [0.0, 0.4])
 
 
 def test_scenario_exposes_tracks_sensor_replay_and_map_optional():
     scenario = _scenario()
 
     assert len(scenario.get_tracked_objects_at_iteration(0).tracked_objects) == 0
-    assert len(scenario.get_future_tracked_objects(time_horizon=0.4, num_samples=2)) == 3
+    assert len(scenario.get_future_tracked_objects(time_horizon=0.4, num_samples=2)) == 2
     assert scenario.get_sensor_frame_at_iteration(0).frame_index == 2
     assert scenario.get_ego_state_at_iteration(0) is scenario.initial_ego_state
     assert [frame.frame_index for frame in scenario.get_past_sensor_frames(time_horizon=0.2)] == [0, 1, 2]

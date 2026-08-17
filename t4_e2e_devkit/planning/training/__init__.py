@@ -19,6 +19,19 @@ _LAZY: dict[str, tuple[str, str]] = {
         "TrajectoryVizCallback",
     ),
     "FeatureCache": ("t4_e2e_devkit.planning.training.feature_cache", "FeatureCache"),
+    "AbstractModelFeature": ("t4_e2e_devkit.planning.training.modeling", "AbstractModelFeature"),
+    "FeatureMapping": ("t4_e2e_devkit.planning.training.modeling", "FeatureMapping"),
+    "TensorFeature": ("t4_e2e_devkit.planning.training.modeling", "TensorFeature"),
+    "FeaturePreprocessor": ("t4_e2e_devkit.planning.training.preprocessing", "FeaturePreprocessor"),
+    "FeatureBuilder": ("t4_e2e_devkit.planning.training.preprocessing", "FeatureBuilder"),
+    "TargetBuilder": ("t4_e2e_devkit.planning.training.preprocessing", "TargetBuilder"),
+    "Augmentor": ("t4_e2e_devkit.planning.training.data_augmentation", "Augmentor"),
+    "ComposeAugmentor": ("t4_e2e_devkit.planning.training.data_augmentation", "ComposeAugmentor"),
+    "RandomSE2Augmentor": ("t4_e2e_devkit.planning.training.data_augmentation", "RandomSE2Augmentor"),
+    "AbstractObjective": ("t4_e2e_devkit.planning.training.objectives", "AbstractObjective"),
+    "AbstractTrainingMetric": ("t4_e2e_devkit.planning.training.objectives", "AbstractTrainingMetric"),
+    "MeanSquaredTrajectoryObjective": ("t4_e2e_devkit.planning.training.objectives", "MeanSquaredTrajectoryObjective"),
+    "TrajectoryErrorMetric": ("t4_e2e_devkit.planning.training.objectives", "TrajectoryErrorMetric"),
 }
 
 __all__ = sorted(_LAZY)

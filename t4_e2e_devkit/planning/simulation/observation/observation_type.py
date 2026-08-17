@@ -19,7 +19,7 @@ from __future__ import annotations
 from abc import ABC
 from dataclasses import dataclass
 from enum import Enum
-from typing import Any, Dict, Optional, Union
+from typing import Any, Dict, Optional, Type, Union
 
 from t4_e2e_devkit.common.actor_state.tracked_objects import TrackedObjects
 
@@ -66,6 +66,11 @@ class Observation(ABC):  # noqa: B024 - marker base, matching nuPlan's shape
     def detection_type(cls) -> str:
         """:return: detection type of the observation."""
         return cls.__name__
+
+    @classmethod
+    def observation_type(cls) -> Type["Observation"]:
+        """:return: concrete observation class represented by this payload."""
+        return cls
 
 
 @dataclass

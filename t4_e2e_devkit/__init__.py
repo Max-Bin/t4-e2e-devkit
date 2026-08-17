@@ -37,6 +37,10 @@ _LAZY: dict[str, tuple[str, str]] = {
     "filter_scenarios": ("t4_e2e_devkit.dataset.scenario_filter", "filter_scenarios"),
     "sample_scenarios": ("t4_e2e_devkit.dataset.scenario_filter", "sample_scenarios"),
     "select_scenarios": ("t4_e2e_devkit.dataset.scenario_filter", "select_scenarios"),
+    "filter_scenarios_for_rank": (
+        "t4_e2e_devkit.dataset.scenario_filter",
+        "filter_scenarios_for_rank",
+    ),
     "collate_t4": ("t4_e2e_devkit.dataset.dataset", "collate_t4"),
     "AbstractScenario": (
         "t4_e2e_devkit.planning.scenario_builder.abstract_scenario",
@@ -250,6 +254,130 @@ _LAZY: dict[str, tuple[str, str]] = {
         "t4_e2e_devkit.planning.simulation.runtime",
         "StepSimulationTimeController",
     ),
+    "Simulation": (
+        "t4_e2e_devkit.planning.simulation.simulation",
+        "Simulation",
+    ),
+    "SimulationLog": (
+        "t4_e2e_devkit.planning.simulation.simulation_log",
+        "SimulationLog",
+    ),
+    "AbstractSimulationCallback": (
+        "t4_e2e_devkit.planning.simulation.callback.abstract_callback",
+        "AbstractCallback",
+    ),
+    "MultiCallback": (
+        "t4_e2e_devkit.planning.simulation.callback.multi_callback",
+        "MultiCallback",
+    ),
+    "TimingCallback": (
+        "t4_e2e_devkit.planning.simulation.callback.timing_callback",
+        "TimingCallback",
+    ),
+    "SimulationLogCallback": (
+        "t4_e2e_devkit.planning.simulation.callback.serialization_callback",
+        "SimulationLogCallback",
+    ),
+    "VisualizationCallback": (
+        "t4_e2e_devkit.planning.simulation.callback.visualization_callback",
+        "VisualizationCallback",
+    ),
+    "SimulationMetricCallback": (
+        "t4_e2e_devkit.planning.simulation.callback.metric_callback",
+        "MetricCallback",
+    ),
+    "SimulationController": (
+        "t4_e2e_devkit.planning.simulation.controller.kinematic_bicycle",
+        "KinematicBicycleController",
+    ),
+    "ControllerLogPlayback": (
+        "t4_e2e_devkit.planning.simulation.controller.log_playback",
+        "LogPlaybackController",
+    ),
+    "PerfectTrackingController": (
+        "t4_e2e_devkit.planning.simulation.controller.perfect_tracking",
+        "PerfectTrackingController",
+    ),
+    "TwoStageController": (
+        "t4_e2e_devkit.planning.simulation.controller.two_stage_controller",
+        "TwoStageController",
+    ),
+    "AbstractMotionModel": (
+        "t4_e2e_devkit.planning.simulation.controller.motion_model",
+        "AbstractMotionModel",
+    ),
+    "KinematicBicycleMotionModel": (
+        "t4_e2e_devkit.planning.simulation.controller.motion_model",
+        "KinematicBicycleMotionModel",
+    ),
+    "NuPlanSimulationRunner": (
+        "t4_e2e_devkit.planning.simulation.runner.simulations_runner",
+        "SimulationRunner",
+    ),
+    "SimulationsRunner": (
+        "t4_e2e_devkit.planning.simulation.runner.simulations_runner",
+        "SimulationsRunner",
+    ),
+    "RunnerReport": (
+        "t4_e2e_devkit.planning.simulation.runner.runner_report",
+        "RunnerReport",
+    ),
+    "RunnerExecutor": (
+        "t4_e2e_devkit.planning.simulation.runner.executor",
+        "RunnerExecutor",
+    ),
+    "AbstractMainCallback": (
+        "t4_e2e_devkit.planning.simulation.main_callback.abstract_main_callback",
+        "AbstractMainCallback",
+    ),
+    "MultiMainCallback": (
+        "t4_e2e_devkit.planning.simulation.main_callback.multi_main_callback",
+        "MultiMainCallback",
+    ),
+    "TimeCallback": (
+        "t4_e2e_devkit.planning.simulation.main_callback.time_callback",
+        "TimeCallback",
+    ),
+    "CompletionCallback": (
+        "t4_e2e_devkit.planning.simulation.main_callback.completion_callback",
+        "CompletionCallback",
+    ),
+    "MetricSummaryCallback": (
+        "t4_e2e_devkit.planning.simulation.main_callback.metric_summary_callback",
+        "MetricSummaryCallback",
+    ),
+    "PlannerReportStatistics": (
+        "t4_e2e_devkit.planning.simulation.planner.planner_report",
+        "PlannerReport",
+    ),
+    "LogFuturePlanner": (
+        "t4_e2e_devkit.planning.simulation.planner.log_future_planner",
+        "LogFuturePlanner",
+    ),
+    "SimplePlanner": (
+        "t4_e2e_devkit.planning.simulation.planner.simple_planner",
+        "SimplePlanner",
+    ),
+    "AbstractPredictor": (
+        "t4_e2e_devkit.planning.simulation.predictor.abstract_predictor",
+        "AbstractPredictor",
+    ),
+    "PredictorInitialization": (
+        "t4_e2e_devkit.planning.simulation.predictor.abstract_predictor",
+        "PredictorInitialization",
+    ),
+    "PredictorInput": (
+        "t4_e2e_devkit.planning.simulation.predictor.abstract_predictor",
+        "PredictorInput",
+    ),
+    "PredictorReport": (
+        "t4_e2e_devkit.planning.simulation.predictor.predictor_report",
+        "PredictorReport",
+    ),
+    "LogFuturePredictor": (
+        "t4_e2e_devkit.planning.simulation.predictor.log_future_predictor",
+        "LogFuturePredictor",
+    ),
     "TracksObservation": (
         "t4_e2e_devkit.planning.simulation.observation.observation_type",
         "TracksObservation",
@@ -263,6 +391,11 @@ _LAZY: dict[str, tuple[str, str]] = {
         "T4ReplayObservationSource",
     ),
     "MetricCache": ("t4_e2e_devkit.evaluation.metric_cache", "MetricCache"),
+    "evaluate_data_list": ("t4_e2e_devkit.script.evaluate", "evaluate_data_list"),
+    "FileBackedBarrier": (
+        "t4_e2e_devkit.evaluation.file_backed_barrier",
+        "FileBackedBarrier",
+    ),
     "MetricContext": ("t4_e2e_devkit.evaluation.metric_engine", "MetricContext"),
     "MetricDefinition": ("t4_e2e_devkit.evaluation.metric_engine", "MetricDefinition"),
     "MetricEngine": ("t4_e2e_devkit.evaluation.metric_engine", "MetricEngine"),
@@ -277,6 +410,85 @@ _LAZY: dict[str, tuple[str, str]] = {
     "MetricStatistic": ("t4_e2e_devkit.evaluation.metric_api", "MetricStatistic"),
     "MetricStatistics": ("t4_e2e_devkit.evaluation.metric_api", "MetricStatistics"),
     "MetricTimeSeries": ("t4_e2e_devkit.evaluation.metric_api", "MetricTimeSeries"),
+    "MetricStatisticsType": (
+        "t4_e2e_devkit.evaluation.metrics.metric_result",
+        "MetricStatisticsType",
+    ),
+    "Statistic": ("t4_e2e_devkit.evaluation.metrics.metric_result", "Statistic"),
+    "TimeSeries": ("t4_e2e_devkit.evaluation.metrics.metric_result", "TimeSeries"),
+    "MetricViolation": (
+        "t4_e2e_devkit.evaluation.metrics.metric_result",
+        "MetricViolation",
+    ),
+    "TypedMetricStatistics": (
+        "t4_e2e_devkit.evaluation.metrics.metric_result",
+        "MetricStatistics",
+    ),
+    "AbstractMetric": (
+        "t4_e2e_devkit.evaluation.metrics.abstract_metric",
+        "AbstractMetric",
+    ),
+    "ViolationMetricBase": (
+        "t4_e2e_devkit.evaluation.metrics.abstract_metric",
+        "ViolationMetricBase",
+    ),
+    "WithinBoundMetricBase": (
+        "t4_e2e_devkit.evaluation.metrics.abstract_metric",
+        "WithinBoundMetricBase",
+    ),
+    "WeightedAverageMetricAggregator": (
+        "t4_e2e_devkit.evaluation.metrics.weighted_average",
+        "WeightedAverageMetricAggregator",
+    ),
+    "MetricFile": ("t4_e2e_devkit.evaluation.metrics.metric_file", "MetricFile"),
+    "MetricFileKey": ("t4_e2e_devkit.evaluation.metrics.metric_file", "MetricFileKey"),
+    "MetricStatisticsDataFrame": (
+        "t4_e2e_devkit.evaluation.metrics.metric_dataframe",
+        "MetricStatisticsDataFrame",
+    ),
+    "DrivableAreaMetric": (
+        "t4_e2e_devkit.evaluation.metrics.standard",
+        "DrivableAreaMetric",
+    ),
+    "LaneDepartureMetric": (
+        "t4_e2e_devkit.evaluation.metrics.standard",
+        "LaneDepartureMetric",
+    ),
+    "TrafficLightMetric": (
+        "t4_e2e_devkit.evaluation.metrics.standard",
+        "TrafficLightMetric",
+    ),
+    "GoalReachedMetric": (
+        "t4_e2e_devkit.evaluation.metrics.standard",
+        "GoalReachedMetric",
+    ),
+    "AccelerationMetric": (
+        "t4_e2e_devkit.evaluation.metrics.standard",
+        "AccelerationMetric",
+    ),
+    "JerkMetric": ("t4_e2e_devkit.evaluation.metrics.standard", "JerkMetric"),
+    "YawRateMetric": ("t4_e2e_devkit.evaluation.metrics.standard", "YawRateMetric"),
+    "StandardComfortMetric": (
+        "t4_e2e_devkit.evaluation.metrics.standard",
+        "ComfortMetric",
+    ),
+    "StandardProgressMetric": (
+        "t4_e2e_devkit.evaluation.metrics.standard",
+        "ProgressMetric",
+    ),
+    "StandardCollisionMetric": (
+        "t4_e2e_devkit.evaluation.metrics.standard",
+        "CollisionMetric",
+    ),
+    "StandardTTCMetric": ("t4_e2e_devkit.evaluation.metrics.standard", "TTCMetric"),
+    "StandardSpeedLimitMetric": (
+        "t4_e2e_devkit.evaluation.metrics.standard",
+        "SpeedLimitMetric",
+    ),
+    "StandardStopLineMetric": (
+        "t4_e2e_devkit.evaluation.metrics.standard",
+        "StopLineViolationMetric",
+    ),
     "MappingMetricBuilder": (
         "t4_e2e_devkit.evaluation.metric_builders",
         "MappingMetricBuilder",
@@ -377,6 +589,14 @@ _LAZY: dict[str, tuple[str, str]] = {
     "render_prediction_bev": (
         "t4_e2e_devkit.visualization.plots",
         "render_prediction_bev",
+    ),
+    "ResultsDashboard": (
+        "t4_e2e_devkit.visualization.dashboard",
+        "ResultsDashboard",
+    ),
+    "write_results_dashboard": (
+        "t4_e2e_devkit.visualization.dashboard",
+        "write_results_dashboard",
     ),
     "PredictionVizCallback": (
         "t4_e2e_devkit.planning.training.callbacks",

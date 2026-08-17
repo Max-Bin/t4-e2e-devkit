@@ -153,10 +153,22 @@ def select_scenarios(
     return sample_scenarios(filter_scenarios(scenarios, scenario_filter), sampling)
 
 
+def filter_scenarios_for_rank(
+    scenarios: Iterable[Any], *, rank: int = 0, world_size: int = 1
+) -> list[Any]:
+    """Return the stable subset owned by one distributed rank."""
+
+    if world_size < 1 or rank < 0 or rank >= world_size:
+        raise ValueError("rank must be in [0, world_size)")
+    values = list(scenarios)
+    return values[int(rank) : len(values) : int(world_size)]
+
+
 __all__ = [
     "ScenarioFilter",
     "ScenarioSampling",
     "filter_scenarios",
     "sample_scenarios",
     "select_scenarios",
+    "filter_scenarios_for_rank",
 ]

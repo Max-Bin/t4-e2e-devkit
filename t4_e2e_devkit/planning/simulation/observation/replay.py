@@ -5,10 +5,12 @@ from __future__ import annotations
 from dataclasses import dataclass
 from typing import Callable, Optional, Sequence
 
+from t4_e2e_devkit.common.actor_state.state_representation import TimePoint
 from t4_e2e_devkit.common.constants import T4_SUPPORTED_CAMERA_NAMES
-from t4_e2e_devkit.common.dataclasses import T4Scene
+from t4_e2e_devkit.common.dataclasses import Annotations, T4Scene
 from t4_e2e_devkit.dataset.tracks import annotations_to_detections_tracks
 from t4_e2e_devkit.planning.simulation.observation.observation_type import (
+    AbstractObservation,
     CameraChannel,
     DetectionsTracks,
     LidarChannel,
@@ -20,7 +22,7 @@ from t4_e2e_devkit.planning.simulation.simulation_iteration import SimulationIte
 
 
 @dataclass
-class T4ReplayObservation(Observation):
+class T4ReplayObservation(AbstractObservation):
     """Recorded sensors, tracks and scene metadata at one replay iteration."""
 
     scene: T4Scene
@@ -49,16 +51,37 @@ class T4ReplayObservationSource:
         self.include_tracks = bool(include_tracks)
         self.include_lidar = bool(include_lidar)
         self.camera_names = tuple(camera_names or T4_SUPPORTED_CAMERA_NAMES)
+        unsupported = sorted(set(self.camera_names) - set(T4_SUPPORTED_CAMERA_NAMES))
+        if unsupported:
+            raise ValueError(f"unsupported T4 replay cameras: {unsupported}")
+        self._iteration = 0
 
     def reset(self) -> None:
-        return None
+        self._iteration = 0
+
+    def initialize(self) -> None:
+        """Reset the source before a simulation starts."""
+
+        self.reset()
+
+    def observation_type(self) -> type[Observation]:
+        if self.include_sensors and self.include_tracks:
+            return T4ReplayObservation
+        if self.include_sensors:
+            return Sensors
+        if self.include_tracks:
+            return DetectionsTracks
+        return Observation
 
     def get_observation(
         self,
-        iteration: SimulationIteration,
-        history: SimulationHistoryBuffer,
-    ) -> T4ReplayObservation:
+        iteration: Optional[SimulationIteration] = None,
+        history: Optional[SimulationHistoryBuffer] = None,
+    ) -> Observation:
         del history
+        if iteration is None:
+            iteration = SimulationIteration(TimePoint(0), self._iteration)
+        self._iteration = int(iteration.index)
         scene = self.scene_provider(self.start_frame + int(iteration.index))
         frame = scene.current_frame
         sensors = (
@@ -76,7 +99,29 @@ class T4ReplayObservationSource:
                 frame.annotations,
                 timestamp_us=frame.timestamp_us,
             )
-        return T4ReplayObservation(scene=scene, sensors=sensors, tracks=tracks)
+        if self.include_sensors and self.include_tracks:
+            return T4ReplayObservation(scene=scene, sensors=sensors, tracks=tracks)
+        if self.include_sensors:
+            return sensors if sensors is not None else Sensors(pointcloud=None, images=None)
+        if self.include_tracks:
+            return tracks if tracks is not None else DetectionsTracks(
+                tracked_objects=annotations_to_detections_tracks(
+                    scene.current_frame.annotations or Annotations.empty(),
+                    timestamp_us=scene.current_frame.timestamp_us,
+                ).tracked_objects
+            )
+        return Observation()
+
+    def update_observation(
+        self,
+        current_iteration: SimulationIteration,
+        next_iteration: SimulationIteration,
+        history: SimulationHistoryBuffer,
+    ) -> None:
+        """Advance the implicit cursor for NuPlan-shaped callers."""
+
+        del current_iteration, history
+        self._iteration = int(next_iteration.index)
 
 
 def _sensors_from_frame(

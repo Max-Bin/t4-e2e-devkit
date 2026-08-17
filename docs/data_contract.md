@@ -2,8 +2,7 @@
 
 The reader exposes one `T4Scene` per `(scene_dir, center_frame)`. Shapes and
 field names are defined in
-[`common/constants.py`](../t4_e2e_devkit/common/constants.py) and checked by
-`tests/test_contract.py`.
+[`common/constants.py`](../t4_e2e_devkit/common/constants.py).
 
 ## Scene layout
 

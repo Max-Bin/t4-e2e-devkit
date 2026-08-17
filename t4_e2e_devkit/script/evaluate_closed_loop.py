@@ -170,8 +170,6 @@ def evaluate_closed_loop(
         "world_size": int(effective_world_size),
         "workers": int(workers),
         "worker_backend": worker_backend,
-        "data_list": None if data_list.path is None else str(data_list.path),
-        "root": str(data_list.root),
         "selected_rows": int(len(selected_rows)),
         "rank_rows": int(len(rows)),
     }
@@ -392,7 +390,7 @@ def evaluate_closed_loop(
             "num_failed": len(failures),
             "num_resumed": resumed,
             "num_attempts": attempts_total,
-            "manifest": str(manifest_file),
+            "manifest": manifest_file.name,
         },
     )
     write_static_html_report(output_path)

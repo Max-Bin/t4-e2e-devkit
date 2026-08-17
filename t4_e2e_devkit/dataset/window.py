@@ -314,6 +314,11 @@ class T4WindowBuilder:
             future_poses = global_to_ego(trajectory[future_indices], center_pose).astype(np.float32)
             future_annotations = self.read_future_annotations(center, future)
 
+        window_timestamps = np.asarray(
+            [self._timestamp_us(frame_index) for frame_index in range(first, last + 1)],
+            dtype=np.int64,
+        )
+
         return T4Scene(
             scene_metadata=SceneMetadata(
                 scene_dir=self._relative_scene_dir(),
@@ -323,6 +328,7 @@ class T4WindowBuilder:
                 num_future_frames=future,
                 vehicle=self.reader.meta.get("vehicle"),
                 date=self.reader.meta.get("date"),
+                timestamps_us=window_timestamps,
                 global_center_pose=np.asarray(center_pose, dtype=np.float64),
                 scene_tags=self.scene_tags,
                 route_metadata=self.route_metadata,

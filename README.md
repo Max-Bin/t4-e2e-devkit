@@ -45,26 +45,56 @@ uv run t4e2e datalist \
   --include-tag-event lane_change \
   --out lists/lane-change.json
 
-uv run t4e2e score \
-  agent=constant_velocity \
-  data_list=lists/val.json \
-  experiment_name=baseline \
-  backend=cpu
+uv run t4e2e evaluate lists/val.json \
+  --agent my_agent \
+  --output-dir results/evaluation \
+  --families open_loop pdm tier4 \
+  --backend auto
+
+# Optional offline PDM reference cache and metadata sources
+uv run t4e2e evaluate lists/val.json \
+  --agent my_agent \
+  --output-dir results/evaluation \
+  --pdm-reference-cache-dir /path/to/pdm-cache \
+  --maps-root /path/to/maps \
+  --scene-tags-root /path/to/scene-tags \
+  --attach-map-ids
 
 uv run t4e2e visualize \
   /path/to/t4_dataset/prd_jt/scene \
   --mode bev \
-  --out window.png
+  --out results/visualization/window.png
+
+# Run independent ranks, then merge their portable reports.
+uv run t4e2e evaluate lists/val.json --agent my_agent \
+  --output-dir results/evaluation/rank-0 --rank 0 --world-size 4 --resume
+uv run t4e2e merge-evaluation \
+  --input-dir results/evaluation/rank-0 results/evaluation/rank-1 \
+              results/evaluation/rank-2 results/evaluation/rank-3 \
+  --output-dir results/evaluation/merged
+uv run t4e2e dashboard results/evaluation/merged \
+  --out results/evaluation/merged/dashboard.html
 
 uv run t4e2e evaluate-closed-loop \
   lists/val.json \
-  --agent constant_velocity \
-  --output-dir reports/closed_loop
+  --agent my_agent \
+  --output-dir results/closed_loop
 
 uv run t4e2e merge-closed-loop \
-  --input-dir reports/rank-0 reports/rank-1 \
-  --output-dir reports/closed_loop_merged
+  --input-dir results/closed_loop/rank-0 results/closed_loop/rank-1 \
+  --output-dir results/closed_loop/merged
 ```
+
+`evaluate` defaults to `auto`: it selects the GPU scorer when CUDA is available
+and otherwise uses the CPU audit scorer. An explicit `--backend gpu` never falls
+back; it fails clearly when CUDA is unavailable. `evaluate` writes one record
+per row, family CSV files, `aggregate.json` and a rank manifest.
+`--rank/--world-size` partition the data list deterministically;
+`--workers/--worker-backend` control local execution and `--resume` reuses only
+successful records with the same resolved configuration. `merge-evaluation`
+validates rank completeness, manifest membership, duplicate tokens and common
+configuration before recomputing the aggregate. All generated files belong in
+the ignored `results/` or `reports/` directories.
 
 Build a reference cache only when an offline CPU run needs one. GPU evaluation
 can generate the reference online.

@@ -7,7 +7,7 @@ import csv
 import hashlib
 import json
 from pathlib import Path
-from typing import Any, Optional, Sequence
+from typing import Any, Mapping, Optional, Sequence
 
 from omegaconf import OmegaConf
 
@@ -23,6 +23,7 @@ from t4_e2e_devkit.evaluation.closed_loop_report import (
     write_closed_loop_ticks,
     write_static_html_report,
 )
+from t4_e2e_devkit.evaluation.distributed import WorkerManifest
 from t4_e2e_devkit.evaluation.report import aggregate_evaluation
 
 RUN_FORMAT = "t4.closed_loop.run"
@@ -92,9 +93,12 @@ def merge_closed_loop_reports(
                 f"{source} contains {len(paths)} artifacts, but run.json declares "
                 f"{expected_rows} rank rows"
             )
+        expected_tokens = _manifest_tokens(source, run)
+        actual_tokens: set[str] = set()
         for path in paths:
             payload = load_rollout_artifact(path)
             token = str(payload["token"])
+            actual_tokens.add(token)
             if token in seen_tokens:
                 raise ValueError(f"duplicate rollout token across ranks: {token}")
             seen_tokens.add(token)
@@ -104,6 +108,8 @@ def merge_closed_loop_reports(
                 if metrics is None:
                     raise ValueError(f"successful artifact has invalid metrics: {path}")
             entries.append((token, payload, metrics, path))
+        if expected_tokens is not None and actual_tokens != expected_tokens:
+            raise ValueError(f"rollout artifacts do not match the worker manifest in {source}")
 
     entries.sort(key=lambda entry: entry[0])
     metrics = [entry[2] for entry in entries if entry[2] is not None]
@@ -122,7 +128,6 @@ def merge_closed_loop_reports(
         "rank": None,
         "rank_rows": len(entries),
         "merged": True,
-        "input_dirs": [str(source) for source in sources],
         "source_world_size": source_world_size,
     }
     config_fingerprint = _fingerprint(run_config)
@@ -182,6 +187,21 @@ def _load_run(directory: Path) -> dict[str, Any]:
     if run.get("status") != "completed":
         raise ValueError(f"run is not completed: {directory}")
     return run
+
+
+def _manifest_tokens(directory: Path, run: Mapping[str, Any]) -> set[str] | None:
+    manifest_name = run.get("manifest")
+    if not manifest_name:
+        return None
+    path = directory / str(manifest_name)
+    if not path.is_file():
+        raise ValueError(f"closed-loop run is missing its worker manifest: {path}")
+    manifest = WorkerManifest.read(path)
+    if manifest.run_id != str(run.get("run_id")):
+        raise ValueError(f"worker manifest belongs to a different run: {path}")
+    if manifest.rank != int(run.get("rank", 0)):
+        raise ValueError(f"worker manifest rank does not match run.json: {path}")
+    return set(manifest.task_ids)
 
 
 def _run_signature(run: dict[str, Any]) -> dict[str, Any]:

@@ -546,7 +546,11 @@ class T4ClosedLoopRunner:
                 self.config.dt_s,
             )
             raw_plan: Optional[Trajectory] = None
-            if cached_world_plan is None or step % self.config.replan_interval == 0:
+            if (
+                cached_world_plan is None
+                or cached_plan_offset >= len(cached_world_plan)
+                or step % self.config.replan_interval == 0
+            ):
                 raw_plan = self.agent.compute_trajectory(agent_input)
                 if not isinstance(raw_plan, Trajectory):
                     raise TypeError(
@@ -910,8 +914,8 @@ def _rebase_map(map_tensors: Optional[MapTensors], recorded_pose: np.ndarray, li
     def transform_lane_field(values: np.ndarray) -> np.ndarray:
         result = transform_positions(values, (X, Y))
         result = transform_vectors(result, (2, 3))
-        result = transform_positions(result, (4, 5))
-        return transform_positions(result, (6, 7))
+        result = transform_vectors(result, (4, 5))
+        return transform_vectors(result, (6, 7))
 
     return MapTensors(
         lanes=transform_lane_field(map_tensors.lanes),
@@ -922,6 +926,7 @@ def _rebase_map(map_tensors: Optional[MapTensors], recorded_pose: np.ndarray, li
         route_lanes_has_speed_limit=np.array(map_tensors.route_lanes_has_speed_limit, copy=True),
         polygons=transform_positions(map_tensors.polygons, (0, 1)),
         line_strings=transform_positions(map_tensors.line_strings, (0, 1)),
+        object_ids=map_tensors.object_ids,
     )
 
 

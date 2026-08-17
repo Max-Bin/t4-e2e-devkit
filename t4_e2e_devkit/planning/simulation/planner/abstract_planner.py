@@ -6,21 +6,18 @@ dropped is nuPlan's ``SimulationHistoryBuffer`` and ``PlannerReport``, which
 exist to serve nuPlan's simulation runner and its metric engine.
 
 This is the *classical* planner interface -- a rule-based planner stepping
-inside a simulation loop, which is what ``PDMClosedPlanner`` is.  It is not the
-interface a learned T4 model implements: that one is
+inside a simulation loop.  It can also wrap a learned T4 model through
 :class:`t4_e2e_devkit.agents.AbstractT4Agent`, which consumes a
 :class:`~t4_e2e_devkit.common.dataclasses.T4AgentInput` and returns a
 :class:`~t4_e2e_devkit.common.dataclasses.Trajectory`.  The two meet in the
 evaluation stack: PDM-Closed produces the ego-progress denominator that the
 agent's trajectory is scored against.
-
-``SimulationHistoryBuffer`` is kept as a small structural protocol rather than a
-concrete class, because PDM only ever reads ``current_state`` off it.
 """
 
 from __future__ import annotations
 
 import abc
+import time
 from dataclasses import dataclass
 from typing import Any, List, Optional, Protocol, Tuple, runtime_checkable
 
@@ -28,6 +25,7 @@ from t4_e2e_devkit.common.actor_state.ego_state import EgoState
 from t4_e2e_devkit.common.actor_state.state_representation import StateSE2
 from t4_e2e_devkit.common.maps.maps_datatypes import TrafficLightStatusData
 from t4_e2e_devkit.planning.simulation.observation.observation_type import Observation
+from t4_e2e_devkit.planning.simulation.planner.planner_report import PlannerReport
 from t4_e2e_devkit.planning.simulation.simulation_iteration import SimulationIteration
 from t4_e2e_devkit.planning.simulation.trajectory.abstract_trajectory import AbstractTrajectory
 
@@ -84,6 +82,11 @@ class AbstractPlanner(abc.ABC):
     # Only oracle planners may set this; it cannot be used for submissions.
     requires_scenario: bool = False
 
+    def __new__(cls, *args: Any, **kwargs: Any):
+        instance = super().__new__(cls)
+        instance._compute_trajectory_runtimes = []
+        return instance
+
     @abc.abstractmethod
     def initialize(self, initialization: PlannerInitialization) -> None:
         """
@@ -113,4 +116,14 @@ class AbstractPlanner(abc.ABC):
         :param current_input: planner input for this iteration.
         :return: trajectory the ego should follow.
         """
-        return self.compute_planner_trajectory(current_input)
+        started = time.perf_counter()
+        try:
+            return self.compute_planner_trajectory(current_input)
+        finally:
+            self._compute_trajectory_runtimes.append(time.perf_counter() - started)
+
+    def generate_planner_report(self, clear_stats: bool = True) -> PlannerReport:
+        report = PlannerReport(self._compute_trajectory_runtimes)
+        if clear_stats:
+            self._compute_trajectory_runtimes.clear()
+        return report

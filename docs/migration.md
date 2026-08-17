@@ -62,7 +62,7 @@ scorer.score_proposals(
 my_agent = "my_package.agent:MyAgent"
 ```
 
-Then use `agent=my_agent` with the training, scoring or visualization commands.
+Then use `agent=my_agent` with the training, evaluation or visualization commands.
 
 ## Verification
 
@@ -70,8 +70,7 @@ Run these checks before comparing a new adapter:
 
 ```bash
 uv run ruff check .
-uv run pytest -q tests/test_contract.py tests/test_agents.py
-uv run pytest -q tests/test_evaluation.py
+uv run pytest -q tests/test_agents.py tests/test_evaluation.py
 uv run t4e2e check --vendor
 ```
 

@@ -1,4 +1,4 @@
-"""Contract tests for the independent evaluation families."""
+"""Behavior tests for the independent evaluation families."""
 
 from __future__ import annotations
 

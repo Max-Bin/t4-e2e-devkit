@@ -13,6 +13,25 @@ from typing import Any, Iterable, Mapping, Optional, Sequence
 
 import numpy as np
 
+from t4_e2e_devkit.evaluation.metrics.abstract_metric import (
+    AbstractMetric,
+    MetricBase,
+    ViolationMetricBase,
+    WithinBoundMetricBase,
+)
+from t4_e2e_devkit.evaluation.metrics.metric_dataframe import MetricStatisticsDataFrame
+from t4_e2e_devkit.evaluation.metrics.metric_file import MetricFile, MetricFileKey
+from t4_e2e_devkit.evaluation.metrics.metric_result import (
+    MetricStatistics as NuPlanMetricStatistics,
+)
+from t4_e2e_devkit.evaluation.metrics.metric_result import (
+    MetricStatisticsType,
+    MetricViolation,
+    Statistic,
+    TimeSeries,
+)
+from t4_e2e_devkit.evaluation.metrics.weighted_average import WeightedAverageMetricAggregator
+
 
 @dataclass(frozen=True)
 class MetricTimeSeries:
@@ -115,6 +134,19 @@ class AbstractMetricBuilder(ABC):
         """NuPlan-shaped accessor for callers that avoid properties."""
 
         return self.name
+
+    @property
+    def category(self) -> str:
+        """Metric category used by typed report consumers."""
+
+        return "default"
+
+    def get_metric_category(self) -> str:
+        return self.category
+
+    def compute_score(self, statistics: Sequence[MetricStatistic]) -> float:
+        values = [float(item.value) for item in statistics]
+        return 0.0 if not values else float(values[0])
 
     def get_required_statistics(self) -> tuple[str, ...]:
         """Return required inputs for dependency-aware metric runners."""
@@ -232,7 +264,7 @@ class MetricBuilderRegistry:
 
     def compute(self, history: Any, *, scenario_token: Optional[str] = None) -> tuple[MetricResult, ...]:
         return tuple(
-            builder.compute(history, scenario_token=scenario_token)
+            _compute_builder(builder, history, scenario_token=scenario_token)
             for builder in self._builders.values()
         )
 
@@ -257,6 +289,19 @@ class MetricCallback:
         del error
 
 
+def _compute_builder(builder: AbstractMetricBuilder, history: Any, *, scenario_token: Optional[str]) -> MetricResult:
+    """Call compact and scenario-shaped builders through one boundary."""
+
+    import inspect
+
+    parameters = inspect.signature(builder.compute).parameters
+    if "scenario_token" in parameters:
+        return builder.compute(history, scenario_token=scenario_token)
+    if "scenario" in parameters:
+        return builder.compute(history, scenario=None)  # type: ignore[call-arg]
+    return builder.compute(history)  # type: ignore[call-arg]
+
+
 __all__ = [
     "AbstractMetricBuilder",
     "CallableMetricBuilder",
@@ -267,4 +312,17 @@ __all__ = [
     "MetricStatistics",
     "MetricStatistic",
     "MetricTimeSeries",
+    "AbstractMetric",
+    "MetricBase",
+    "ViolationMetricBase",
+    "WithinBoundMetricBase",
+    "MetricStatisticsDataFrame",
+    "MetricStatisticsType",
+    "MetricViolation",
+    "Statistic",
+    "TimeSeries",
+    "MetricFile",
+    "MetricFileKey",
+    "NuPlanMetricStatistics",
+    "WeightedAverageMetricAggregator",
 ]
