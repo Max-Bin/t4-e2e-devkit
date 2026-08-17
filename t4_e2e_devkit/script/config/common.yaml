@@ -1,0 +1,41 @@
+# Settings shared by every entry point.
+#
+# T4_ROOT and the data lists are deliberately NOT defaulted to a path on one
+# machine: a wrong-but-plausible default is how a run silently trains on the
+# wrong dataset. They must be given.
+
+# No `defaults` block here on purpose: each entry point picks its own
+# scene_filter (training wants the full 80-frame future, scoring only the 51
+# frames the PDM observation buffer reads), and declaring one here too makes
+# hydra reject both as competing values for the same key.
+
+output_dir: ${oc.env:T4E2E_EXP_ROOT,./exp}
+experiment_name: ???
+seed: 0
+
+# Reader settings forwarded to T4SceneReader. The frame cache is optional. GPU
+# scoring generates PDM references online; the PDM reference cache is retained
+# only for an explicit CPU/offline reference run.
+reader:
+  t4_frame_cache_dir: ${oc.env:T4E2E_FRAME_CACHE,null}
+  t4_image_size_hw: [672, 1148]
+  t4_missing_camera_policy: zero
+
+# Optional CPU/offline PDM-Closed reference cache. GPU scoring ignores this
+# legacy artifact and computes the denominator online on CUDA.
+pdm_cache_path: ${oc.env:T4E2E_PDM_CACHE,null}
+
+# Scoring backend: 'gpu' for the batched device scorer, 'cpu' for the reference
+# judge. Never falls back silently between them.
+backend: gpu
+include_tier4_metrics: false
+
+# The PDM drivable-area margin. ONE value, declared once, because three places
+# must agree on it: the cache was built with it (it is part of the cache
+# signature), the reader validates the cache against it, and the scorer scores
+# with it. Two copies drifting apart is a rejected cache at best and silently
+# mismatched labels at worst -- so the entry points thread this single field
+# into both the reader and the scorer rather than exposing it twice.
+drivable_area_buffer_m: 0.0
+
+scorer: {}

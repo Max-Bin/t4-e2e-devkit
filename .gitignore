@@ -1,0 +1,21 @@
+__pycache__/
+*.py[cod]
+*.egg-info/
+build/
+dist/
+.venv/
+.pytest_cache/
+.ruff_cache/
+.coverage
+htmlcov/
+
+# Experiment output and hydra run directories.
+exp/
+outputs/
+multirun/
+lightning_logs/
+
+# references/ holds upstream checkouts used for comparison and as vendoring
+# sources. They are not part of this repository's history; tools/vendor.py
+# records which commit each vendored file came from.
+references/

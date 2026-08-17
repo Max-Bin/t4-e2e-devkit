@@ -1,0 +1,172 @@
+"""t4-e2e-devkit: one dataset, agent and evaluation interface for T4 planning models.
+
+The three things almost every user needs::
+
+    from t4_e2e_devkit import AbstractT4Agent, T4Dataset, T4PDMScorer
+
+Imports here are lazy.  A data-list build should not pay for CUDA
+initialization, and a config-only dry run should not import the scoring stack --
+so the heavy submodules are resolved on first attribute access rather than at
+package import.
+"""
+
+from __future__ import annotations
+
+from typing import TYPE_CHECKING, Any
+
+__version__ = "0.1.0"
+
+_LAZY: dict[str, tuple[str, str]] = {
+    # interface
+    "AbstractT4Agent": ("t4_e2e_devkit.agents.abstract_agent", "AbstractT4Agent"),
+    "build_agent": ("t4_e2e_devkit.agents.registry", "build_agent"),
+    "register_agent": ("t4_e2e_devkit.agents.registry", "register_agent"),
+    "available_agents": ("t4_e2e_devkit.agents.registry", "available_agents"),
+    # data
+    "T4Dataset": ("t4_e2e_devkit.dataset.dataset", "T4Dataset"),
+    "T4WindowBuilder": ("t4_e2e_devkit.dataset.window", "T4WindowBuilder"),
+    "load_data_list": ("t4_e2e_devkit.dataset.datalist", "load_data_list"),
+    "collate_t4": ("t4_e2e_devkit.dataset.dataset", "collate_t4"),
+    # types
+    "SceneFilter": ("t4_e2e_devkit.common.dataclasses", "SceneFilter"),
+    "SensorConfig": ("t4_e2e_devkit.common.dataclasses", "SensorConfig"),
+    "T4AgentInput": ("t4_e2e_devkit.common.dataclasses", "T4AgentInput"),
+    "T4Scene": ("t4_e2e_devkit.common.dataclasses", "T4Scene"),
+    "Trajectory": ("t4_e2e_devkit.common.dataclasses", "Trajectory"),
+    "PDMResults": ("t4_e2e_devkit.common.dataclasses", "PDMResults"),
+    # independent evaluation families
+    "OpenLoopMetricConfig": (
+        "t4_e2e_devkit.evaluation.open_loop",
+        "OpenLoopMetricConfig",
+    ),
+    "OpenLoopMetrics": ("t4_e2e_devkit.evaluation.open_loop", "OpenLoopMetrics"),
+    "compute_open_loop_metrics": (
+        "t4_e2e_devkit.evaluation.open_loop",
+        "compute_open_loop_metrics",
+    ),
+    "ClosedLoopMetricConfig": (
+        "t4_e2e_devkit.evaluation.closed_loop",
+        "ClosedLoopMetricConfig",
+    ),
+    "ClosedLoopMetrics": (
+        "t4_e2e_devkit.evaluation.closed_loop",
+        "ClosedLoopMetrics",
+    ),
+    "compute_closed_loop_metrics": (
+        "t4_e2e_devkit.evaluation.closed_loop",
+        "compute_closed_loop_metrics",
+    ),
+    # closed-loop simulation
+    "KinematicState": (
+        "t4_e2e_devkit.planning.simulation.closed_loop",
+        "KinematicState",
+    ),
+    "PerfectTracker": (
+        "t4_e2e_devkit.planning.simulation.closed_loop",
+        "PerfectTracker",
+    ),
+    "T4ClosedLoopConfig": (
+        "t4_e2e_devkit.planning.simulation.closed_loop",
+        "T4ClosedLoopConfig",
+    ),
+    "T4ClosedLoopResult": (
+        "t4_e2e_devkit.planning.simulation.closed_loop",
+        "T4ClosedLoopResult",
+    ),
+    "T4ClosedLoopRunner": (
+        "t4_e2e_devkit.planning.simulation.closed_loop",
+        "T4ClosedLoopRunner",
+    ),
+    "run_t4_closed_loop": (
+        "t4_e2e_devkit.planning.simulation.closed_loop",
+        "run_t4_closed_loop",
+    ),
+    # evaluation
+    "T4PDMScorer": ("t4_e2e_devkit.evaluation.pdm_score", "T4PDMScorer"),
+    "T4PDMReferenceProvider": (
+        "t4_e2e_devkit.evaluation.reference_provider",
+        "T4PDMReferenceProvider",
+    ),
+    "aggregate_evaluation": (
+        "t4_e2e_devkit.evaluation.report",
+        "aggregate_evaluation",
+    ),
+    "aggregate_pdm_results": (
+        "t4_e2e_devkit.common.dataclasses",
+        "aggregate_pdm_results",
+    ),
+    "aggregate_results": ("t4_e2e_devkit.common.dataclasses", "aggregate_results"),
+    # visualization/training integration
+    "render_prediction_bev": (
+        "t4_e2e_devkit.visualization.plots",
+        "render_prediction_bev",
+    ),
+    "PredictionVizCallback": (
+        "t4_e2e_devkit.planning.training.callbacks",
+        "PredictionVizCallback",
+    ),
+}
+
+__all__ = ["__version__", *sorted(_LAZY)]
+
+if TYPE_CHECKING:  # let type checkers and IDEs see the real symbols
+    from t4_e2e_devkit.agents.abstract_agent import AbstractT4Agent
+    from t4_e2e_devkit.agents.registry import available_agents, build_agent, register_agent
+    from t4_e2e_devkit.common.dataclasses import (
+        PDMResults,
+        SceneFilter,
+        SensorConfig,
+        T4AgentInput,
+        T4Scene,
+        Trajectory,
+        aggregate_pdm_results,
+        aggregate_results,
+    )
+    from t4_e2e_devkit.dataset.datalist import load_data_list
+    from t4_e2e_devkit.dataset.dataset import T4Dataset, collate_t4
+    from t4_e2e_devkit.dataset.window import T4WindowBuilder
+    from t4_e2e_devkit.evaluation.closed_loop import (
+        ClosedLoopMetricConfig,
+        ClosedLoopMetrics,
+        compute_closed_loop_metrics,
+    )
+    from t4_e2e_devkit.evaluation.open_loop import (
+        OpenLoopMetricConfig,
+        OpenLoopMetrics,
+        compute_open_loop_metrics,
+    )
+    from t4_e2e_devkit.evaluation.pdm_score import T4PDMScorer
+    from t4_e2e_devkit.evaluation.reference_provider import T4PDMReferenceProvider
+    from t4_e2e_devkit.evaluation.report import aggregate_evaluation
+    from t4_e2e_devkit.planning.simulation.closed_loop import (
+        KinematicState,
+        PerfectTracker,
+        T4ClosedLoopConfig,
+        T4ClosedLoopResult,
+        T4ClosedLoopRunner,
+        run_t4_closed_loop,
+    )
+    from t4_e2e_devkit.planning.training.callbacks import PredictionVizCallback
+    from t4_e2e_devkit.visualization.plots import render_prediction_bev
+
+
+def __getattr__(name: str) -> Any:
+    """Resolve a lazily exported symbol.
+
+    :param name: attribute name.
+    :return: the symbol.
+    :raises AttributeError: for a name this package does not export.
+    """
+    try:
+        module_name, attribute = _LAZY[name]
+    except KeyError:
+        raise AttributeError(f"module {__name__!r} has no attribute {name!r}") from None
+    import importlib
+
+    value = getattr(importlib.import_module(module_name), attribute)
+    globals()[name] = value  # cache, so the import happens once
+    return value
+
+
+def __dir__() -> list[str]:
+    return list(__all__)

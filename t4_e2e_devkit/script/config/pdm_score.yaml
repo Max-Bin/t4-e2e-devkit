@@ -1,0 +1,11 @@
+defaults:
+  - common
+  - agent: constant_velocity
+  - scene_filter: scoring
+  - _self_
+
+data_list: ???
+checkpoint_path: null
+device: null
+batch_size: 8
+max_scenes: null

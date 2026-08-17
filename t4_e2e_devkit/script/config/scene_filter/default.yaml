@@ -1,0 +1,12 @@
+# The contract window: 30 past frames plus the current one, the full 80-frame
+# (8 s) recorded future, one window every 0.5 s.
+num_history_frames: 31
+num_future_frames: 80
+frame_interval: 5
+has_route: true
+max_scenes: null
+scene_dirs: null
+dates: null
+vehicles: null
+max_window_gap_frames: null
+require_cameras: null

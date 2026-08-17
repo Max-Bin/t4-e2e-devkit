@@ -1,0 +1,44 @@
+defaults:
+  - common
+  - agent: constant_velocity
+  - scene_filter: default
+  - _self_
+
+train_data_list: ???
+val_data_list: null
+resume_from: null
+
+# Set true for agents whose scorer heads are supervised by the PDM components.
+# References use a cache when available and are generated lazily otherwise.
+scorer_supervision: false
+
+# Checkpoint selection. Left null, this resolves to val/loss when a validation
+# list is given and train/loss otherwise -- see run_training.py for why total
+# loss is the wrong monitor for a scorer-supervised run without validation.
+monitor: null
+monitor_mode: min
+save_top_k: 3
+
+# Window plots during training. Fixed windows every N epochs, so successive
+# epochs are comparable -- a change in the picture is a change in the model.
+# Requires a validation list; the PDM-Closed path is generated lazily when no
+# compatible cache is available.
+visualize:
+  enabled: false
+  num_windows: 4
+  every_n_epochs: 1
+  mode: summary        # bev | cameras | summary
+
+dataloader:
+  batch_size: 8
+  num_workers: 8
+  prefetch_factor: 2
+  pin_memory: true
+
+trainer:
+  max_epochs: 10
+  accelerator: auto
+  devices: auto
+  precision: 32
+  gradient_clip_val: 1.0
+  log_every_n_steps: 50

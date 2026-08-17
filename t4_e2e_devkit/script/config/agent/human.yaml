@@ -1,0 +1,4 @@
+# Oracle: replays the recorded future. Scores the scorer, not a model -- a
+# deficit here locates a scorer/data disagreement rather than a driving error.
+name: human
+params: {}

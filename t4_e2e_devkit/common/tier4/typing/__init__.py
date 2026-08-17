@@ -1,0 +1,45 @@
+# =============================================================================
+# VENDORED - do not edit by hand.
+#
+# Source : t4devkit:t4_devkit/typing/__init__.py
+# Commit : 4496b3e
+# Tool   : tools/vendor.py
+#
+# Re-run ``python tools/vendor.py sync`` to update this file, and
+# ``python tools/vendor.py check`` to detect drift against its source.
+#
+# Only ``import`` statements were rewritten; every numeric expression is
+# byte-identical to the source. Edits belong upstream, or in a devkit module
+# that wraps this one.
+# =============================================================================
+
+from __future__ import annotations
+
+from typing import NewType
+
+import numpy as np
+from numpy.typing import ArrayLike, NDArray  # noqa
+
+from .aliases import *  # noqa
+from .camera import *  # noqa
+from .matrix import *  # noqa
+from .quaternion import *  # noqa
+from .roi import *  # noqa
+from .trajectory import *  # noqa
+from .vector import *  # noqa
+
+# numpy
+NDArrayF64 = NDArray[np.float64]
+NDArrayF32 = NDArray[np.float32]
+NDArrayI64 = NDArray[np.int64]
+NDArrayI32 = NDArray[np.int32]
+NDArrayU8 = NDArray[np.uint8]
+NDArrayBool = NDArray[np.bool_]
+NDArrayStr = NDArray[np.str_]
+
+NDArrayInt = NDArrayI32 | NDArrayI64
+NDArrayFloat = NDArrayF32 | NDArrayF64
+
+# 2D
+# TODO(ktro2828): Implement Keypoint class and KeypointLike
+KeypointLike = NewType("KeypointLike", np.ndarray)  # [(x0, y0), (x1, y1), ...]
