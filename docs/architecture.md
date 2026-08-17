@@ -19,6 +19,10 @@ The runtime replays recorded sensors, rebases vector map inputs around the
 simulated ego, and advances only the ego state. Other traffic participants are
 not reactive agents.
 
+The package is T4-only. It does not require an external database format or an
+experiment-tracking service. Generated reports, caches and videos belong under
+the ignored `results/` or `reports/` directories.
+
 ## Layers
 
 | layer | responsibility |
@@ -34,6 +38,40 @@ not reactive agents.
 The evaluator does not import agents. The agent sees `T4AgentInput`, which has
 no future data. Target builders and evaluators receive the privileged
 `T4Scene`. This makes the training/deployment boundary structural.
+
+## Scenario and runtime interfaces
+
+`T4ScenarioBuilder` enumerates data-list rows as materialized `T4Scenario`
+objects. A scenario exposes indexed ego status, tracked objects, timestamps,
+replayed sensor frames, route lane IDs, traffic-light states and the optional
+`T4MapAPI`. History and future accessors sample a declared time horizon without
+assuming a fixed number of trajectory points.
+
+Closed loop separates three replaceable components:
+
+```text
+ObservationProvider + TrafficPolicy + EgoController
+                \\          |          /
+                 replayed T4 rollout
+```
+
+The defaults are recorded observation replay, recorded traffic and the
+kinematic tracker. A custom controller or traffic policy can be injected for a
+controlled experiment; camera and LiDAR payloads remain recorded data.
+
+`T4MapAPI` keeps source IDs, tags and geometry for lanelets, line strings,
+crosswalks, stop lines, traffic lights, regulatory elements and drivable areas.
+Tensor rows retain the model contract; ID matches are side metadata.
+
+## Evaluation and feature execution
+
+`MetricEngine` registers independent metric families and emits per-window
+records plus family aggregates. Select `metric_names` or `families` when a
+context contains only one family. `MetricCache` stores atomic JSON metric
+records. `FeatureCache` stores versioned, content-addressed numeric builder
+outputs and never accepts raw sensor bytes. `LocalExecutor` provides ordered
+serial or multiprocessing execution and deterministic rank sharding without a
+scheduler dependency.
 
 ## Core types
 

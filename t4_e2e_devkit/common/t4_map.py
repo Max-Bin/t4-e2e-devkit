@@ -20,6 +20,8 @@ from typing import Any, Mapping, Optional, Sequence
 
 import numpy as np
 from shapely.geometry import LineString, Point, Polygon
+from shapely.geometry.base import BaseGeometry
+from shapely.ops import unary_union
 from shapely.strtree import STRtree
 
 from t4_e2e_devkit.common.dataclasses import MapObjectMatch
@@ -45,8 +47,39 @@ class T4Lanelet:
 
 
 @dataclass(frozen=True)
+class T4MapObject:
+    """A source Lanelet2 object other than the lanelet graph.
+
+    ``id`` is the source way/relation/node ID.  The object keeps the original
+    tags and geometry so downstream code can use a semantic layer without
+    depending on the compact model tensor.  Geometry is expressed in the map
+    coordinate frame used by the T4 OSM export.
+    """
+
+    id: str
+    object_type: str
+    geometry: BaseGeometry
+    tags: Mapping[str, str]
+    source_kind: str
+    member_ids: tuple[str, ...] = ()
+
+    @property
+    def polygon(self) -> Optional[BaseGeometry]:
+        """Return the polygon geometry when this object has one."""
+
+        return self.geometry if self.geometry.geom_type in {"Polygon", "MultiPolygon"} else None
+
+    @property
+    def is_area(self) -> bool:
+        """:return: whether the object is represented by an areal geometry."""
+
+        return self.geometry.geom_type in {"Polygon", "MultiPolygon"}
+
+
+@dataclass(frozen=True)
 class _ParsedMap:
     lanes: tuple[T4Lanelet, ...]
+    objects: tuple[T4MapObject, ...]
 
 
 def _tag_name(element: ET.Element) -> str:
@@ -63,7 +96,8 @@ def _tags(element: ET.Element) -> dict[str, str]:
 
 def _parse_osm(path: Path) -> _ParsedMap:
     nodes: dict[str, tuple[float, float]] = {}
-    ways: dict[str, tuple[str, ...]] = {}
+    node_tags: dict[str, dict[str, str]] = {}
+    ways: dict[str, tuple[tuple[str, ...], dict[str, str]]] = {}
     relations: list[tuple[str, tuple[tuple[str, str, str], ...], dict[str, str]]] = []
 
     try:
@@ -78,7 +112,9 @@ def _parse_osm(path: Path) -> _ParsedMap:
                 except (KeyError, TypeError, ValueError):
                     element.clear()
                     continue
-                nodes[str(element.attrib["id"])] = (x, y)
+                node_id = str(element.attrib["id"])
+                nodes[node_id] = (x, y)
+                node_tags[node_id] = tags
                 element.clear()
             elif kind == "way":
                 refs = tuple(
@@ -86,7 +122,7 @@ def _parse_osm(path: Path) -> _ParsedMap:
                     for child in element
                     if _tag_name(child) == "nd" and "ref" in child.attrib
                 )
-                ways[str(element.attrib["id"])] = refs
+                ways[str(element.attrib["id"])] = (refs, _tags(element))
                 element.clear()
             elif kind == "relation":
                 members = tuple(
@@ -111,8 +147,8 @@ def _parse_osm(path: Path) -> _ParsedMap:
         right_id = next((ref for kind, role, ref in members if kind == "way" and role == "right"), None)
         if left_id is None or right_id is None:
             continue
-        left = _way_points(ways.get(left_id, ()), nodes)
-        right = _way_points(ways.get(right_id, ()), nodes)
+        left = _way_points(ways.get(left_id, ((), {}))[0], nodes)
+        right = _way_points(ways.get(right_id, ((), {}))[0], nodes)
         if left is None or right is None or len(left) < 2 or len(right) < 2:
             continue
         if _endpoint_cost(left, right[::-1]) < _endpoint_cost(left, right):
@@ -137,7 +173,65 @@ def _parse_osm(path: Path) -> _ParsedMap:
         )
 
     _connect_lanes(lanes)
-    return _ParsedMap(tuple(lanes))
+    lane_boundary_ids = {
+        boundary_id
+        for lane in lanes
+        for boundary_id in (lane.left_boundary_id, lane.right_boundary_id)
+    }
+    objects: list[T4MapObject] = []
+    for node_id, point in nodes.items():
+        tags = node_tags.get(node_id, {})
+        object_type = _classify_object_type(tags)
+        if object_type is not None:
+            objects.append(
+                T4MapObject(
+                    id=node_id,
+                    object_type=object_type,
+                    geometry=Point(point),
+                    tags=dict(tags),
+                    source_kind="node",
+                )
+            )
+
+    for way_id, (refs, tags) in ways.items():
+        if way_id in lane_boundary_ids:
+            continue
+        object_type = _classify_object_type(tags) or ("line_string" if tags else None)
+        if object_type is None:
+            continue
+        geometry = _way_geometry(refs, nodes, object_type)
+        if geometry is not None:
+            objects.append(
+                T4MapObject(
+                    id=way_id,
+                    object_type=object_type,
+                    geometry=geometry,
+                    tags=dict(tags),
+                    source_kind="way",
+                    member_ids=tuple(refs),
+                )
+            )
+
+    for relation_id, members, tags in relations:
+        if tags.get("type") == "lanelet":
+            continue
+        object_type = _classify_object_type(tags)
+        if object_type is None:
+            continue
+        geometry = _relation_geometry(members, ways, nodes, object_type)
+        if geometry is not None and not geometry.is_empty:
+            objects.append(
+                T4MapObject(
+                    id=relation_id,
+                    object_type=object_type,
+                    geometry=geometry,
+                    tags=dict(tags),
+                    source_kind="relation",
+                    member_ids=tuple(ref for _, _, ref in members),
+                )
+            )
+
+    return _ParsedMap(tuple(lanes), tuple(objects))
 
 
 def _way_points(refs: Sequence[str], nodes: Mapping[str, tuple[float, float]]) -> Optional[np.ndarray]:
@@ -145,6 +239,96 @@ def _way_points(refs: Sequence[str], nodes: Mapping[str, tuple[float, float]]) -
     if len(points) < 2:
         return None
     return np.asarray(points, dtype=np.float64)
+
+
+def _classify_object_type(tags: Mapping[str, str]) -> Optional[str]:
+    """Map Lanelet2 tags to a small, stable semantic vocabulary."""
+
+    if not tags:
+        return None
+    values = " ".join(
+        str(tags.get(key, "")).strip().lower()
+        for key in ("type", "subtype", "role", "classification", "kind")
+    )
+    if "traffic_light" in values or "traffic light" in values:
+        return "traffic_light"
+    if "stop_line" in values or "stop line" in values:
+        return "stop_line"
+    if "crosswalk" in values or "crossing" in values or "zebra" in values:
+        return "crosswalk"
+    if "drivable_area" in values or tags.get("drivable_area", "").lower() in {"1", "yes", "true"}:
+        return "drivable_area"
+    if tags.get("area", "").lower() in {"1", "yes", "true"} or "area" in values:
+        return "area"
+    if (
+        tags.get("type", "").lower() in {"line", "line_string", "linestring"}
+        or tags.get("subtype", "").lower() in {"line", "line_string", "road_marking"}
+        or any(value in values for value in ("road_marking", "curb", "boundary"))
+    ):
+        return "line_string"
+    if tags.get("type", "").lower() == "regulatory_element":
+        return "regulatory_element"
+    return None
+
+
+def _repair_polygon(points: np.ndarray) -> Optional[Polygon]:
+    if len(points) < 3:
+        return None
+    polygon = Polygon(points)
+    if polygon.is_empty:
+        return None
+    if polygon.is_valid:
+        return polygon
+    repaired = polygon.buffer(0)
+    if isinstance(repaired, Polygon):
+        return repaired
+    if hasattr(repaired, "geoms"):
+        polygons = [geometry for geometry in repaired.geoms if isinstance(geometry, Polygon)]
+        if polygons:
+            return max(polygons, key=lambda geometry: geometry.area)
+    return None
+
+
+def _way_geometry(
+    refs: Sequence[str],
+    nodes: Mapping[str, tuple[float, float]],
+    object_type: str,
+) -> Optional[BaseGeometry]:
+    points = _way_points(refs, nodes)
+    if points is None:
+        return None
+    if object_type in {"area", "drivable_area", "crosswalk"}:
+        polygon = _repair_polygon(points)
+        if polygon is not None:
+            return polygon
+    try:
+        return LineString(points)
+    except (TypeError, ValueError):
+        return None
+
+
+def _relation_geometry(
+    members: Sequence[tuple[str, str, str]],
+    ways: Mapping[str, tuple[tuple[str, ...], dict[str, str]]],
+    nodes: Mapping[str, tuple[float, float]],
+    object_type: str,
+) -> Optional[BaseGeometry]:
+    geometries: list[BaseGeometry] = []
+    for member_kind, _, member_id in members:
+        if member_kind == "way" and member_id in ways:
+            refs, _ = ways[member_id]
+            geometry = _way_geometry(refs, nodes, object_type)
+            if geometry is not None:
+                geometries.append(geometry)
+        elif member_kind == "node" and member_id in nodes:
+            geometries.append(Point(nodes[member_id]))
+    if not geometries:
+        return None
+    if object_type in {"area", "drivable_area", "crosswalk"}:
+        polygons = [geometry for geometry in geometries if isinstance(geometry, Polygon)]
+        if polygons:
+            return unary_union(polygons)
+    return unary_union(geometries)
 
 
 def _endpoint_cost(left: np.ndarray, right: np.ndarray) -> float:
@@ -302,6 +486,12 @@ class T4MapAPI:
         parsed = _cached_parse(str(self.osm_path))
         self._lanes = parsed.lanes
         self._by_id = {lane.id: lane for lane in self._lanes}
+        self._objects = parsed.objects
+        self._objects_by_type: dict[str, tuple[T4MapObject, ...]] = {}
+        for object_type in {obj.object_type for obj in self._objects}:
+            self._objects_by_type[object_type] = tuple(
+                obj for obj in self._objects if obj.object_type == object_type
+            )
         self.route_lane_ids = tuple(str(value) for value in route_lane_ids)
         self._map_name = map_name or self.osm_path.parent.name
         self._polygon_tree: Optional[STRtree] = None
@@ -336,14 +526,129 @@ class T4MapAPI:
         return self._lanes
 
     @property
+    def objects(self) -> tuple[T4MapObject, ...]:
+        """:return: all non-lanelet source objects recovered from the OSM file."""
+
+        return self._objects
+
+    @property
+    def available_object_types(self) -> tuple[str, ...]:
+        """:return: semantic object types available in this map."""
+
+        types = {"lanelet"}
+        types.update(self._objects_by_type)
+        if any(obj.tags.get("type", "") == "regulatory_element" for obj in self._objects):
+            types.add("regulatory_element")
+        return tuple(sorted(types))
+
+    @property
     def available_object_ids(self) -> tuple[str, ...]:
+        """Backward-compatible lanelet IDs used by older T4 callers."""
+
         return tuple(lane.id for lane in self._lanes)
+
+    def available_ids(self, object_type: Optional[str] = None) -> tuple[str, ...]:
+        """Return stable source IDs, optionally restricted to a semantic type."""
+
+        return tuple(obj.id for obj in self.get_objects(object_type))
+
+    def get_objects(self, object_type: Optional[str] = None) -> tuple[T4Lanelet | T4MapObject, ...]:
+        """Return lanelets and semantic source objects for a requested type.
+
+        ``lane``/``lanes`` are accepted as aliases for ``lanelet``.  With no
+        type, lanelets are returned first followed by source objects ordered by
+        their source ID; this makes the result deterministic across parses.
+        """
+
+        raw_type = None if object_type is None else str(object_type).strip().lower()
+        normalized = _normalize_object_type(object_type)
+        if normalized is None:
+            return tuple(self._lanes) + tuple(sorted(self._objects, key=lambda obj: (obj.object_type, obj.id)))
+        if normalized == "lanelet":
+            return self._lanes
+        if raw_type in {"polygon", "polygons", "areas"}:
+            return tuple(obj for obj in self._objects if obj.is_area)
+        if normalized == "regulatory_element":
+            return tuple(
+                obj
+                for obj in self._objects
+                if obj.object_type == "regulatory_element"
+                or obj.tags.get("type", "") == "regulatory_element"
+            )
+        return self._objects_by_type.get(normalized, ())
+
+    def query_objects(
+        self,
+        point: Sequence[float],
+        radius: float,
+        object_types: Optional[Sequence[str] | str] = None,
+    ) -> tuple[T4Lanelet | T4MapObject, ...]:
+        """Query semantic objects whose geometry is within ``radius`` meters."""
+
+        if radius < 0.0:
+            raise ValueError(f"radius must be non-negative, got {radius}")
+        query = Point(float(point[0]), float(point[1]))
+        if object_types is None:
+            candidates = self.get_objects()
+        elif isinstance(object_types, str):
+            candidates = self.get_objects(object_types)
+        else:
+            candidates = tuple(
+                obj for object_type in object_types for obj in self.get_objects(object_type)
+            )
+        unique: dict[tuple[str, str], T4Lanelet | T4MapObject] = {
+            ("lanelet" if isinstance(obj, T4Lanelet) else obj.object_type, obj.id): obj
+            for obj in candidates
+        }
+        nearby = [
+            obj
+            for obj in unique.values()
+            if _object_geometry(obj).distance(query) <= float(radius) + 1.0e-9
+        ]
+        return tuple(
+            sorted(
+                nearby,
+                key=lambda obj: (
+                    _object_geometry(obj).distance(query),
+                    obj.id,
+                ),
+            )
+        )
+
+    def get_crosswalks(self) -> tuple[T4MapObject, ...]:
+        return self._objects_by_type.get("crosswalk", ())
+
+    def get_stop_lines(self) -> tuple[T4MapObject, ...]:
+        return self._objects_by_type.get("stop_line", ())
+
+    def get_traffic_lights(self) -> tuple[T4MapObject, ...]:
+        return self._objects_by_type.get("traffic_light", ())
+
+    def get_regulatory_elements(self) -> tuple[T4MapObject, ...]:
+        return tuple(self.get_objects("regulatory_element"))
+
+    def get_drivable_areas(self) -> tuple[T4MapObject, ...]:
+        return self._objects_by_type.get("drivable_area", ())
 
     def get_lane(self, lane_id: str | int) -> Optional[T4Lanelet]:
         return self._by_id.get(str(lane_id))
 
-    def get_map_object(self, object_id: str | int) -> Optional[T4Lanelet]:
-        return self.get_lane(object_id)
+    def get_map_object(
+        self,
+        object_id: str | int,
+        object_type: Optional[str] = None,
+    ) -> Optional[T4Lanelet | T4MapObject]:
+        normalized = _normalize_object_type(object_type)
+        if normalized in (None, "lanelet"):
+            lane = self.get_lane(object_id)
+            if lane is not None:
+                return lane
+            if normalized == "lanelet":
+                return None
+        for obj in self.get_objects(normalized):
+            if obj.id == str(object_id):
+                return obj
+        return None
 
     def get_proximal_lanes(
         self, point: Sequence[float], radius: float
@@ -493,6 +798,104 @@ class T4MapAPI:
             )
         return tuple(result)
 
+    def match_local_geometries_detailed(
+        self,
+        segments: np.ndarray,
+        center_pose: Sequence[float],
+        *,
+        layer: str,
+        frame_index: Optional[int] = None,
+        object_types: Optional[Sequence[str]] = None,
+        max_distance: float = 3.0,
+        candidate_limit: int = 5,
+    ) -> tuple[MapObjectMatch, ...]:
+        """Match polygon/line tensor rows to source semantic objects.
+
+        The numeric tensor does not carry IDs.  This method therefore records
+        the best geometric evidence and leaves rows unmatched when the source
+        map is too far away, rather than manufacturing an unstable row index.
+        """
+
+        values = np.asarray(segments, dtype=np.float64)
+        if values.ndim != 3 or values.shape[-1] < 2:
+            raise ValueError(f"map segments must be [N, P, >=2], got {values.shape}")
+        if max_distance < 0.0:
+            raise ValueError(f"max_distance must be non-negative, got {max_distance}")
+        if candidate_limit <= 0:
+            raise ValueError(f"candidate_limit must be positive, got {candidate_limit}")
+        pose = np.asarray(center_pose, dtype=np.float64).reshape(-1)
+        if pose.size < 4:
+            raise ValueError(f"center_pose must contain [x, y, cos, sin], got {pose.shape}")
+        normalized_layer = str(layer)
+        if object_types is None:
+            if normalized_layer in {"polygons", "areas"}:
+                requested = ("area", "drivable_area", "crosswalk")
+            else:
+                requested = ("line_string", "stop_line", "traffic_light", "regulatory_element")
+        else:
+            requested = tuple(object_types)
+        candidates = tuple(
+            obj
+            for object_type in requested
+            for obj in self.get_objects(object_type)
+        )
+        result: list[MapObjectMatch] = []
+        for row_index, row in enumerate(values):
+            points, has_data = _row_points(row)
+            if len(points) < 2:
+                result.append(
+                    self._map_match(
+                        layer=normalized_layer,
+                        row_index=row_index,
+                        frame_index=frame_index,
+                        source_object_id=None,
+                        match_distance_m=None,
+                        candidate_ids=(),
+                        reason="padding" if not has_data else "invalid_geometry",
+                    )
+                )
+                continue
+            if not candidates:
+                result.append(
+                    self._map_match(
+                        layer=normalized_layer,
+                        row_index=row_index,
+                        frame_index=frame_index,
+                        source_object_id=None,
+                        match_distance_m=None,
+                        candidate_ids=(),
+                        reason="no_source_geometry",
+                    )
+                )
+                continue
+            global_points = _local_to_global(points, pose)
+            if normalized_layer in {"polygons", "areas"} and len(global_points) >= 3:
+                query_geometry: BaseGeometry = _repair_polygon(global_points) or LineString(global_points)
+            else:
+                query_geometry = LineString(global_points)
+            ranked = sorted(
+                (
+                    (obj.id, _geometry_score(query_geometry, obj.geometry))
+                    for obj in candidates
+                ),
+                key=lambda item: (item[1], item[0]),
+            )
+            candidates_ids = tuple(item[0] for item in ranked[:candidate_limit])
+            best_id, best_score = ranked[0]
+            matched = best_score <= max_distance
+            result.append(
+                self._map_match(
+                    layer=normalized_layer,
+                    row_index=row_index,
+                    frame_index=frame_index,
+                    source_object_id=best_id if matched else None,
+                    match_distance_m=best_score,
+                    candidate_ids=candidates_ids,
+                    reason="matched" if matched else "above_threshold",
+                )
+            )
+        return tuple(result)
+
     def unmatched_rows(
         self,
         segments: np.ndarray,
@@ -592,6 +995,41 @@ def _local_to_global(points: np.ndarray, center_pose: np.ndarray) -> np.ndarray:
     return np.column_stack((x, y))
 
 
+def _normalize_object_type(object_type: Optional[str]) -> Optional[str]:
+    if object_type is None:
+        return None
+    value = str(object_type).strip().lower().replace("-", "_")
+    return {
+        "lane": "lanelet",
+        "lanes": "lanelet",
+        "lanelets": "lanelet",
+        "polygon": "area",
+        "polygons": "area",
+        "line": "line_string",
+        "lines": "line_string",
+        "linestring": "line_string",
+        "line_strings": "line_string",
+        "crosswalks": "crosswalk",
+        "stop_lines": "stop_line",
+        "traffic_lights": "traffic_light",
+        "regulatory_elements": "regulatory_element",
+        "drivable_areas": "drivable_area",
+    }.get(value, value)
+
+
+def _object_geometry(obj: T4Lanelet | T4MapObject) -> BaseGeometry:
+    return obj.polygon if isinstance(obj, T4Lanelet) else obj.geometry
+
+
+def _geometry_score(query: BaseGeometry, reference: BaseGeometry) -> float:
+    """Symmetric geometric distance used for source-ID recovery."""
+
+    try:
+        return float(query.hausdorff_distance(reference))
+    except (TypeError, ValueError, AttributeError):
+        return float(query.distance(reference))
+
+
 def _row_points(row: np.ndarray) -> tuple[np.ndarray, bool]:
     """Trim trailing padding without discarding a valid point at the origin."""
     values = np.asarray(row, dtype=np.float64)
@@ -617,5 +1055,6 @@ __all__ = [
     "MapObjectMatch",
     "T4Lanelet",
     "T4MapAPI",
+    "T4MapObject",
     "resolve_t4_map_path",
 ]

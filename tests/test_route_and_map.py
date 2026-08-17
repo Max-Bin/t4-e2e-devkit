@@ -141,3 +141,61 @@ def test_lanelet_map_parser_recovers_ids_geometry_speed_and_graph(tmp_path):
     assert payload["frame_index"] == 7
     assert payload["source_path"] == osm.name
     assert payload["matches"][0]["source_object_id"] == "100"
+
+
+def test_map_api_recovers_semantic_objects_and_matches_tensor_rows(tmp_path):
+    osm = tmp_path / "semantic.osm"
+    osm.write_text(
+        """<?xml version="1.0"?>
+<osm>
+  <node id="1"><tag k="local_x" v="0"/><tag k="local_y" v="0"/></node>
+  <node id="2"><tag k="local_x" v="4"/><tag k="local_y" v="0"/></node>
+  <node id="3"><tag k="local_x" v="4"/><tag k="local_y" v="2"/></node>
+  <node id="4"><tag k="local_x" v="0"/><tag k="local_y" v="2"/></node>
+  <node id="5"><tag k="local_x" v="2"/><tag k="local_y" v="-1"/><tag k="type" v="traffic_light"/></node>
+  <way id="20"><nd ref="1"/><nd ref="2"/><nd ref="3"/><nd ref="4"/><nd ref="1"/>
+    <tag k="subtype" v="crosswalk"/></way>
+  <way id="21"><nd ref="1"/><nd ref="2"/><tag k="subtype" v="stop_line"/></way>
+  <way id="22"><nd ref="1"/><nd ref="2"/><nd ref="3"/><nd ref="4"/><nd ref="1"/>
+    <tag k="type" v="area"/><tag k="subtype" v="drivable_area"/></way>
+  <relation id="30"><member type="node" role="light_bulbs" ref="5"/>
+    <tag k="type" v="regulatory_element"/><tag k="subtype" v="traffic_light"/></relation>
+</osm>
+""",
+        encoding="utf-8",
+    )
+
+    api = T4MapAPI(osm)
+    assert api.available_ids("crosswalk") == ("20",)
+    assert api.available_ids("stop_lines") == ("21",)
+    assert api.get_crosswalks()[0].tags["subtype"] == "crosswalk"
+    assert api.get_drivable_areas()[0].id == "22"
+    assert {obj.id for obj in api.get_traffic_lights()} == {"5", "30"}
+    assert api.get_map_object("21", "stop_line").object_type == "stop_line"
+    nearby = api.query_objects((0.0, 0.0), 0.01, ("crosswalk", "stop_line"))
+    assert [obj.id for obj in nearby] == ["20", "21"]
+
+    polygon_row = np.array(
+        [[[0.0, 0.0, 0.0], [4.0, 0.0, 0.0], [4.0, 2.0, 0.0], [0.0, 2.0, 0.0]]],
+        dtype=np.float32,
+    )
+    line_row = np.array(
+        [[[0.0, 0.0, 0.0], [4.0, 0.0, 0.0]]],
+        dtype=np.float32,
+    )
+    polygon_match = api.match_local_geometries_detailed(
+        polygon_row,
+        [0.0, 0.0, 1.0, 0.0],
+        layer="polygons",
+        object_types=("crosswalk",),
+        max_distance=0.01,
+    )
+    line_match = api.match_local_geometries_detailed(
+        line_row,
+        [0.0, 0.0, 1.0, 0.0],
+        layer="line_strings",
+        object_types=("stop_line",),
+        max_distance=0.01,
+    )
+    assert polygon_match[0].source_object_id == "20"
+    assert line_match[0].source_object_id == "21"

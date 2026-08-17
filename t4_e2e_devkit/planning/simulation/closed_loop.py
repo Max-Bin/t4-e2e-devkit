@@ -43,6 +43,13 @@ from t4_e2e_devkit.planning.simulation.closed_loop_geometry import (
     ReplayGeometry,
     compute_replay_geometry,
 )
+from t4_e2e_devkit.planning.simulation.interfaces import (
+    EgoController,
+    ObservationProvider,
+    ReplayObservationProvider,
+    ReplayTrafficPolicy,
+    TrafficPolicy,
+)
 from t4_e2e_devkit.planning.simulation.trajectory.trajectory_sampling import (
     TrajectorySampling,
 )
@@ -243,6 +250,15 @@ class PerfectTracker:
         self.last_yaw_rate = 0.0
         self.last_steering = 0.0
 
+    def step(self, state: KinematicState, reference_world: np.ndarray) -> KinematicState:
+        """Protocol-compatible alias for :meth:`track_state`."""
+
+        updated = self.track_state(state, reference_world)
+        self.last_accel = updated.acceleration_mps2
+        self.last_yaw_rate = updated.yaw_rate_radps
+        self.last_steering = updated.steering_rad
+        return updated
+
 
 @dataclass
 class T4ClosedLoopResult:
@@ -330,6 +346,10 @@ class T4ClosedLoopRunner:
         scene_provider: ReplaySceneProvider | Callable[[int], T4Scene],
         config: Optional[T4ClosedLoopConfig] = None,
         close_callback: Optional[Callable[[], None]] = None,
+        *,
+        controller: Optional[EgoController] = None,
+        observation_provider: Optional[ObservationProvider] = None,
+        traffic_policy: Optional[TrafficPolicy] = None,
     ) -> None:
         if getattr(agent, "requires_scene", False):
             raise ValueError(
@@ -340,6 +360,14 @@ class T4ClosedLoopRunner:
         self.scene_provider = scene_provider
         self.config = config or T4ClosedLoopConfig()
         self._close_callback = close_callback
+        self._controller: EgoController = controller or PerfectTracker(
+            dt_s=self.config.dt_s,
+            max_speed_mps=self.config.max_speed_mps,
+        )
+        self.observation_provider: ObservationProvider = (
+            observation_provider or ReplayObservationProvider()
+        )
+        self.traffic_policy: TrafficPolicy = traffic_policy or ReplayTrafficPolicy()
 
     @classmethod
     def from_scene_dir(
@@ -350,6 +378,9 @@ class T4ClosedLoopRunner:
         *,
         config: Optional[T4ClosedLoopConfig] = None,
         reader_config: Optional[dict] = None,
+        controller: Optional[EgoController] = None,
+        observation_provider: Optional[ObservationProvider] = None,
+        traffic_policy: Optional[TrafficPolicy] = None,
     ) -> "T4ClosedLoopRunner":
         """Create a runner whose observations come from one T4 scene directory."""
 
@@ -370,7 +401,15 @@ class T4ClosedLoopRunner:
             ),
             reader_config=reader_config,
         )
-        return cls(agent, builder.build, loop_config, close_callback=builder.close)
+        return cls(
+            agent,
+            builder.build,
+            loop_config,
+            close_callback=builder.close,
+            controller=controller,
+            observation_provider=observation_provider,
+            traffic_policy=traffic_policy,
+        )
 
     def close(self) -> None:
         """Release resources owned by :meth:`from_scene_dir`."""
@@ -396,6 +435,8 @@ class T4ClosedLoopRunner:
             )
         if num_steps < 1:
             raise ValueError(f"num_steps must be positive, got {num_steps}")
+
+        self._controller.reset()
 
         first_scene = self.scene_provider(int(start_frame))
         if len(first_scene.frames) != self.config.history_frames:
@@ -425,6 +466,17 @@ class T4ClosedLoopRunner:
         for step in range(num_steps):
             source_frame = int(start_frame + step)
             replay_scene = first_scene if step == 0 else self.scene_provider(source_frame)
+            replay_scene = self.traffic_policy.update(
+                replay_scene,
+                state=state,
+                step=step,
+                dt_s=self.config.dt_s,
+            )
+            if not isinstance(replay_scene, T4Scene):
+                raise TypeError(
+                    "traffic policies must return a T4Scene, "
+                    f"got {type(replay_scene).__name__}"
+                )
             last_replay_scene = replay_scene
             if len(replay_scene.frames) != self.config.history_frames:
                 raise ValueError(
@@ -439,7 +491,12 @@ class T4ClosedLoopRunner:
                 if collision_tokens:
                     collision_steps.append(step)
 
-            agent_input = _build_live_agent_input(replay_scene, history_world, state, self.config.dt_s)
+            agent_input = self.observation_provider.get_observation(
+                replay_scene,
+                history_world,
+                state,
+                self.config.dt_s,
+            )
             raw_plan: Optional[Trajectory] = None
             if cached_world_plan is None or step % self.config.replan_interval == 0:
                 raw_plan = self.agent.compute_trajectory(agent_input)
@@ -454,8 +511,12 @@ class T4ClosedLoopRunner:
 
             assert cached_world_plan is not None
             reference = cached_world_plan[cached_plan_offset:]
-            next_state = self._tracker.track(state, reference)
-            assert isinstance(next_state, KinematicState)
+            next_state = self._controller.step(state, reference)
+            if not isinstance(next_state, KinematicState):
+                raise TypeError(
+                    "ego controllers must return KinematicState, "
+                    f"got {type(next_state).__name__}"
+                )
             cached_plan_offset += 1
 
             geometry_event = compute_replay_geometry(
@@ -519,16 +580,9 @@ class T4ClosedLoopRunner:
 
     @property
     def _tracker(self) -> PerfectTracker:
-        """Lazily create the stateless tracker once per runner."""
+        """Backward-compatible access to the configured ego controller."""
 
-        tracker = getattr(self, "_tracker_instance", None)
-        if tracker is None:
-            tracker = PerfectTracker(
-                dt_s=self.config.dt_s,
-                max_speed_mps=self.config.max_speed_mps,
-            )
-            self._tracker_instance = tracker
-        return tracker
+        return self._controller  # type: ignore[return-value]
 
 
 def run_t4_closed_loop(
@@ -540,6 +594,9 @@ def run_t4_closed_loop(
     *,
     config: Optional[T4ClosedLoopConfig] = None,
     reader_config: Optional[dict] = None,
+    controller: Optional[EgoController] = None,
+    observation_provider: Optional[ObservationProvider] = None,
+    traffic_policy: Optional[TrafficPolicy] = None,
 ) -> T4ClosedLoopResult:
     """Convenience function for one sensor-replay closed-loop rollout."""
 
@@ -549,6 +606,9 @@ def run_t4_closed_loop(
         root,
         config=config,
         reader_config=reader_config,
+        controller=controller,
+        observation_provider=observation_provider,
+        traffic_policy=traffic_policy,
     ) as runner:
         return runner.run(start_frame=start_frame, num_steps=num_steps)
 

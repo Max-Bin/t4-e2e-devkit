@@ -20,6 +20,15 @@ from t4_e2e_devkit.evaluation.closed_loop_artifact import (
 from t4_e2e_devkit.evaluation.closed_loop_report import (
     write_static_html_report,
 )
+from t4_e2e_devkit.evaluation.executor import LocalExecutor, shard_indices
+from t4_e2e_devkit.evaluation.metric_cache import MetricCache
+from t4_e2e_devkit.evaluation.metric_engine import (
+    MetricContext,
+    MetricDefinition,
+    MetricEngine,
+    MetricRecord,
+    MetricReport,
+)
 from t4_e2e_devkit.evaluation.open_loop import (
     OpenLoopMetricConfig,
     OpenLoopMetrics,
@@ -59,5 +68,13 @@ __all__ = [
     "compute_open_loop_metrics",
     "load_rollout_artifact",
     "load_rollout_metrics",
+    "MetricCache",
+    "MetricContext",
+    "MetricDefinition",
+    "MetricEngine",
+    "MetricRecord",
+    "MetricReport",
+    "LocalExecutor",
+    "shard_indices",
     "write_static_html_report",
 ]

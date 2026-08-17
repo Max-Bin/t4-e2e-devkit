@@ -674,7 +674,8 @@ class T4Scene:
     scene_metadata: SceneMetadata
     frames: List[T4Frame]
     future_ego_poses: Optional[npt.NDArray[np.float32]] = None  # [F, 3] in centre frame
-    future_annotations: Optional[List[Annotations]] = None  # per future frame
+    # Includes the current frame at index 0, followed by recorded future frames.
+    future_annotations: Optional[List[Annotations]] = None
     goal_pose: Optional[npt.NDArray[np.float32]] = None  # [4] x, y, cos, sin
     pdm_progress: Optional[float] = None  # PDM-Closed reference progress
     # The PDM-Closed path that earned that progress, [51, 3] (x, y, heading) in

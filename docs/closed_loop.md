@@ -81,6 +81,28 @@ rejected. Sensor storage follows the normal T4 reader contract, so the current
 public camera input is limited to JPEG-backed wide cameras. LiDAR is requested
 only when the agent's `SensorConfig` asks for it.
 
+The rollout components are injectable:
+
+```python
+from t4_e2e_devkit.planning.simulation.interfaces import (
+    ConstantVelocityTrafficPolicy,
+    ReplayObservationProvider,
+)
+
+with T4ClosedLoopRunner.from_scene_dir(
+    agent,
+    scene_dir,
+    root,
+    observation_provider=ReplayObservationProvider(),
+    traffic_policy=ConstantVelocityTrafficPolicy(),
+) as runner:
+    result = runner.run(start_frame=100, num_steps=40)
+```
+
+Use the default replay policy for recorded traffic. The constant-velocity
+policy is a small controlled-test hook; it does not render sensors or model
+reactive traffic.
+
 `result.collision_steps` is `None` when the replay source has no annotations;
 an empty tuple means annotations were present and no collision was observed.
 `result.timeout` is available when the scene provides a goal and the requested

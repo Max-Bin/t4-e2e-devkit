@@ -53,6 +53,8 @@ class T4Dataset(Dataset):
         target_builders: Optional[Sequence[Any]] = None,
         reader_config: Optional[Dict[str, Any]] = None,
         scene_cache_size: int = DEFAULT_SCENE_CACHE_SIZE,
+        feature_cache: Optional[Any] = None,
+        feature_cache_signature: Optional[str] = None,
     ) -> None:
         """
         :param data_list: a data list, or the path to one.
@@ -77,6 +79,23 @@ class T4Dataset(Dataset):
             raise ValueError(
                 f"scene_cache_size must be at least 1, got {scene_cache_size}"
             )
+
+        if feature_cache is None:
+            self.feature_cache = None
+        else:
+            from t4_e2e_devkit.planning.training.feature_cache import FeatureCache
+
+            self.feature_cache = (
+                feature_cache
+                if isinstance(feature_cache, FeatureCache)
+                else FeatureCache(feature_cache)
+            )
+        self.feature_cache_signature = feature_cache_signature or _builder_signature(
+            self.feature_builders,
+            sensor_config=self.sensor_config,
+            scene_filter=self.scene_filter,
+            reader_config=self.reader_config,
+        )
 
         self._builders: "OrderedDict[str, T4WindowBuilder]" = OrderedDict()
 
@@ -114,13 +133,27 @@ class T4Dataset(Dataset):
         :return: ``(features, targets)``.
         """
         agent_input = scene.get_agent_input()
-        features: Dict[str, Any] = {}
-        for builder in self.feature_builders:
-            features.update(builder.compute_features(agent_input))
+        if self.feature_cache is None:
+            features = self._compute_features(agent_input)
+        else:
+            cache_key = self.feature_cache.key(
+                scene.scene_metadata.token,
+                signature=self.feature_cache_signature,
+            )
+            features = self.feature_cache.get_or_compute(
+                cache_key,
+                lambda: self._compute_features(agent_input),
+            )
         targets: Dict[str, Any] = {}
         for builder in self.target_builders:
             targets.update(builder.compute_targets(scene))
         return features, targets
+
+    def _compute_features(self, agent_input) -> Dict[str, Any]:
+        features: Dict[str, Any] = {}
+        for builder in self.feature_builders:
+            features.update(builder.compute_features(agent_input))
+        return features
 
     def _builder(self, scene_dir: str) -> T4WindowBuilder:
         builder = self._builders.get(scene_dir)
@@ -153,6 +186,37 @@ class T4Dataset(Dataset):
         state = self.__dict__.copy()
         state["_builders"] = OrderedDict()
         return state
+
+
+def _builder_signature(
+    builders: Sequence[Any],
+    *,
+    sensor_config: Any = None,
+    scene_filter: Any = None,
+    reader_config: Optional[Dict[str, Any]] = None,
+) -> str:
+    """Build a privacy-safe default signature from feature-builder identities."""
+
+    import hashlib
+
+    payload = {
+        "builders": [
+            {
+                "type": f"{type(builder).__module__}.{type(builder).__qualname__}",
+                "name": (
+                    str(builder.get_unique_name())
+                    if hasattr(builder, "get_unique_name")
+                    else None
+                ),
+                "config": repr(getattr(builder, "__dict__", {})),
+            }
+            for builder in builders
+        ],
+        "sensor_config": repr(sensor_config),
+        "scene_filter": repr(scene_filter),
+        "reader_config": repr(reader_config or {}),
+    }
+    return hashlib.sha256(repr(payload).encode("utf-8")).hexdigest()
 
 
 class T4SceneLocalitySampler(Sampler):

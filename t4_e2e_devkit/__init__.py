@@ -33,12 +33,29 @@ _LAZY: dict[str, tuple[str, str]] = {
     "T4RouteSegment": ("t4_e2e_devkit.dataset.route", "T4RouteSegment"),
     "load_t4_route": ("t4_e2e_devkit.dataset.route", "load_t4_route"),
     "collate_t4": ("t4_e2e_devkit.dataset.dataset", "collate_t4"),
+    "AbstractScenario": (
+        "t4_e2e_devkit.planning.scenario_builder.abstract_scenario",
+        "AbstractScenario",
+    ),
+    "T4Scenario": (
+        "t4_e2e_devkit.planning.scenario_builder.abstract_scenario",
+        "T4Scenario",
+    ),
+    "T4TrafficLightStatus": (
+        "t4_e2e_devkit.planning.scenario_builder.abstract_scenario",
+        "T4TrafficLightStatus",
+    ),
+    "T4ScenarioBuilder": (
+        "t4_e2e_devkit.planning.scenario_builder.t4_scenario",
+        "T4ScenarioBuilder",
+    ),
     # types
     "SceneFilter": ("t4_e2e_devkit.common.dataclasses", "SceneFilter"),
     "SensorConfig": ("t4_e2e_devkit.common.dataclasses", "SensorConfig"),
     "MapObjectMatch": ("t4_e2e_devkit.common.dataclasses", "MapObjectMatch"),
     "MapObjectIds": ("t4_e2e_devkit.common.dataclasses", "MapObjectIds"),
     "T4Lanelet": ("t4_e2e_devkit.common.t4_map", "T4Lanelet"),
+    "T4MapObject": ("t4_e2e_devkit.common.t4_map", "T4MapObject"),
     "T4MapAPI": ("t4_e2e_devkit.common.t4_map", "T4MapAPI"),
     "T4AgentInput": ("t4_e2e_devkit.common.dataclasses", "T4AgentInput"),
     "T4Scene": ("t4_e2e_devkit.common.dataclasses", "T4Scene"),
@@ -95,6 +112,50 @@ _LAZY: dict[str, tuple[str, str]] = {
         "t4_e2e_devkit.planning.simulation.closed_loop",
         "run_t4_closed_loop",
     ),
+    "EgoController": (
+        "t4_e2e_devkit.planning.simulation.interfaces",
+        "EgoController",
+    ),
+    "ObservationProvider": (
+        "t4_e2e_devkit.planning.simulation.interfaces",
+        "ObservationProvider",
+    ),
+    "TrafficPolicy": (
+        "t4_e2e_devkit.planning.simulation.interfaces",
+        "TrafficPolicy",
+    ),
+    "CallableObservationProvider": (
+        "t4_e2e_devkit.planning.simulation.interfaces",
+        "CallableObservationProvider",
+    ),
+    "CallableTrafficPolicy": (
+        "t4_e2e_devkit.planning.simulation.interfaces",
+        "CallableTrafficPolicy",
+    ),
+    "ReplayObservationProvider": (
+        "t4_e2e_devkit.planning.simulation.interfaces",
+        "ReplayObservationProvider",
+    ),
+    "ReplayTrafficPolicy": (
+        "t4_e2e_devkit.planning.simulation.interfaces",
+        "ReplayTrafficPolicy",
+    ),
+    "ConstantVelocityTrafficPolicy": (
+        "t4_e2e_devkit.planning.simulation.interfaces",
+        "ConstantVelocityTrafficPolicy",
+    ),
+    "MetricCache": ("t4_e2e_devkit.evaluation.metric_cache", "MetricCache"),
+    "MetricContext": ("t4_e2e_devkit.evaluation.metric_engine", "MetricContext"),
+    "MetricDefinition": ("t4_e2e_devkit.evaluation.metric_engine", "MetricDefinition"),
+    "MetricEngine": ("t4_e2e_devkit.evaluation.metric_engine", "MetricEngine"),
+    "MetricRecord": ("t4_e2e_devkit.evaluation.metric_engine", "MetricRecord"),
+    "MetricReport": ("t4_e2e_devkit.evaluation.metric_engine", "MetricReport"),
+    "FeatureCache": (
+        "t4_e2e_devkit.planning.training.feature_cache",
+        "FeatureCache",
+    ),
+    "LocalExecutor": ("t4_e2e_devkit.evaluation.executor", "LocalExecutor"),
+    "shard_indices": ("t4_e2e_devkit.evaluation.executor", "shard_indices"),
     # evaluation
     "T4PDMScorer": ("t4_e2e_devkit.evaluation.pdm_score", "T4PDMScorer"),
     "T4PDMReferenceProvider": (
@@ -138,7 +199,7 @@ if TYPE_CHECKING:  # let type checkers and IDEs see the real symbols
         aggregate_pdm_results,
         aggregate_results,
     )
-    from t4_e2e_devkit.common.t4_map import T4Lanelet, T4MapAPI
+    from t4_e2e_devkit.common.t4_map import T4Lanelet, T4MapAPI, T4MapObject
     from t4_e2e_devkit.dataset.datalist import load_data_list
     from t4_e2e_devkit.dataset.dataset import T4Dataset, collate_t4
     from t4_e2e_devkit.dataset.route import (
@@ -155,6 +216,15 @@ if TYPE_CHECKING:  # let type checkers and IDEs see the real symbols
         ClosedLoopTrace,
         compute_closed_loop_metrics,
     )
+    from t4_e2e_devkit.evaluation.executor import LocalExecutor, shard_indices
+    from t4_e2e_devkit.evaluation.metric_cache import MetricCache
+    from t4_e2e_devkit.evaluation.metric_engine import (
+        MetricContext,
+        MetricDefinition,
+        MetricEngine,
+        MetricRecord,
+        MetricReport,
+    )
     from t4_e2e_devkit.evaluation.open_loop import (
         OpenLoopMetricConfig,
         OpenLoopMetrics,
@@ -163,6 +233,12 @@ if TYPE_CHECKING:  # let type checkers and IDEs see the real symbols
     from t4_e2e_devkit.evaluation.pdm_score import T4PDMScorer
     from t4_e2e_devkit.evaluation.reference_provider import T4PDMReferenceProvider
     from t4_e2e_devkit.evaluation.report import aggregate_evaluation
+    from t4_e2e_devkit.planning.scenario_builder.abstract_scenario import (
+        AbstractScenario,
+        T4Scenario,
+        T4TrafficLightStatus,
+    )
+    from t4_e2e_devkit.planning.scenario_builder.t4_scenario import T4ScenarioBuilder
     from t4_e2e_devkit.planning.simulation.closed_loop import (
         KinematicState,
         PerfectTracker,
@@ -171,7 +247,18 @@ if TYPE_CHECKING:  # let type checkers and IDEs see the real symbols
         T4ClosedLoopRunner,
         run_t4_closed_loop,
     )
+    from t4_e2e_devkit.planning.simulation.interfaces import (
+        CallableObservationProvider,
+        CallableTrafficPolicy,
+        ConstantVelocityTrafficPolicy,
+        EgoController,
+        ObservationProvider,
+        ReplayObservationProvider,
+        ReplayTrafficPolicy,
+        TrafficPolicy,
+    )
     from t4_e2e_devkit.planning.training.callbacks import PredictionVizCallback
+    from t4_e2e_devkit.planning.training.feature_cache import FeatureCache
     from t4_e2e_devkit.visualization.plots import render_prediction_bev
 
 

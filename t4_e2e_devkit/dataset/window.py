@@ -141,6 +141,9 @@ class T4WindowBuilder:
         )
         config.setdefault("t4_image_size_hw", list(T4_DEFAULT_IMAGE_SIZE_HW))
         self.reader_config = config
+        self._include_history_annotations = _as_bool(
+            config.get("t4_include_history_annotations", False)
+        )
         self.route_metadata: Optional[T4RouteMetadata] = load_t4_route(
             self.scene_dir,
             strict=_as_bool(config.get("t4_route_required", False)),
@@ -295,9 +298,11 @@ class T4WindowBuilder:
                         control_state=self.read_control_state(frame_index),
                     ),
                     map_tensors=self.read_map(frame_index) if frame_index == center else None,
-                    annotations=self.read_annotations(frame_index, center)
-                    if frame_index == center
-                    else None,
+                    annotations=(
+                        self.read_annotations(frame_index, center)
+                        if frame_index == center or self._include_history_annotations
+                        else None
+                    ),
                     cameras=self.read_cameras(frame_index, iteration),
                     lidar=self.read_lidar(frame_index, iteration),
                 )
@@ -375,13 +380,15 @@ class T4WindowBuilder:
                 frame_index=frame_index,
                 allowed_ids=route_ids or None,
             )
-            polygon_matches = self.map_api.unmatched_rows(
+            polygon_matches = self.map_api.match_local_geometries_detailed(
                 fields["polygons"],
+                center_pose,
                 layer="polygons",
                 frame_index=frame_index,
             )
-            line_string_matches = self.map_api.unmatched_rows(
+            line_string_matches = self.map_api.match_local_geometries_detailed(
                 fields["line_strings"],
+                center_pose,
                 layer="line_strings",
                 frame_index=frame_index,
             )

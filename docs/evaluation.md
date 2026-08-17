@@ -145,3 +145,25 @@ the common configuration and token uniqueness before recomputing the aggregate.
 metrics remain in their own report section and are never folded into PDM or
 open-loop scores. Use `--num-shards`, `--shard-index`, `--max-retries`, and
 `--resume` for large or interrupted runs.
+
+## Metric engine and local execution
+
+For library users that need one interface across families:
+
+```python
+from t4_e2e_devkit.evaluation import MetricContext, MetricEngine
+
+engine = MetricEngine.t4_default()
+report = engine.evaluate(
+    MetricContext(token=token, prediction=prediction, ground_truth=scene),
+    families=("open_loop",),
+)
+```
+
+`MetricEngine` keeps family records separate and supports custom registrations.
+`MetricCache("results/cache")` can be passed to `evaluate` for atomic,
+content-addressed reuse. The cache contains metric outputs only.
+
+`LocalExecutor` in `t4_e2e_devkit.evaluation.executor` runs an ordered map
+serially or with local processes. Its rank/world-size sharding is deterministic
+and independent of Slurm, Ray and tracking services.

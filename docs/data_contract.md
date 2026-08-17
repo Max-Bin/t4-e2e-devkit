@@ -86,18 +86,20 @@ The source of each identity is explicit:
 | lanelet IDs and geometry | the resolved `lanelet2_map.osm` `<relation id="…">` entries |
 
 There is no separate precomputed match table in the dataset. When
-`t4_attach_map_ids=true`, the reader parses all lanelet relations from the OSM
-file, then matches each scene-local lane row geometrically. The full source ID
-index is available as `T4MapAPI.available_object_ids`; the row-level result is
+`t4_attach_map_ids=true`, the reader parses all source objects from the OSM file
+and matches scene-local rows geometrically. The full lanelet ID index is
+available as `T4MapAPI.available_object_ids`; semantic IDs are available through
+`available_ids(object_type=...)`; the row-level result is
 `MapTensors.object_ids.matches`.
 
 Each `MapObjectMatch` records the tensor layer and row, source ID, source-file
 label, frame index, score, candidates and a reason. The label is only a
 portable filename; local filesystem prefixes are not serialized. `None` means
-padding, unsupported source type or an unsuccessful match; IDs are never
-fabricated. Polygon and line-string rows are currently reported as
-`unsupported_source_type` because their source IDs are not recovered by the
-Lanelet2 parser.
+padding, missing source geometry or an unsuccessful match; IDs are never
+fabricated. Unmatched rows retain their candidate IDs and reason for audit.
+`T4MapAPI.get_objects()` and `query_objects()` expose source tags and geometry
+for lanelets, line strings, crosswalks, stop lines, traffic lights, regulatory
+elements and areas.
 
 To export an audit sidecar, choose an ignored runtime directory explicitly:
 

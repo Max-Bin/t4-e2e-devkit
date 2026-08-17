@@ -124,6 +124,7 @@ the `t4_e2e_devkit.agents` entry-point group.
 | [`docs/agents.md`](docs/agents.md) | agent interface and builders |
 | [`docs/evaluation.md`](docs/evaluation.md) | scoring backends and sampling |
 | [`docs/closed_loop.md`](docs/closed_loop.md) | sensor-replay closed-loop rollout |
+| [`docs/runtime.md`](docs/runtime.md) | feature cache and local execution |
 | [`docs/visualization.md`](docs/visualization.md) | BEV, cameras and sample image |
 | [`docs/vendor_audit.md`](docs/vendor_audit.md) | vendored TODO and provenance audit |
 | [`docs/migration.md`](docs/migration.md) | integrating an existing agent |
