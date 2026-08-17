@@ -39,6 +39,10 @@ from t4_e2e_devkit.common.dataclasses import (
 from t4_e2e_devkit.common.enums import T4BoxIndex
 from t4_e2e_devkit.dataset.scene import build_ego_status
 from t4_e2e_devkit.dataset.window import T4WindowBuilder
+from t4_e2e_devkit.planning.simulation.closed_loop_geometry import (
+    ReplayGeometry,
+    compute_replay_geometry,
+)
 from t4_e2e_devkit.planning.simulation.trajectory.trajectory_sampling import (
     TrajectorySampling,
 )
@@ -60,6 +64,7 @@ class T4ClosedLoopConfig:
     replan_interval: int = 1
     max_speed_mps: float = 20.0
     goal_radius_m: float = 2.0
+    ttc_horizon_s: Optional[float] = 1.0
 
     def __post_init__(self) -> None:
         if self.dt_s <= 0.0:
@@ -82,6 +87,10 @@ class T4ClosedLoopConfig:
         if self.goal_radius_m <= 0.0:
             raise ValueError(
                 f"goal_radius_m must be positive, got {self.goal_radius_m}"
+            )
+        if self.ttc_horizon_s is not None and self.ttc_horizon_s <= 0.0:
+            raise ValueError(
+                f"ttc_horizon_s must be positive or None, got {self.ttc_horizon_s}"
             )
 
 
@@ -247,6 +256,7 @@ class T4ClosedLoopResult:
     collision_steps: Optional[tuple[int, ...]] = None
     timeout: Optional[bool] = None
     termination_reason: str = "completed"
+    geometry: Optional[List[Optional[ReplayGeometry]]] = None
 
     def __post_init__(self) -> None:
         self.source_frames = np.asarray(self.source_frames, dtype=np.int64)
@@ -272,6 +282,10 @@ class T4ClosedLoopResult:
                     f"{steps} for {len(self.source_frames)} steps"
                 )
             self.collision_steps = steps
+        if self.geometry is not None and len(self.geometry) != len(self.source_frames):
+            raise ValueError(
+                "closed-loop geometry must align with source_frames"
+            )
         if self.timeout is not None:
             self.timeout = bool(self.timeout)
         if self.termination_reason not in {
@@ -402,6 +416,8 @@ class T4ClosedLoopRunner:
         plans: List[Optional[Trajectory]] = []
         collision_steps: List[int] = []
         collision_events_available = False
+        geometry_events: List[Optional[ReplayGeometry]] = []
+        geometry_events_available = False
         last_replay_scene: Optional[T4Scene] = None
         cached_world_plan: Optional[np.ndarray] = None
         cached_plan_offset = 0
@@ -442,6 +458,15 @@ class T4ClosedLoopRunner:
             assert isinstance(next_state, KinematicState)
             cached_plan_offset += 1
 
+            geometry_event = compute_replay_geometry(
+                next_state,
+                replay_scene,
+                ttc_horizon_s=self.config.ttc_horizon_s,
+                ttc_step_s=self.config.dt_s,
+            )
+            geometry_events.append(geometry_event if geometry_event.available else None)
+            geometry_events_available = geometry_events_available or geometry_event.available
+
             source_frames.append(source_frame)
             plans.append(raw_plan)
             states.append(next_state)
@@ -457,6 +482,16 @@ class T4ClosedLoopRunner:
                 if final_collision_tokens and (num_steps - 1) not in collision_steps:
                     collision_steps.append(num_steps - 1)
                     collision_steps.sort()
+
+            final_geometry = compute_replay_geometry(
+                states[-1],
+                last_replay_scene,
+                ttc_horizon_s=self.config.ttc_horizon_s,
+                ttc_step_s=self.config.dt_s,
+            )
+            if final_geometry.available:
+                geometry_events[-1] = final_geometry
+                geometry_events_available = True
 
         timeout: Optional[bool] = None
         termination_reason = "completed"
@@ -477,6 +512,7 @@ class T4ClosedLoopRunner:
             dt_s=self.config.dt_s,
             goal_pose_world=goal_pose_world,
             collision_steps=tuple(collision_steps) if collision_events_available else None,
+            geometry=geometry_events if geometry_events_available else None,
             timeout=timeout,
             termination_reason=termination_reason,
         )

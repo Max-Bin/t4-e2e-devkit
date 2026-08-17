@@ -92,6 +92,11 @@ def test_closed_loop_metrics_keep_unknown_events_unreported():
     assert metrics.first_collision_step == 1.0
     assert metrics.timeout == 0.0
     assert "collision" in metrics.values
+    assert metrics.trace is not None
+    assert len(metrics.trace.step) == 2
+    np.testing.assert_allclose(metrics.trace.path_length_m, [1.0, 2.0])
+    assert metrics.trace.collision.tolist() == [False, True]
+    assert metrics.trace.rows("scene@10")[1]["source_frame"] == 11
 
 
 def test_closed_loop_command_writes_family_reports(tmp_path, monkeypatch):
@@ -125,4 +130,125 @@ def test_closed_loop_command_writes_family_reports(tmp_path, monkeypatch):
     assert (tmp_path / "report" / "closed_loop.csv").is_file()
     assert (tmp_path / "report" / "aggregate.json").is_file()
     assert (tmp_path / "report" / "aggregate.yaml").is_file()
+    assert (tmp_path / "report" / "closed_loop_ticks.csv").is_file()
+    assert (tmp_path / "report" / "failures.csv").is_file()
+    assert (tmp_path / "report" / "report.html").is_file()
+    artifacts = list((tmp_path / "report" / "rollouts").glob("*.json"))
+    assert len(artifacts) == 1
+    assert (tmp_path / "report" / "run.json").is_file()
     assert "termination/completed" in report["closed_loop"]
+
+    monkeypatch.setattr(
+        command,
+        "build_agent",
+        lambda _: pytest.fail("resume should not build the agent"),
+    )
+    monkeypatch.setattr(
+        command,
+        "run_t4_closed_loop",
+        lambda *args, **kwargs: pytest.fail("resume should not rerun a completed row"),
+    )
+    resumed = command.evaluate_closed_loop(
+        DataList(root=tmp_path, rows=[("scene", 10)]),
+        agent_name="agent",
+        output_dir=tmp_path / "report",
+        num_steps=1,
+        resume=True,
+    )
+    assert resumed["run"]["num_resumed"] == pytest.approx(1.0)
+
+
+def test_closed_loop_command_shards_and_retries_rows(tmp_path, monkeypatch):
+    from t4_e2e_devkit.planning.simulation.closed_loop import T4ClosedLoopResult
+    from t4_e2e_devkit.script import evaluate_closed_loop as command
+
+    class _Agent:
+        def initialize(self):
+            pass
+
+    result = T4ClosedLoopResult(
+        source_frames=np.array([10]),
+        states=[
+            KinematicState(0.0, 0.0, 0.0, 1.0),
+            KinematicState(0.1, 0.0, 0.0, 1.0),
+        ],
+        plans=[None],
+        dt_s=0.1,
+    )
+    calls = {"runs": 0}
+
+    def _run(*args, **kwargs):
+        calls["runs"] += 1
+        if calls["runs"] == 1:
+            raise RuntimeError("transient")
+        return result
+
+    monkeypatch.setattr(command, "build_agent", lambda _: _Agent())
+    monkeypatch.setattr(command, "run_t4_closed_loop", _run)
+
+    report = command.evaluate_closed_loop(
+        DataList(
+            root=tmp_path,
+            rows=[("scene0", 10), ("scene1", 11), ("scene2", 12)],
+        ),
+        agent_name="agent",
+        output_dir=tmp_path / "retry",
+        num_steps=1,
+        shard_index=1,
+        num_shards=2,
+        max_retries=1,
+    )
+
+    assert calls["runs"] == 2
+    assert report["run"]["num_rows"] == pytest.approx(1.0)
+    assert report["run"]["num_attempts"] == pytest.approx(2.0)
+    assert report["run"]["num_failed"] == pytest.approx(0.0)
+
+
+def test_closed_loop_shards_merge_and_recompute_local_report(tmp_path, monkeypatch):
+    from t4_e2e_devkit.planning.simulation.closed_loop import T4ClosedLoopResult
+    from t4_e2e_devkit.script import evaluate_closed_loop as command
+    from t4_e2e_devkit.script.merge_closed_loop import merge_closed_loop_reports
+
+    class _Agent:
+        def initialize(self):
+            pass
+
+    result = T4ClosedLoopResult(
+        source_frames=np.array([10]),
+        states=[
+            KinematicState(0.0, 0.0, 0.0, 1.0),
+            KinematicState(0.1, 0.0, 0.0, 1.0),
+        ],
+        plans=[None],
+        dt_s=0.1,
+    )
+    monkeypatch.setattr(command, "build_agent", lambda _: _Agent())
+    monkeypatch.setattr(command, "run_t4_closed_loop", lambda *args, **kwargs: result)
+    data_list = DataList(root=tmp_path, rows=[("scene0", 10), ("scene1", 11)])
+
+    command.evaluate_closed_loop(
+        data_list,
+        agent_name="agent",
+        output_dir=tmp_path / "shard0",
+        num_steps=1,
+        shard_index=0,
+        num_shards=2,
+    )
+    command.evaluate_closed_loop(
+        data_list,
+        agent_name="agent",
+        output_dir=tmp_path / "shard1",
+        num_steps=1,
+        shard_index=1,
+        num_shards=2,
+    )
+
+    merged = merge_closed_loop_reports(
+        [tmp_path / "shard0", tmp_path / "shard1"],
+        tmp_path / "merged",
+    )
+    assert merged["closed_loop"]["num_rollouts"] == pytest.approx(2.0)
+    assert merged["run"]["num_completed"] == pytest.approx(2.0)
+    assert (tmp_path / "merged" / "report.html").is_file()
+    assert len(list((tmp_path / "merged" / "rollouts").glob("*.json"))) == 2

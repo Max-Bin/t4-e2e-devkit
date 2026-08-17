@@ -23,9 +23,22 @@ the simulated ego frame when they are present.
 
 When replay annotations are available, the runner transforms their boxes into
 the rollout frame and records ego-agent collision ticks. It also attaches the
-world goal, timeout status and a termination reason to
+world goal, timeout status, geometry events and a termination reason to
 `T4ClosedLoopResult`. The rollout remains ego-only: other agents do not react
 to the simulated ego.
+
+The optional per-tick geometry events include minimum signed agent clearance,
+constant-velocity replay TTC, drivable-area and road-border violations. TTC is
+a diagnostic projection of the recorded box velocity; it is not a traffic-agent
+simulator. A field is omitted when its annotations or map layer is unavailable.
+The T4 map is a local tensor contract, so these checks are limited to the
+provided lane, polygon and road-border window rather than a global map query.
+
+This is also the relevant NuPlan boundary: its standard sensor observation
+paths replay recorded sensor samples or tracked objects. They do not generate
+new camera views or LiDAR sweeps from the simulated pose. Reactive traffic in
+NuPlan updates tracked-object states with a rule-based or user-provided agent
+policy; it is not a photorealistic sensor renderer.
 
 The tracker follows the lightweight perfect-tracker contract used by the
 reference closed-loop evaluator:
@@ -72,3 +85,47 @@ only when the agent's `SensorConfig` asks for it.
 an empty tuple means annotations were present and no collision was observed.
 `result.timeout` is available when the scene provides a goal and the requested
 rollout horizon ends outside the goal radius.
+
+## Batch artifacts
+
+`evaluate-closed-loop` writes one JSON artifact under `rollouts/` for every
+data-list row. It contains the realized ego states, plans at replan ticks,
+termination events and the per-tick trace; raw sensor bytes stay in the T4
+scene and are addressed by `source_frame`. The directory also contains:
+
+- `run.json`: resolved run settings and configuration fingerprint;
+- `closed_loop.csv`: one aggregate row per rollout;
+- `closed_loop_ticks.csv`: one row per simulated action;
+- `failures.csv`: rows that exhausted their retry budget;
+- `report.html`: a self-contained local summary with no external service.
+
+Large runs can be split deterministically and resumed:
+
+```bash
+uv run t4e2e evaluate-closed-loop lists/val.json \
+  --agent my_agent \
+  --output-dir reports/closed_loop \
+  --num-shards 8 --shard-index 0 \
+  --max-retries 1 --resume
+```
+
+`--resume` only reuses successful artifacts whose token and resolved run
+configuration still match. A changed rollout setting or data-list selection
+causes that row to run again.
+
+Shard reports can be merged after all workers finish. The default requires the
+complete declared shard set and rejects duplicate rollout tokens:
+
+```bash
+uv run t4e2e merge-closed-loop \
+  --input-dir reports/shard-0 reports/shard-1 reports/shard-2 reports/shard-3 \
+  --output-dir reports/merged
+```
+
+Use `--allow-incomplete` only when the resulting report is intentionally a
+subset. `report-closed-loop reports/merged` regenerates the HTML from the CSV
+and JSON files.
+
+Visualization outputs are runtime artifacts. Keep generated videos under
+`results/visualization/closed_loop/`; this directory is ignored by Git and is
+not part of the source documentation.

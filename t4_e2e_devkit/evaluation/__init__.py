@@ -9,8 +9,16 @@ from t4_e2e_devkit.common.dataclasses import (
 from t4_e2e_devkit.evaluation.closed_loop import (
     ClosedLoopMetricConfig,
     ClosedLoopMetrics,
+    ClosedLoopTrace,
     aggregate_closed_loop_metrics,
     compute_closed_loop_metrics,
+)
+from t4_e2e_devkit.evaluation.closed_loop_artifact import (
+    load_rollout_artifact,
+    load_rollout_metrics,
+)
+from t4_e2e_devkit.evaluation.closed_loop_report import (
+    write_static_html_report,
 )
 from t4_e2e_devkit.evaluation.open_loop import (
     OpenLoopMetricConfig,
@@ -32,6 +40,7 @@ __all__ = [
     "BACKENDS",
     "ClosedLoopMetricConfig",
     "ClosedLoopMetrics",
+    "ClosedLoopTrace",
     "OpenLoopMetricConfig",
     "OpenLoopMetrics",
     "PDMResults",
@@ -48,4 +57,7 @@ __all__ = [
     "compare_backends",
     "compute_closed_loop_metrics",
     "compute_open_loop_metrics",
+    "load_rollout_artifact",
+    "load_rollout_metrics",
+    "write_static_html_report",
 ]

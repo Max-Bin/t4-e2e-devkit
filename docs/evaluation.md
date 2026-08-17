@@ -97,7 +97,7 @@ per-window consumers, but these values are not part of the PDM aggregate.
 `compute_closed_loop_metrics` evaluates the realized states returned by
 `T4ClosedLoopRunner`: duration, path length, displacement, speed, acceleration,
 yaw rate and stuck detection. The T4 runner automatically derives goal status,
-replayed-agent collisions and timeout from the scene and annotations. Custom
+replayed-agent collisions, geometry events and timeout from the scene and annotations. Custom
 rollout harnesses can still pass explicit event data; unavailable events are
 omitted instead of reported as false zeros.
 
@@ -137,6 +137,11 @@ uv run t4e2e evaluate-closed-loop \
   --output-dir reports/closed_loop
 ```
 
-The command writes `closed_loop.csv`, `aggregate.json`, `aggregate.yaml` and,
-when needed, `failures.csv`. Closed-loop metrics remain in their own report
-section and are never folded into PDM or open-loop scores.
+The command writes `closed_loop.csv`, `aggregate.json`, `aggregate.yaml`,
+`closed_loop_ticks.csv`, `run.json`, `report.html`, and one artifact per row under
+`rollouts/`. Shards are merged with `t4e2e merge-closed-loop`; the merge checks
+the common configuration and token uniqueness before recomputing the aggregate.
+`failures.csv` records rows that exhausted their retry budget. Closed-loop
+metrics remain in their own report section and are never folded into PDM or
+open-loop scores. Use `--num-shards`, `--shard-index`, `--max-retries`, and
+`--resume` for large or interrupted runs.

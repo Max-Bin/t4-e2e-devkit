@@ -15,6 +15,9 @@ outputs/
 multirun/
 lightning_logs/
 
+# Locally generated visualization results are large runtime artifacts.
+results/visualization/closed_loop/
+
 # references/ holds upstream checkouts used for comparison and as vendoring
 # sources. They are not part of this repository's history; tools/vendor.py
 # records which commit each vendored file came from.

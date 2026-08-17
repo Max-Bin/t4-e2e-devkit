@@ -53,6 +53,10 @@ uv run t4e2e evaluate-closed-loop \
   lists/val.json \
   --agent constant_velocity \
   --output-dir reports/closed_loop
+
+uv run t4e2e merge-closed-loop \
+  --input-dir reports/shard-0 reports/shard-1 \
+  --output-dir reports/closed_loop_merged
 ```
 
 Build a reference cache only when an offline CPU run needs one. GPU evaluation

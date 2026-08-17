@@ -52,6 +52,10 @@ _LAZY: dict[str, tuple[str, str]] = {
         "t4_e2e_devkit.evaluation.closed_loop",
         "ClosedLoopMetrics",
     ),
+    "ClosedLoopTrace": (
+        "t4_e2e_devkit.evaluation.closed_loop",
+        "ClosedLoopTrace",
+    ),
     "compute_closed_loop_metrics": (
         "t4_e2e_devkit.evaluation.closed_loop",
         "compute_closed_loop_metrics",
@@ -128,6 +132,7 @@ if TYPE_CHECKING:  # let type checkers and IDEs see the real symbols
     from t4_e2e_devkit.evaluation.closed_loop import (
         ClosedLoopMetricConfig,
         ClosedLoopMetrics,
+        ClosedLoopTrace,
         compute_closed_loop_metrics,
     )
     from t4_e2e_devkit.evaluation.open_loop import (

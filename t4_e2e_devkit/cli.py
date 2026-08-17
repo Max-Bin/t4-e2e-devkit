@@ -8,6 +8,8 @@ One place to discover everything the devkit can do::
     t4e2e train ...              # train an agent (hydra)
     t4e2e score ...              # score an agent (hydra)
     t4e2e evaluate-closed-loop ... # evaluate sensor-replay closed loop
+    t4e2e merge-closed-loop ... # merge completed closed-loop shards
+    t4e2e report-closed-loop ... # render a local HTML report
     t4e2e inspect LIST           # explain a data list, filter policy included
     t4e2e rigs SCENE...          # what cameras a scene has, and how they are stored
     t4e2e visualize SCENE         # render a window: BEV, cameras, or both
@@ -308,6 +310,23 @@ def _cmd_evaluate_closed_loop(argv: Sequence[str]) -> int:
     return evaluate_main(list(argv))
 
 
+def _cmd_merge_closed_loop(argv: Sequence[str]) -> int:
+    from t4_e2e_devkit.script.merge_closed_loop import main as merge_main
+
+    return merge_main(list(argv))
+
+
+def _cmd_report_closed_loop(argv: Sequence[str]) -> int:
+    parser = argparse.ArgumentParser(prog="t4e2e report-closed-loop")
+    parser.add_argument("report_dir", help="evaluation report directory")
+    parser.add_argument("--out", default=None, help="HTML output path; defaults to report.html")
+    args = parser.parse_args(argv)
+    from t4_e2e_devkit.evaluation.closed_loop_report import write_static_html_report
+
+    print(write_static_html_report(args.report_dir, args.out))
+    return 0
+
+
 COMMANDS = {
     "agents": (_cmd_agents, "list registered agents"),
     "datalist": (_cmd_datalist, "build a data list from a T4 root"),
@@ -316,6 +335,8 @@ COMMANDS = {
         _cmd_evaluate_closed_loop,
         "evaluate sensor-replay closed loop",
     ),
+    "merge-closed-loop": (_cmd_merge_closed_loop, "merge closed-loop shard reports"),
+    "report-closed-loop": (_cmd_report_closed_loop, "render a local closed-loop HTML report"),
     "train": (
         lambda argv: _forward("t4_e2e_devkit.script.run_training", argv),
         "train an agent (hydra)",

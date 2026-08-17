@@ -12,6 +12,7 @@ from t4_e2e_devkit.common.dataclasses import (
     Annotations,
     EgoShape,
     EgoStatus,
+    MapTensors,
     SceneMetadata,
     SensorConfig,
     T4Frame,
@@ -26,6 +27,7 @@ from t4_e2e_devkit.planning.simulation.closed_loop import (
     _densify_for_simulation,
     _rebase_map,
 )
+from t4_e2e_devkit.planning.simulation.closed_loop_geometry import compute_replay_geometry
 from t4_e2e_devkit.planning.simulation.trajectory.trajectory_sampling import (
     TrajectorySampling,
 )
@@ -211,6 +213,49 @@ def test_closed_loop_attaches_replay_events_to_result_and_metrics():
     assert metrics.goal_reached == pytest.approx(1.0)
     assert metrics.timeout == pytest.approx(0.0)
     assert metrics.termination_reason == "collision"
+    assert metrics.min_agent_clearance_m is not None
+    assert metrics.min_agent_clearance_m < 0.0
+    assert metrics.ttc_violation == pytest.approx(1.0)
+    assert metrics.trace is not None
+    assert metrics.trace.ttc_violation is not None
+
+
+def test_closed_loop_geometry_reports_map_events_only_when_map_is_available():
+    scene = _scene(10)
+    lanes = np.zeros((1, 4, 33), dtype=np.float32)
+    lanes[0, :, 0] = [-10.0, -3.0, 3.0, 10.0]
+    lanes[0, :, 4] = 0.0
+    lanes[0, :, 5] = 2.0
+    lanes[0, :, 6] = 0.0
+    lanes[0, :, 7] = -2.0
+    line_strings = np.zeros((1, 4, 4), dtype=np.float32)
+    line_strings[0, :, 0] = [-10.0, -3.0, 3.0, 10.0]
+    line_strings[0, :, 1] = 2.0
+    line_strings[0, :, 3] = 1.0
+    scene.current_frame.map_tensors = MapTensors(
+        lanes=lanes,
+        lanes_speed_limit=np.zeros((1, 1), dtype=np.float32),
+        lanes_has_speed_limit=np.zeros((1, 1), dtype=bool),
+        route_lanes=lanes.copy(),
+        route_lanes_speed_limit=np.zeros((1, 1), dtype=np.float32),
+        route_lanes_has_speed_limit=np.zeros((1, 1), dtype=bool),
+        polygons=np.zeros((1, 4, 3), dtype=np.float32),
+        line_strings=line_strings,
+    )
+
+    inside = compute_replay_geometry(KinematicState(1.0, 0.0, 0.0, 1.0), scene)
+    assert inside.drivable_violation is False
+    assert inside.road_border_violation is False
+    assert inside.road_border_distance_m == pytest.approx(1.1, abs=0.05)
+
+    outside = compute_replay_geometry(KinematicState(1.0, 5.0, 0.0, 1.0), scene)
+    assert outside.drivable_violation is True
+    assert outside.road_border_violation is False
+
+    scene.current_frame.map_tensors = None
+    unavailable = compute_replay_geometry(KinematicState(1.0, 0.0, 0.0, 1.0), scene)
+    assert unavailable.drivable_violation is None
+    assert unavailable.road_border_distance_m is None
 
 
 @pytest.mark.data
