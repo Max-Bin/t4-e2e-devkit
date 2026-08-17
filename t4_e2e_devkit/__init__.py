@@ -26,10 +26,20 @@ _LAZY: dict[str, tuple[str, str]] = {
     "T4Dataset": ("t4_e2e_devkit.dataset.dataset", "T4Dataset"),
     "T4WindowBuilder": ("t4_e2e_devkit.dataset.window", "T4WindowBuilder"),
     "load_data_list": ("t4_e2e_devkit.dataset.datalist", "load_data_list"),
+    "T4SceneTag": ("t4_e2e_devkit.dataset.scene_tags", "T4SceneTag"),
+    "T4SceneTagIndex": ("t4_e2e_devkit.dataset.scene_tags", "T4SceneTagIndex"),
+    "T4RouteMetadata": ("t4_e2e_devkit.dataset.route", "T4RouteMetadata"),
+    "T4RoutePrimitive": ("t4_e2e_devkit.dataset.route", "T4RoutePrimitive"),
+    "T4RouteSegment": ("t4_e2e_devkit.dataset.route", "T4RouteSegment"),
+    "load_t4_route": ("t4_e2e_devkit.dataset.route", "load_t4_route"),
     "collate_t4": ("t4_e2e_devkit.dataset.dataset", "collate_t4"),
     # types
     "SceneFilter": ("t4_e2e_devkit.common.dataclasses", "SceneFilter"),
     "SensorConfig": ("t4_e2e_devkit.common.dataclasses", "SensorConfig"),
+    "MapObjectMatch": ("t4_e2e_devkit.common.dataclasses", "MapObjectMatch"),
+    "MapObjectIds": ("t4_e2e_devkit.common.dataclasses", "MapObjectIds"),
+    "T4Lanelet": ("t4_e2e_devkit.common.t4_map", "T4Lanelet"),
+    "T4MapAPI": ("t4_e2e_devkit.common.t4_map", "T4MapAPI"),
     "T4AgentInput": ("t4_e2e_devkit.common.dataclasses", "T4AgentInput"),
     "T4Scene": ("t4_e2e_devkit.common.dataclasses", "T4Scene"),
     "Trajectory": ("t4_e2e_devkit.common.dataclasses", "Trajectory"),
@@ -117,6 +127,8 @@ if TYPE_CHECKING:  # let type checkers and IDEs see the real symbols
     from t4_e2e_devkit.agents.abstract_agent import AbstractT4Agent
     from t4_e2e_devkit.agents.registry import available_agents, build_agent, register_agent
     from t4_e2e_devkit.common.dataclasses import (
+        MapObjectIds,
+        MapObjectMatch,
         PDMResults,
         SceneFilter,
         SensorConfig,
@@ -126,8 +138,16 @@ if TYPE_CHECKING:  # let type checkers and IDEs see the real symbols
         aggregate_pdm_results,
         aggregate_results,
     )
+    from t4_e2e_devkit.common.t4_map import T4Lanelet, T4MapAPI
     from t4_e2e_devkit.dataset.datalist import load_data_list
     from t4_e2e_devkit.dataset.dataset import T4Dataset, collate_t4
+    from t4_e2e_devkit.dataset.route import (
+        T4RouteMetadata,
+        T4RoutePrimitive,
+        T4RouteSegment,
+        load_t4_route,
+    )
+    from t4_e2e_devkit.dataset.scene_tags import T4SceneTag, T4SceneTagIndex
     from t4_e2e_devkit.dataset.window import T4WindowBuilder
     from t4_e2e_devkit.evaluation.closed_loop import (
         ClosedLoopMetricConfig,

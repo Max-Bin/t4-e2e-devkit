@@ -36,6 +36,7 @@ from t4_e2e_devkit.common.constants import (
 )
 from t4_e2e_devkit.common.dataclasses import SceneFilter
 from t4_e2e_devkit.dataset.datalist import DataList, is_e2e_scene_path
+from t4_e2e_devkit.dataset.scene_tags import T4SceneTagIndex
 from t4_e2e_devkit.dataset.window import T4WindowBuilder
 
 logger = logging.getLogger(__name__)
@@ -56,6 +57,43 @@ def parse_args(argv: Optional[Sequence[str]] = None) -> argparse.Namespace:
     parser.add_argument("--out", required=True, type=Path, help="output data-list path")
     parser.add_argument("--date", action="append", default=None, help="keep only these dates; repeatable")
     parser.add_argument("--vehicle", action="append", default=None, help="keep only these vehicles; repeatable")
+    parser.add_argument(
+        "--scene-tags-root",
+        type=Path,
+        default=None,
+        help="optional external T4 scene-tag root",
+    )
+    parser.add_argument(
+        "--include-tag-event",
+        action="append",
+        default=None,
+        help="keep scenes with all of these event labels; repeatable",
+    )
+    parser.add_argument(
+        "--exclude-tag-event",
+        action="append",
+        default=None,
+        help="drop scenes carrying any of these event labels; repeatable",
+    )
+    parser.add_argument(
+        "--include-lateral-decision",
+        action="append",
+        default=None,
+        help="keep scenes with one of these lateral decisions; repeatable",
+    )
+    parser.add_argument(
+        "--include-longitudinal-decision",
+        action="append",
+        default=None,
+        help="keep scenes with one of these longitudinal decisions; repeatable",
+    )
+    parser.add_argument(
+        "--include-tag-status",
+        action="append",
+        choices=("whitelist", "blacklist"),
+        default=None,
+        help="keep scenes carrying one of these tag statuses; repeatable",
+    )
     parser.add_argument(
         "--history-frames", type=int, default=PAST_FRAMES,
         help="history frames including the current one (default: %(default)s)",
@@ -120,6 +158,10 @@ def build(args: argparse.Namespace) -> DataList:
         require_cameras = list(args.require_cameras)
 
     reader_config: Dict[str, Any] = {"camera_names": list(args.camera_names)}
+    tag_index = None
+    if args.scene_tags_root is not None:
+        tag_index = T4SceneTagIndex.cached(args.scene_tags_root)
+        reader_config["t4_scene_tags_root"] = str(args.scene_tags_root.resolve())
     if args.require_pdm_progress is not None:
         reader_config.update(
             {
@@ -142,6 +184,8 @@ def build(args: argparse.Namespace) -> DataList:
         "rows_dropped_by_camera": 0,
         "rows_dropped_by_pdm_progress": 0,
         "rows_dropped_by_window_error": 0,
+        "scenes_dropped_by_scene_tags": 0,
+        "scenes_without_scene_tags": 0,
     }
     scene_errors: Dict[str, str] = {}
 
@@ -163,6 +207,14 @@ def build(args: argparse.Namespace) -> DataList:
             dropped["rows_dropped_by_vehicle"] += 1
             continue
 
+        if tag_index is not None:
+            tags = tag_index.tags_for_scene(scene_path)
+            if not tags:
+                dropped["scenes_without_scene_tags"] += 1
+            if not _matches_scene_tags(tags, args):
+                dropped["scenes_dropped_by_scene_tags"] += 1
+                continue
+
         try:
             builder = T4WindowBuilder(
                 scene_path, root, scene_filter=scene_filter, reader_config=reader_config
@@ -173,11 +225,11 @@ def build(args: argparse.Namespace) -> DataList:
             # like a corrupt scene.
             key = "scene_without_cameras" if "camera" in str(error).lower() else "scene_unreadable"
             dropped[key] += 1
-            scene_errors[relative] = repr(error)
+            scene_errors[relative] = type(error).__name__
             continue
         except (OSError, KeyError) as error:
             dropped["scene_unreadable"] += 1
-            scene_errors[relative] = repr(error)
+            scene_errors[relative] = type(error).__name__
             continue
 
         try:
@@ -198,6 +250,7 @@ def build(args: argparse.Namespace) -> DataList:
         "glob": args.glob,
         "dates": args.date,
         "vehicles": args.vehicle,
+        "scene_tags_enabled": args.scene_tags_root is not None,
         "camera_names": list(args.camera_names),
         "history_frames": args.history_frames,
         "gt_future_frames": args.future_frames,
@@ -207,15 +260,48 @@ def build(args: argparse.Namespace) -> DataList:
         "filter": {
             "require_cameras": sorted(require_cameras),
             "max_window_gap_frames": args.max_window_gap_frames,
-            "require_pdm_progress": (
-                str(args.require_pdm_progress) if args.require_pdm_progress else None
-            ),
+            "require_pdm_progress": args.require_pdm_progress is not None,
             "drivable_area_buffer_m": args.drivable_area_buffer_m,
+            "scene_tag_filters": {
+                "include_events": args.include_tag_event,
+                "exclude_events": args.exclude_tag_event,
+                "include_lateral_decisions": args.include_lateral_decision,
+                "include_longitudinal_decisions": args.include_longitudinal_decision,
+                "statuses": args.include_tag_status,
+            },
             **{key: value for key, value in dropped.items() if value},
             "scenes_with_errors": scene_errors,
         },
     }
     return DataList(root=root, rows=rows, manifest=manifest)
+
+
+def _matches_scene_tags(tags: Sequence[Any], args: argparse.Namespace) -> bool:
+    """Apply semantic tag filters at scene granularity.
+
+    A data-list row has no tag payload of its own, so a scene is retained when
+    at least one interval satisfies each requested semantic dimension. This is
+    intentionally separate from the status labels: blacklist data is not
+    discarded unless ``--include-tag-status whitelist`` is requested.
+    """
+    include_events = set(args.include_tag_event or [])
+    exclude_events = set(args.exclude_tag_event or [])
+    lateral = set(args.include_lateral_decision or [])
+    longitudinal = set(args.include_longitudinal_decision or [])
+    statuses = set(args.include_tag_status or [])
+
+    if statuses and not any(tag.status in statuses for tag in tags):
+        return False
+    scene_events = {event for tag in tags for event in tag.events}
+    if include_events and not include_events.issubset(scene_events):
+        return False
+    if exclude_events and any(exclude_events.intersection(tag.events) for tag in tags):
+        return False
+    if lateral and not any(tag.lateral_decision in lateral for tag in tags):
+        return False
+    if longitudinal and not any(tag.longitudinal_decision in longitudinal for tag in tags):
+        return False
+    return True
 
 
 def _scene_rows(

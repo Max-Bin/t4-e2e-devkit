@@ -23,7 +23,7 @@ not reactive agents.
 
 | layer | responsibility |
 |---|---|
-| `common` | arrays, enums, geometry and shared constants |
+| `common` | arrays, enums, geometry, shared constants and the optional T4 map facade |
 | `dataset` | scene reading, window assembly and data lists |
 | `agents` | sensor declarations, builders and agent registry |
 | `evaluation` | independent open-loop, PDM, T4 and closed-loop metric families |
@@ -53,8 +53,10 @@ This keeps producer format separate from metric format.
 
 ## Data ownership
 
-The scene reader owns coordinate conversion, map field validation, annotation
-transforms and sensor decoding. Feature builders own conversion to model input.
+The scene reader owns coordinate conversion, map validation, annotation
+transforms and sensor decoding. Route/tag readers own metadata. The optional
+T4 map facade reads source Lanelet2 IDs and matching evidence without changing
+model arrays. Feature builders own conversion to model input.
 Agents own only their architecture, loss and optimizer. The scorer owns metric
 sampling and aggregation. No layer should duplicate another layer's constants.
 

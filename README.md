@@ -38,6 +38,13 @@ uv run t4e2e datalist \
   --glob 'prd_jt/*/*/*' \
   --out lists/val.json
 
+# Optional semantic scene filtering
+uv run t4e2e datalist \
+  --root /path/to/t4_dataset \
+  --scene-tags-root /path/to/scene_tags \
+  --include-tag-event lane_change \
+  --out lists/lane-change.json
+
 uv run t4e2e score \
   agent=constant_velocity \
   data_list=lists/val.json \

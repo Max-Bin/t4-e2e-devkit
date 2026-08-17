@@ -42,6 +42,7 @@ from t4_e2e_devkit.common.dataclasses import (
     EgoShape,
     EgoStatus,
     Lidar,
+    MapObjectIds,
     MapTensors,
     SceneFilter,
     SceneMetadata,
@@ -49,9 +50,11 @@ from t4_e2e_devkit.common.dataclasses import (
     T4Frame,
     T4Scene,
 )
+from t4_e2e_devkit.common.t4_map import T4MapAPI
 from t4_e2e_devkit.dataset.camera_source import open_camera_sources
 from t4_e2e_devkit.dataset.contract import BUNDLE_TO_CONTRACT
 from t4_e2e_devkit.dataset.rigs import readable_camera_names, resolve_camera_names
+from t4_e2e_devkit.dataset.route import T4RouteMetadata, load_t4_route
 from t4_e2e_devkit.dataset.scene import (
     T4SceneReader,
     _bridge_stationary_boxes,
@@ -59,6 +62,7 @@ from t4_e2e_devkit.dataset.scene import (
     build_ego_status,
     global_to_ego,
 )
+from t4_e2e_devkit.dataset.scene_tags import T4SceneTag, T4SceneTagIndex
 
 T4_FRAME_DT_S = 1.0 / T4_FRAME_RATE_HZ
 
@@ -137,6 +141,33 @@ class T4WindowBuilder:
         )
         config.setdefault("t4_image_size_hw", list(T4_DEFAULT_IMAGE_SIZE_HW))
         self.reader_config = config
+        self.route_metadata: Optional[T4RouteMetadata] = load_t4_route(
+            self.scene_dir,
+            strict=_as_bool(config.get("t4_route_required", False)),
+        )
+        tags_root = config.get("t4_scene_tags_root")
+        self.scene_tag_index: Optional[T4SceneTagIndex] = None
+        self.scene_tags: tuple[T4SceneTag, ...] = ()
+        if tags_root not in (None, "", "null", "None"):
+            self.scene_tag_index = T4SceneTagIndex.cached(
+                tags_root,
+                include_debug=_as_bool(config.get("t4_scene_tags_include_debug", False)),
+                strict=_as_bool(config.get("t4_scene_tags_strict", True)),
+            )
+            self.scene_tags = self.scene_tag_index.tags_for_scene(self.scene_dir)
+        self.map_api: Optional[T4MapAPI] = None
+        if _as_bool(config.get("t4_attach_map_ids", False)):
+            route_lane_ids = (
+                self.route_metadata.route_lane_ids
+                if self.route_metadata is not None
+                else ()
+            )
+            self.map_api = T4MapAPI.from_scene(
+                self.scene_dir,
+                config.get("t4_maps_root"),
+                strict=_as_bool(config.get("t4_map_required", False)),
+                route_lane_ids=route_lane_ids,
+            )
         # The vendored low-level reader still exposes its historical strict
         # cache-only oracle option. GPU scoring owns online references, so keep
         # oracle loading out of that legacy path and attach the CPU provider
@@ -288,6 +319,8 @@ class T4WindowBuilder:
                 vehicle=self.reader.meta.get("vehicle"),
                 date=self.reader.meta.get("date"),
                 global_center_pose=np.asarray(center_pose, dtype=np.float64),
+                scene_tags=self.scene_tags,
+                route_metadata=self.route_metadata,
             ),
             frames=frames,
             future_ego_poses=future_poses,
@@ -321,7 +354,51 @@ class T4WindowBuilder:
                     f"{sorted(raw)}"
                 )
             fields[contract_name] = np.asarray(raw[bundle_name])
-        return MapTensors(**fields)
+        object_ids: Optional[MapObjectIds] = None
+        if self.map_api is not None:
+            center_pose = np.asarray(self.reader.trajectory[int(frame_index)], dtype=np.float64)
+            route_ids = (
+                self.route_metadata.route_lane_ids
+                if self.route_metadata is not None
+                else ()
+            )
+            lane_matches = self.map_api.match_local_centerlines_detailed(
+                fields["lanes"],
+                center_pose,
+                layer="lanes",
+                frame_index=frame_index,
+            )
+            route_matches = self.map_api.match_local_centerlines_detailed(
+                fields["route_lanes"],
+                center_pose,
+                layer="route_lanes",
+                frame_index=frame_index,
+                allowed_ids=route_ids or None,
+            )
+            polygon_matches = self.map_api.unmatched_rows(
+                fields["polygons"],
+                layer="polygons",
+                frame_index=frame_index,
+            )
+            line_string_matches = self.map_api.unmatched_rows(
+                fields["line_strings"],
+                layer="line_strings",
+                frame_index=frame_index,
+            )
+            object_ids = MapObjectIds(
+                lane_ids=tuple(match.source_object_id for match in lane_matches),
+                route_lane_ids=tuple(
+                    match.source_object_id for match in route_matches
+                ),
+                polygon_ids=tuple(match.source_object_id for match in polygon_matches),
+                line_string_ids=tuple(
+                    match.source_object_id for match in line_string_matches
+                ),
+                source_path=self.map_api.source_label,
+                frame_index=int(frame_index),
+                matches=lane_matches + route_matches + polygon_matches + line_string_matches,
+            )
+        return MapTensors(**fields, object_ids=object_ids)
 
     def read_annotations(self, frame_index: int, center: int) -> Annotations:
         """

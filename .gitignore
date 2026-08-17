@@ -15,8 +15,12 @@ outputs/
 multirun/
 lightning_logs/
 
-# Locally generated visualization results are large runtime artifacts.
-results/visualization/closed_loop/
+# Locally generated runtime artifacts are not repository inputs.
+results/
+reports/
+
+# Generated data lists contain a machine-local dataset root.
+lists/
 
 # references/ holds upstream checkouts used for comparison and as vendoring
 # sources. They are not part of this repository's history; tools/vendor.py

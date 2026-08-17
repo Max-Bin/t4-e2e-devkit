@@ -18,6 +18,13 @@ from t4_e2e_devkit.dataset.dataset import (
     build_dataset_from_agent,
     collate_t4,
 )
+from t4_e2e_devkit.dataset.route import (
+    T4RouteMetadata,
+    T4RoutePrimitive,
+    T4RouteSegment,
+    load_t4_route,
+)
+from t4_e2e_devkit.dataset.scene_tags import T4SceneTag, T4SceneTagIndex
 from t4_e2e_devkit.dataset.window import T4WindowBuilder, WindowError
 
 __all__ = [
@@ -28,6 +35,11 @@ __all__ = [
     "T4Dataset",
     "T4Sample",
     "T4SceneLocalitySampler",
+    "T4SceneTag",
+    "T4SceneTagIndex",
+    "T4RouteMetadata",
+    "T4RoutePrimitive",
+    "T4RouteSegment",
     "T4WindowBuilder",
     "WindowError",
     "assert_batch_contract",
@@ -35,4 +47,5 @@ __all__ = [
     "collate_t4",
     "describe_data_list",
     "load_data_list",
+    "load_t4_route",
 ]

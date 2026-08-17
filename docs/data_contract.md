@@ -23,6 +23,11 @@ state, destination, vehicle shape and camera calibration. `frames.pack`
 contains per-frame map tensors and tracked-object annotations. The reader
 converts all geometry into the current frame's ego coordinates.
 
+Optional files include `metadata.json` (area-map identity), `route.json`
+(ordered route primitive IDs, start and goal poses), and an external scene-tag
+root. The external tag files are runtime inputs and are not copied into the
+repository.
+
 ## Time ranges
 
 | range | default | meaning |
@@ -70,6 +75,67 @@ Boundary coordinates are centerline plus offset. Zero rows are padding and are
 not geometry. Missing required map fields raise an error; they are not
 zero-filled.
 
+### Source IDs and matching audit
+
+The source of each identity is explicit:
+
+| identity | source |
+|---|---|
+| area-map identity | `metadata.json` → `area_map.id/version_id` |
+| ordered route IDs | `route.json` |
+| lanelet IDs and geometry | the resolved `lanelet2_map.osm` `<relation id="…">` entries |
+
+There is no separate precomputed match table in the dataset. When
+`t4_attach_map_ids=true`, the reader parses all lanelet relations from the OSM
+file, then matches each scene-local lane row geometrically. The full source ID
+index is available as `T4MapAPI.available_object_ids`; the row-level result is
+`MapTensors.object_ids.matches`.
+
+Each `MapObjectMatch` records the tensor layer and row, source ID, source-file
+label, frame index, score, candidates and a reason. The label is only a
+portable filename; local filesystem prefixes are not serialized. `None` means
+padding, unsupported source type or an unsuccessful match; IDs are never
+fabricated. Polygon and line-string rows are currently reported as
+`unsupported_source_type` because their source IDs are not recovered by the
+Lanelet2 parser.
+
+To export an audit sidecar, choose an ignored runtime directory explicitly:
+
+```python
+scene.current_frame.map_tensors.object_ids.write_json(
+    "results/cache/map_matches/scene_000@100.json"
+)
+```
+
+`SceneMetadata.route_metadata` exposes the route file's ordered primitive IDs
+and a portable source-file label whenever `route.json` exists.
+
+## Scene tags
+
+Scene tags are optional external metadata. A tag has a curation `status`
+(`whitelist` or `blacklist`) and independent semantic fields: `events`,
+`lateral_decision`, `longitudinal_decision`, `dynamic_entities`, `scenery`,
+the source interval and the complete original JSON record. The status is not a
+replacement for the behavior taxonomy. Unknown future fields remain available
+through `T4SceneTag.raw`.
+Treat `raw` as runtime metadata; do not commit or publish external tag files
+without checking their curator and project-specific fields.
+
+Pass `t4_scene_tags_root` in `reader_config` to attach tags to
+`SceneMetadata.scene_tags`. To build a semantically filtered list:
+
+```bash
+uv run t4e2e datalist \
+  --root /path/to/t4_dataset \
+  --scene-tags-root /path/to/scene_tags \
+  --include-tag-event lane_change \
+  --include-lateral-decision change_lane_left \
+  --out lists/lane-change.json
+```
+
+The manifest records that external tags were used and stores the semantic
+filters, but not the local taxonomy path.
+
 ## Annotations
 
 Tracked boxes use the 9-column layout:
@@ -112,4 +178,6 @@ A list is a reproducible JSON manifest:
 ```
 
 The manifest may also record window settings, camera requirements and filtering
-statistics. Older compatible format strings are accepted on read.
+statistics. Its dataset root is local to the machine that built the list;
+keep generated lists outside version control. Older compatible format strings
+are accepted on read.

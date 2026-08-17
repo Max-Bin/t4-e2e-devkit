@@ -7,7 +7,8 @@ batching and device placement are known.
 from __future__ import annotations
 
 from dataclasses import dataclass, field
-from typing import Any, Dict, List, Mapping, Optional, Sequence, Tuple, Union
+from pathlib import Path
+from typing import TYPE_CHECKING, Any, Dict, List, Mapping, Optional, Sequence, Tuple, Union
 
 import numpy as np
 import numpy.typing as npt
@@ -27,6 +28,10 @@ from t4_e2e_devkit.common.constants import (
     TRAJECTORY_POSES,
 )
 from t4_e2e_devkit.planning.simulation.trajectory.trajectory_sampling import TrajectorySampling
+
+if TYPE_CHECKING:
+    from t4_e2e_devkit.dataset.route import T4RouteMetadata
+    from t4_e2e_devkit.dataset.scene_tags import T4SceneTag
 
 # --------------------------------------------------------------------------- #
 # Sensors
@@ -310,6 +315,95 @@ class EgoStatus:
 # --------------------------------------------------------------------------- #
 
 
+def _portable_source_label(value: Optional[str]) -> Optional[str]:
+    """Keep local filesystem prefixes out of serialized map metadata."""
+    if value is None:
+        return None
+    return Path(value).name
+
+
+@dataclass(frozen=True)
+class MapObjectMatch:
+    """One scene-local map row and its source-object matching evidence."""
+
+    layer: str
+    row_index: int
+    source_object_id: Optional[str]
+    source_path: Optional[str]
+    frame_index: Optional[int]
+    match_distance_m: Optional[float]
+    candidate_ids: Tuple[str, ...] = ()
+    reason: str = "matched"
+
+    @property
+    def matched(self) -> bool:
+        """:return: whether the row was assigned a real source object ID."""
+        return self.source_object_id is not None
+
+    def as_dict(self) -> Dict[str, Any]:
+        """:return: a JSON-compatible audit record."""
+        return {
+            "layer": self.layer,
+            "row_index": self.row_index,
+            "source_object_id": self.source_object_id,
+            "source_path": _portable_source_label(self.source_path),
+            "frame_index": self.frame_index,
+            "match_distance_m": self.match_distance_m,
+            "candidate_ids": list(self.candidate_ids),
+            "reason": self.reason,
+        }
+
+
+@dataclass(frozen=True)
+class MapObjectIds:
+    """Optional IDs parallel to the scene-local vector-map rows.
+
+    IDs are deliberately side metadata rather than extra tensor channels. A
+    model still receives the unchanged numeric map contract, while planners,
+    visualizers and audits can recover stable Lanelet2/route identities when
+    the source map is available. ``None`` marks padding or an object that could
+    not be matched without inventing an ID.
+    """
+
+    lane_ids: Tuple[Optional[str], ...] = ()
+    route_lane_ids: Tuple[Optional[str], ...] = ()
+    polygon_ids: Tuple[Optional[str], ...] = ()
+    line_string_ids: Tuple[Optional[str], ...] = ()
+    source_path: Optional[str] = None
+    frame_index: Optional[int] = None
+    matches: Tuple[MapObjectMatch, ...] = ()
+
+    def as_dict(self) -> Dict[str, Any]:
+        """:return: IDs and matching evidence in a JSON-compatible mapping."""
+        return {
+            "lane_ids": list(self.lane_ids),
+            "route_lane_ids": list(self.route_lane_ids),
+            "polygon_ids": list(self.polygon_ids),
+            "line_string_ids": list(self.line_string_ids),
+            "source_path": _portable_source_label(self.source_path),
+            "frame_index": self.frame_index,
+            "matches": [match.as_dict() for match in self.matches],
+        }
+
+    def write_json(self, path: str | Path) -> str:
+        """Write an explicit audit sidecar and return its path.
+
+        The caller chooses the output location. Runtime artifacts should live
+        under an ignored results/cache directory rather than beside source
+        data or in the repository.
+        """
+        import json
+
+        output = Path(path)
+        output.parent.mkdir(parents=True, exist_ok=True)
+        output.write_text(
+            json.dumps(self.as_dict(), ensure_ascii=False, indent=2, sort_keys=True)
+            + "\n",
+            encoding="utf-8",
+        )
+        return str(output)
+
+
 @dataclass
 class MapTensors:
     """The vector map for one frame, in the ego frame of that frame.
@@ -333,6 +427,7 @@ class MapTensors:
     route_lanes_has_speed_limit: npt.NDArray[np.bool_]  # [25, 1]
     polygons: npt.NDArray[np.float32]  # [10, 40, 3]
     line_strings: npt.NDArray[np.float32]  # [60, 20, 4]
+    object_ids: Optional[MapObjectIds] = None
 
     def as_dict(self) -> Dict[str, npt.NDArray]:
         """:return: the map fields keyed by their contract names."""
@@ -542,6 +637,10 @@ class SceneMetadata:
     date: Optional[str] = None
     timestamps_us: Optional[npt.NDArray[np.int64]] = None
     global_center_pose: Optional[npt.NDArray[np.float64]] = None  # [4] x, y, cos, sin
+    # External taxonomy is optional and stays metadata-only. It is never fed
+    # into the model feature contract unless an agent explicitly requests it.
+    scene_tags: Tuple["T4SceneTag", ...] = field(default_factory=tuple)
+    route_metadata: Optional["T4RouteMetadata"] = None
 
     @property
     def token(self) -> str:

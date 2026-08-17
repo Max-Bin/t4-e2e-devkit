@@ -140,6 +140,50 @@ class DataList:
             manifest["runtime_filter"] = applied
         return DataList(root=self.root, rows=list(rows), manifest=manifest, path=self.path)
 
+    def filtered_by_scene_tags(
+        self,
+        tag_index: Any,
+        *,
+        include_events: Optional[Sequence[str]] = None,
+        exclude_events: Optional[Sequence[str]] = None,
+        include_lateral_decisions: Optional[Sequence[str]] = None,
+        include_longitudinal_decisions: Optional[Sequence[str]] = None,
+        statuses: Optional[Sequence[str]] = None,
+    ) -> DataList:
+        """Filter rows by an explicitly supplied external tag index.
+
+        The index is passed by the caller rather than discovered from a global
+        path, so a manifest can record that external taxonomy filtering was
+        applied without copying the local taxonomy path.
+        """
+        accepted = tag_index.filter_scene_dirs(
+            [self.absolute_scene_dir(scene) for scene in self.scene_dirs],
+            include_events=include_events,
+            exclude_events=exclude_events,
+            include_lateral_decisions=include_lateral_decisions,
+            include_longitudinal_decisions=include_longitudinal_decisions,
+            statuses=statuses,
+        )
+        accepted_relative = {
+            str(path.resolve().relative_to(self.root.resolve()))
+            for path in accepted
+        }
+        rows = [row for row in self.rows if row[0] in accepted_relative]
+        manifest = dict(self.manifest)
+        runtime = dict(manifest.get("runtime_filter", {}))
+        runtime["scene_tags"] = {
+            "source": "external-scene-tags",
+            "include_events": list(include_events or []),
+            "exclude_events": list(exclude_events or []),
+            "include_lateral_decisions": list(include_lateral_decisions or []),
+            "include_longitudinal_decisions": list(include_longitudinal_decisions or []),
+            "statuses": list(statuses or []),
+            "rows_before": len(self.rows),
+            "rows_after": len(rows),
+        }
+        manifest["runtime_filter"] = runtime
+        return DataList(root=self.root, rows=rows, manifest=manifest, path=self.path)
+
     def write(self, path: str | Path, **extra_manifest: Any) -> Path:
         """
         Write this list to disk in the devkit format.
