@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import inspect
 import time
 from typing import Any
 
@@ -35,7 +36,8 @@ class MetricRunner(AbstractRunner):
             log_name=str(getattr(self.scenario, "log_name", "t4")),
         )
         try:
-            self._metric_callback.on_simulation_end(
+            _run_metric_callback(
+                self._metric_callback,
                 type("Setup", (), {"scenario": self.scenario})(),
                 self.planner,
                 self._simulation_log.simulation_history,
@@ -50,6 +52,19 @@ class MetricRunner(AbstractRunner):
 def _name(value: Any) -> str:
     name = getattr(value, "name", type(value).__name__)
     return str(name() if callable(name) else name)
+
+
+def _run_metric_callback(callback: Any, setup: Any, planner: Any, history: Any) -> None:
+    method = getattr(callback, "on_simulation_end", None)
+    if method is None:
+        raise TypeError("metric callback must implement on_simulation_end")
+    parameters = tuple(inspect.signature(method).parameters.values())
+    if any(parameter.kind is inspect.Parameter.VAR_POSITIONAL for parameter in parameters):
+        method(setup, planner, history)
+    elif len(parameters) >= 3:
+        method(setup, planner, history)
+    else:
+        method(history)
 
 
 __all__ = ["MetricRunner"]

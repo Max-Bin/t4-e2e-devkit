@@ -2,17 +2,16 @@
 
 It is deliberately thin.  Loss, optimizers and callbacks all come from the agent,
 so this class owns only what is genuinely shared: moving a batch to the device,
-calling the agent, logging, and -- when the agent asks for it -- running the PDM
-scorer inside the step so the scorer heads can be supervised.
+calling the agent, logging, and optionally running the detached PDM evaluator
+for training-time reporting.
 
-Why the module and not the agent owns the scorer: a scorer instance holds a CUDA
-context and a worker pool, and one per agent replica would multiply both.  The
-agent declares that it wants scorer supervision; the module provides exactly one
-scorer.
+The evaluator is opt-in because it is expensive and its result is a metric, not a
+differentiable training objective.
 """
 
 from __future__ import annotations
 
+from collections.abc import Mapping
 from typing import Any, Dict, Optional, Tuple
 
 import pytorch_lightning as pl
@@ -33,8 +32,8 @@ class T4LightningModule(pl.LightningModule):
     ) -> None:
         """
         :param agent: the agent to train.
-        :param scorer: a :class:`~t4_e2e_devkit.evaluation.T4PDMScorer` for
-            scorer-supervised agents; ``None`` for plain regression.
+        :param scorer: an optional :class:`~t4_e2e_devkit.evaluation.T4PDMScorer`
+            used for detached training-time reporting.
         :param log_component_metrics: log the six PDM components separately.
         """
         super().__init__()
@@ -50,7 +49,10 @@ class T4LightningModule(pl.LightningModule):
         return self.agent(features)
 
     def _step(self, batch: Tuple[Dict, Dict], prefix: str) -> torch.Tensor:
-        features, targets = batch
+        if not isinstance(batch, (tuple, list)) or len(batch) not in {2, 3}:
+            raise TypeError("T4 training batches must be (features, targets[, scenes])")
+        features, targets = batch[:2]
+        scenes = batch[2] if len(batch) == 3 else None
         predictions = self.agent(features)
         loss = self.agent.compute_loss(features, targets, predictions)
 
@@ -65,8 +67,75 @@ class T4LightningModule(pl.LightningModule):
                     self.log(f"{prefix}/{name}", value, on_step=False, on_epoch=True)
             loss = loss["loss"]
 
-        self.log(f"{prefix}/loss", loss, on_step=(prefix == "train"), on_epoch=True, prog_bar=True)
+        if not torch.is_tensor(loss) or loss.ndim != 0:
+            raise TypeError("agent loss must be a scalar torch.Tensor")
+        if not torch.isfinite(loss.detach()):
+            raise ValueError(f"agent loss for {prefix} is not finite")
+
+        self.log(
+            f"{prefix}/loss",
+            loss,
+            on_step=(prefix == "train"),
+            on_epoch=True,
+            prog_bar=True,
+        )
+        self._log_training_metrics(predictions, targets, prefix)
+        if self.scorer is not None:
+            if scenes is None:
+                raise ValueError(
+                    "a scorer was configured, but the dataloader did not return scenes; "
+                    "set return_scenes=True"
+                )
+            components = self.scorer.score_proposals(
+                self._proposal_tensor(predictions),
+                scenes,
+                trajectory_sampling=self.agent.trajectory_sampling,
+            )
+            self.log_pdm_components(components, prefix=prefix)
         return loss
+
+    def _proposal_tensor(self, predictions: Mapping[str, Any]) -> torch.Tensor:
+        output = predictions.get("proposals", predictions.get("trajectory"))
+        if not torch.is_tensor(output):
+            raise TypeError(
+                "scorer evaluation needs tensor predictions['trajectory'] or ['proposals']"
+            )
+        if output.ndim == 3:
+            output = output.unsqueeze(1)
+        if output.ndim != 4 or output.shape[-1] != 3:
+            raise ValueError(
+                "scorer proposals must have shape [B,N,T,3] or trajectory shape [B,T,3]; "
+                f"got {tuple(output.shape)}"
+            )
+        if not output.is_floating_point() or not torch.isfinite(output).all():
+            raise ValueError("scorer proposals must be finite floating-point values")
+        return output
+
+    def _log_training_metrics(
+        self,
+        predictions: Mapping[str, torch.Tensor],
+        targets: Mapping[str, torch.Tensor],
+        prefix: str,
+    ) -> None:
+        for metric in self.agent.get_training_metrics():
+            output = metric.compute(predictions, targets)
+            values = (
+                {type(metric).__name__.lower(): output}
+                if torch.is_tensor(output) or isinstance(output, (float, int))
+                else output
+            )
+            if not isinstance(values, Mapping):
+                raise TypeError(
+                    f"{type(metric).__name__}.compute must return a scalar or mapping"
+                )
+            for name, value in values.items():
+                if not torch.is_tensor(value):
+                    value = torch.as_tensor(value, device=self.device, dtype=torch.float32)
+                if value.numel() != 1:
+                    raise ValueError(
+                        f"training metric {name!r} must return one scalar, got {tuple(value.shape)}"
+                    )
+                self.log(f"{prefix}/{name}", value.reshape(()).detach(), on_step=False, on_epoch=True)
 
     def training_step(self, batch, batch_idx: int) -> torch.Tensor:
         """
@@ -91,6 +160,14 @@ class T4LightningModule(pl.LightningModule):
     def configure_callbacks(self):
         """:return: the agent's training callbacks."""
         return self.agent.get_training_callbacks()
+
+    def on_train_epoch_start(self) -> None:
+        """Advance the locality sampler before every training epoch."""
+
+        trainer = getattr(self, "_trainer", None)
+        datamodule = None if trainer is None else getattr(trainer, "datamodule", None)
+        if datamodule is not None and hasattr(datamodule, "set_epoch"):
+            datamodule.set_epoch(self.current_epoch)
 
     def log_pdm_components(self, components: torch.Tensor, prefix: str = "train") -> None:
         """Log the six PDM components of a scored batch.

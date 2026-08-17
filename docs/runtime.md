@@ -35,3 +35,5 @@ values = executor.map(evaluate_one, rows, rank=0, world_size=4)
 ```
 
 The executor has no scheduler, distributed service or tracking dependency.
+For rank lifecycle management, retries, logs and merging, use the
+`distribute` command described in [`internal_runtime.md`](internal_runtime.md).

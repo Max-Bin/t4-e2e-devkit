@@ -282,11 +282,30 @@ class MetricCallback:
         self.scenario_token = scenario_token
         self.results: tuple[MetricResult, ...] = ()
 
-    def on_simulation_end(self, history: Any) -> None:
-        self.results = self.registry.compute(history, scenario_token=self.scenario_token)
+    def on_simulation_end(self, *args: Any) -> None:
+        """Compute metrics from either a history or a full runner callback."""
 
-    def on_simulation_error(self, error: BaseException) -> None:
-        del error
+        if len(args) == 1:
+            history = args[0]
+            token = self.scenario_token
+        elif len(args) == 3:
+            setup, _planner, history = args
+            token = self.scenario_token or _scenario_token(setup)
+        else:
+            raise TypeError(
+                "MetricCallback.on_simulation_end expects history or "
+                "(setup, planner, history)"
+            )
+        self.results = self.registry.compute(history, scenario_token=token)
+
+    def on_simulation_error(self, *args: Any) -> None:
+        del args
+
+
+def _scenario_token(setup: Any) -> Optional[str]:
+    scenario = getattr(setup, "scenario", None)
+    token = getattr(scenario, "token", getattr(scenario, "scenario_name", None))
+    return None if token is None or str(token) == "" else str(token)
 
 
 def _compute_builder(builder: AbstractMetricBuilder, history: Any, *, scenario_token: Optional[str]) -> MetricResult:

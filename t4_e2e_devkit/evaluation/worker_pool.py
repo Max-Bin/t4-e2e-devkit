@@ -110,8 +110,8 @@ class WorkerPool:
             raise ValueError("workers must be positive")
         if world_size < 1 or rank < 0 or rank >= world_size:
             raise ValueError(f"rank must be in [0, {world_size}), got {rank}")
-        if backend not in {"serial", "thread", "process"}:
-            raise ValueError("backend must be one of serial, thread or process")
+        if backend not in {"serial", "thread", "process", "ray"}:
+            raise ValueError("backend must be one of serial, thread, process or ray")
         if start_method is not None and start_method not in mp.get_all_start_methods():
             raise ValueError(
                 f"unsupported multiprocessing start method {start_method!r}; "
@@ -123,9 +123,19 @@ class WorkerPool:
         self.backend = backend
         self.start_method = start_method
         self._executor: Optional[ThreadPoolExecutor | ProcessPoolExecutor] = None
+        self._ray_pool = None
 
     def __enter__(self) -> "WorkerPool":
-        self._ensure_executor()
+        if self.backend == "ray":
+            from t4_e2e_devkit.evaluation.ray_worker_pool import RayWorkerPool
+
+            # ``WorkerPool.run_tasks`` performs the rank partition before
+            # dispatching to this backend; the Ray adapter receives that
+            # already-selected list.
+            self._ray_pool = RayWorkerPool(rank=0, world_size=1)
+            self._ray_pool.__enter__()
+        else:
+            self._ensure_executor()
         return self
 
     def __exit__(self, exc_type, exc_value, traceback) -> None:
@@ -133,7 +143,7 @@ class WorkerPool:
         self.shutdown()
 
     def _ensure_executor(self):
-        if self._executor is not None or self.backend == "serial":
+        if self._executor is not None or self.backend in {"serial", "ray"}:
             return self._executor
         if self.backend == "thread":
             self._executor = ThreadPoolExecutor(max_workers=self.workers)
@@ -148,6 +158,16 @@ class WorkerPool:
     def submit(self, task: WorkerTask) -> Future[WorkerResult]:
         """Submit one task, preserving the rank in its result."""
 
+        if self.backend == "ray":
+            if self._ray_pool is None:
+                self.__enter__()
+            future: Future[WorkerResult] = Future()
+            assert self._ray_pool is not None
+            try:
+                future.set_result(self._ray_pool.run_tasks([task])[0])
+            except Exception as error:  # noqa: BLE001 - preserve Future contract
+                future.set_exception(error)
+            return future
         executor = self._ensure_executor()
         if executor is None:
             future: Future[WorkerResult] = Future()
@@ -178,6 +198,11 @@ class WorkerPool:
         return self._run_local_tasks(values)
 
     def _run_local_tasks(self, values: Sequence[WorkerTask]) -> List[WorkerResult]:
+        if self.backend == "ray":
+            if self._ray_pool is None:
+                self.__enter__()
+            assert self._ray_pool is not None
+            return self._ray_pool.run_tasks(values)
         if self.backend == "serial" or self.workers == 1 or len(values) == 1:
             return [_execute_task(task, self.rank, index) for index, task in enumerate(values)]
         executor = self._ensure_executor()
@@ -219,6 +244,9 @@ class WorkerPool:
         if self._executor is not None:
             self._executor.shutdown(wait=wait)
             self._executor = None
+        if self._ray_pool is not None:
+            self._ray_pool.__exit__(None, None, None)
+            self._ray_pool = None
 
 
 def merge_worker_results(

@@ -79,10 +79,15 @@ class TrafficAgentState:
     def __post_init__(self) -> None:
         box = np.asarray(self.box, dtype=np.float32).reshape(-1)
         velocity = np.asarray(self.velocity, dtype=np.float32).reshape(-1)
-        if box.size < 9:
-            raise ValueError(f"traffic agent boxes need at least 9 values, got {box.shape}")
+        if box.size < 7:
+            raise ValueError(f"traffic agent boxes need at least 7 values, got {box.shape}")
         if velocity.size < 2:
             raise ValueError(f"traffic agent velocity needs two values, got {velocity.shape}")
+        if box.size < 9:
+            padded = np.zeros(9, dtype=np.float32)
+            padded[: box.size] = box
+            box = padded
+        box[7:9] = velocity[:2]
         object.__setattr__(self, "box", np.ascontiguousarray(box))
         object.__setattr__(self, "velocity", np.ascontiguousarray(velocity[:2]))
         object.__setattr__(self, "track_token", str(self.track_token))

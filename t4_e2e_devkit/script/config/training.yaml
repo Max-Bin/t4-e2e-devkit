@@ -8,13 +8,14 @@ train_data_list: ???
 val_data_list: null
 resume_from: null
 
-# Set true for agents whose scorer heads are supervised by the PDM components.
-# References use a cache when available and are generated lazily otherwise.
-scorer_supervision: false
+# Set true to score each training/validation batch with the configured PDM
+# evaluator and log its independent components. This is evaluation only; the
+# evaluator returns detached labels and is not part of the agent loss.
+score_training_batches: false
 
 # Checkpoint selection. Left null, this resolves to val/loss when a validation
 # list is given and train/loss otherwise -- see run_training.py for why total
-# loss is the wrong monitor for a scorer-supervised run without validation.
+# the PDM report is logged independently and does not select a checkpoint.
 monitor: null
 monitor_mode: min
 save_top_k: 3

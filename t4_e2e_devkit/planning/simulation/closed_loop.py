@@ -50,6 +50,7 @@ from t4_e2e_devkit.planning.simulation.interfaces import (
     ReplayTrafficPolicy,
     SimulationCallback,
     SimulationTick,
+    TrafficAgentState,
     TrafficPolicy,
 )
 from t4_e2e_devkit.planning.simulation.trajectory.trajectory_sampling import (
@@ -66,7 +67,7 @@ class ReplaySceneProvider(Protocol):
 
 @dataclass(frozen=True)
 class T4ClosedLoopConfig:
-    """Settings for a sensor-replay, ego-only closed-loop rollout."""
+    """Settings for a sensor-replay closed-loop rollout."""
 
     dt_s: float = T4_INTERVAL_LENGTH
     history_frames: int = PAST_FRAMES
@@ -78,7 +79,7 @@ class T4ClosedLoopConfig:
     stop_on_goal: bool = False
 
     def __post_init__(self) -> None:
-        if self.dt_s <= 0.0:
+        if not math.isfinite(float(self.dt_s)) or self.dt_s <= 0.0:
             raise ValueError(f"dt_s must be positive, got {self.dt_s}")
         if not math.isclose(self.dt_s, T4_INTERVAL_LENGTH, rel_tol=0.0, abs_tol=1e-9):
             raise ValueError(
@@ -91,15 +92,17 @@ class T4ClosedLoopConfig:
             raise ValueError(
                 f"replan_interval must be positive, got {self.replan_interval}"
             )
-        if self.max_speed_mps <= 0.0:
+        if not math.isfinite(float(self.max_speed_mps)) or self.max_speed_mps <= 0.0:
             raise ValueError(
                 f"max_speed_mps must be positive, got {self.max_speed_mps}"
             )
-        if self.goal_radius_m <= 0.0:
+        if not math.isfinite(float(self.goal_radius_m)) or self.goal_radius_m <= 0.0:
             raise ValueError(
                 f"goal_radius_m must be positive, got {self.goal_radius_m}"
             )
-        if self.ttc_horizon_s is not None and self.ttc_horizon_s <= 0.0:
+        if self.ttc_horizon_s is not None and (
+            not math.isfinite(float(self.ttc_horizon_s)) or self.ttc_horizon_s <= 0.0
+        ):
             raise ValueError(
                 f"ttc_horizon_s must be positive or None, got {self.ttc_horizon_s}"
             )
@@ -116,6 +119,25 @@ class KinematicState:
     acceleration_mps2: float = 0.0
     yaw_rate_radps: float = 0.0
     steering_rad: float = 0.0
+
+    def __post_init__(self) -> None:
+        values = {
+            "x": self.x,
+            "y": self.y,
+            "heading": self.heading,
+            "speed_mps": self.speed_mps,
+            "acceleration_mps2": self.acceleration_mps2,
+            "yaw_rate_radps": self.yaw_rate_radps,
+            "steering_rad": self.steering_rad,
+        }
+        try:
+            normalized = {name: float(value) for name, value in values.items()}
+        except (TypeError, ValueError) as error:
+            raise ValueError("kinematic state values must be numeric") from error
+        if not np.isfinite(list(normalized.values())).all():
+            raise ValueError("kinematic state values must be finite")
+        for name, value in normalized.items():
+            object.__setattr__(self, name, value)
 
     @property
     def pose(self) -> np.ndarray:
@@ -277,9 +299,40 @@ class T4ClosedLoopResult:
     timeout: Optional[bool] = None
     termination_reason: str = "completed"
     geometry: Optional[List[Optional[ReplayGeometry]]] = None
+    traffic_states: Optional[List[tuple[TrafficAgentState, ...]]] = None
 
     def __post_init__(self) -> None:
-        self.source_frames = np.asarray(self.source_frames, dtype=np.int64)
+        source_frames = np.asarray(self.source_frames)
+        if source_frames.ndim != 1:
+            raise ValueError(
+                "closed-loop source_frames must be one-dimensional, "
+                f"got {source_frames.shape}"
+            )
+        if len(source_frames) < 1:
+            raise ValueError("closed-loop results must contain at least one source frame")
+        try:
+            frame_values = np.asarray(source_frames, dtype=np.float64)
+        except (TypeError, ValueError, OverflowError) as error:
+            raise ValueError("closed-loop source_frames must contain integers") from error
+        int_info = np.iinfo(np.int64)
+        if (
+            not np.isfinite(frame_values).all()
+            or not np.equal(frame_values, np.floor(frame_values)).all()
+            or np.any(frame_values < int_info.min)
+            or np.any(frame_values > int_info.max)
+        ):
+            raise ValueError("closed-loop source_frames must contain finite integers")
+        source_frames = np.asarray(frame_values, dtype=np.int64)
+        if np.any(source_frames < 0) or np.any(np.diff(source_frames) <= 0):
+            raise ValueError("closed-loop source_frames must be non-negative and strictly increasing")
+        self.source_frames = np.ascontiguousarray(source_frames)
+        if not math.isfinite(float(self.dt_s)) or self.dt_s <= 0.0:
+            raise ValueError("closed-loop dt_s must be finite and positive")
+        self.dt_s = float(self.dt_s)
+        self.states = list(self.states)
+        if any(not isinstance(state, KinematicState) for state in self.states):
+            raise TypeError("closed-loop states must be KinematicState objects")
+        self.plans = list(self.plans)
         if len(self.states) != len(self.source_frames) + 1:
             raise ValueError(
                 "closed-loop results need one initial state plus one state per source frame"
@@ -293,6 +346,8 @@ class T4ClosedLoopResult:
                     "goal_pose_world must have four values (x, y, cos, sin), "
                     f"got {goal.shape}"
                 )
+            if not np.isfinite(goal).all():
+                raise ValueError("goal_pose_world must contain finite values")
             self.goal_pose_world = np.ascontiguousarray(goal)
         if self.collision_steps is not None:
             steps = tuple(sorted({int(step) for step in self.collision_steps}))
@@ -306,6 +361,10 @@ class T4ClosedLoopResult:
             raise ValueError(
                 "closed-loop geometry must align with source_frames"
             )
+        if self.traffic_states is not None:
+            if len(self.traffic_states) != len(self.source_frames):
+                raise ValueError("closed-loop traffic states must align with source_frames")
+            self.traffic_states = [tuple(states) for states in self.traffic_states]
         if self.timeout is not None:
             self.timeout = bool(self.timeout)
         if self.termination_reason not in {
@@ -507,6 +566,10 @@ class T4ClosedLoopRunner:
         collision_events_available = False
         geometry_events: List[Optional[ReplayGeometry]] = []
         geometry_events_available = False
+        traffic_states_available = callable(getattr(self.traffic_policy, "snapshot", None))
+        traffic_states: Optional[List[tuple[TrafficAgentState, ...]]] = (
+            [] if traffic_states_available else None
+        )
         last_replay_scene: Optional[T4Scene] = None
         cached_world_plan: Optional[np.ndarray] = None
         cached_plan_offset = 0
@@ -526,6 +589,9 @@ class T4ClosedLoopRunner:
                     f"got {type(replay_scene).__name__}"
                 )
             last_replay_scene = replay_scene
+            if traffic_states is not None:
+                snapshot = self.traffic_policy.snapshot()  # type: ignore[attr-defined]
+                traffic_states.append(() if snapshot is None else tuple(snapshot))
             if len(replay_scene.frames) != self.config.history_frames:
                 raise ValueError(
                     f"replay scene at frame {source_frame} has "
@@ -653,6 +719,7 @@ class T4ClosedLoopRunner:
             geometry=geometry_events if geometry_events_available else None,
             timeout=timeout,
             termination_reason=termination_reason,
+            traffic_states=traffic_states,
         )
 
     @property

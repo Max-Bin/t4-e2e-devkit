@@ -25,6 +25,7 @@ from t4_e2e_devkit.planning.simulation.closed_loop import (
     T4ClosedLoopResult,
 )
 from t4_e2e_devkit.planning.simulation.closed_loop_geometry import ReplayGeometry
+from t4_e2e_devkit.planning.simulation.interfaces import TrafficAgentState
 
 CLOSED_LOOP_ARTIFACT_FORMAT = "t4.closed_loop.rollout"
 CLOSED_LOOP_ARTIFACT_VERSION = 1
@@ -161,6 +162,14 @@ def _result_to_payload(result: T4ClosedLoopResult) -> dict[str, Any]:
             if result.geometry is None
             else [None if event is None else _geometry_to_payload(event) for event in result.geometry]
         ),
+        "traffic_states": (
+            None
+            if result.traffic_states is None
+            else [
+                [_traffic_state_to_payload(state) for state in states]
+                for states in result.traffic_states
+            ]
+        ),
     }
 
 
@@ -270,6 +279,15 @@ def _geometry_to_payload(event: ReplayGeometry) -> dict[str, Any]:
         "drivable_violation": event.drivable_violation,
         "road_border_violation": event.road_border_violation,
         "road_border_distance_m": event.road_border_distance_m,
+    }
+
+
+def _traffic_state_to_payload(state: TrafficAgentState) -> dict[str, Any]:
+    return {
+        "track_token": state.track_token,
+        "label": int(state.label),
+        "box": np.asarray(state.box, dtype=np.float32).tolist(),
+        "velocity": np.asarray(state.velocity, dtype=np.float32).tolist(),
     }
 
 

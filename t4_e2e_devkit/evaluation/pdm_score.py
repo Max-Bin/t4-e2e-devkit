@@ -204,11 +204,12 @@ class T4PDMScorer:
         scenes: Sequence[T4Scene],
         trajectory_sampling: Optional[TrajectorySampling] = None,
     ) -> torch.Tensor:
-        """Score many proposals per window, for scorer-supervised training.
+        """Score many proposals per window, for training-time reporting.
 
         This is the training-time path: it keeps the tensor result rather than
         building :class:`PDMResults`, so the components stay on the device and
-        can supervise the scorer heads directly.
+        The returned components are detached metric labels; this method is not a
+        differentiable training objective.
 
         :param proposals: ``[B, N, num_poses, 3]``.
         :param scenes: one window per batch element.

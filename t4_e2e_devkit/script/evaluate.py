@@ -75,8 +75,8 @@ def evaluate_data_list(
     backend = _resolve_backend(backend)
     if workers < 1 or max_retries < 0:
         raise ValueError("workers must be positive and max_retries must be non-negative")
-    if worker_backend not in {"serial", "thread", "process"}:
-        raise ValueError("worker_backend must be serial, thread or process")
+    if worker_backend not in {"serial", "thread", "process", "ray"}:
+        raise ValueError("worker_backend must be serial, thread, process or ray")
     if backend == "gpu" and worker_backend == "process" and workers > 1:
         raise ValueError("GPU evaluation uses one process; use rank/world_size for multiple GPUs")
     if checkpoint_path is not None and not Path(checkpoint_path).is_file():
@@ -172,6 +172,7 @@ def evaluate_data_list(
 
     records = list(previous.values())
     failures: list[tuple[str, str]] = []
+    attempts_total = 0
     manifest_results: list[WorkerResult] = [
         WorkerResult(task_id=token, value={"status": "ok", "resumed": True}, rank=rank)
         for token in previous
@@ -181,6 +182,7 @@ def evaluate_data_list(
         value = result.value if isinstance(result.value, Mapping) else {}
         if result.error is not None:
             value = {"status": "failed", "error": result.error, "attempts": 0}
+        attempts_total += int(value.get("attempts", 0))
         if value.get("status") == "ok":
             record = {
                 "format": "t4.evaluation.record",
@@ -233,12 +235,13 @@ def evaluate_data_list(
     manifest.write(manifest_path)
     write_json(output / "run.json", {
         **config,
-        "status": "completed",
+        "status": "failed" if failures else "completed",
         "config_fingerprint": resolved_fingerprint,
         "rank_rows": len(assigned),
         "num_completed": len(records),
         "num_failed": len(failures),
         "num_resumed": len(previous),
+        "num_attempts": attempts_total,
         "manifest": manifest_path.name,
     })
     return report
@@ -281,7 +284,7 @@ def _evaluate_one(
     agent.initialize()
     if checkpoint_path:
         _load_checkpoint(agent, checkpoint_path)
-    active_device = device or ("cuda" if torch.cuda.is_available() else "cpu")
+    active_device = device or ("cuda" if backend == "gpu" else "cpu")
     agent.to(torch.device(active_device))
     builder = T4WindowBuilder(
         Path(root) / scene,
@@ -357,6 +360,16 @@ def main(argv: Optional[list[str]] = None) -> int:
     parser = argparse.ArgumentParser(prog="t4e2e evaluate")
     parser.add_argument("data_list")
     parser.add_argument("--agent", required=True)
+    parser.add_argument(
+        "--agent-params-json",
+        default=None,
+        help="JSON object forwarded to the registered agent constructor",
+    )
+    parser.add_argument(
+        "--reader-config-json",
+        default=None,
+        help="JSON object forwarded to the T4 reader",
+    )
     parser.add_argument("--output-dir", required=True)
     parser.add_argument("--families", nargs="+", default=list(FAMILIES), choices=FAMILIES)
     parser.add_argument("--checkpoint", default=None)
@@ -373,23 +386,48 @@ def main(argv: Optional[list[str]] = None) -> int:
     parser.add_argument("--rank", type=int, default=0)
     parser.add_argument("--world-size", type=int, default=1)
     parser.add_argument("--workers", type=int, default=1)
-    parser.add_argument("--worker-backend", choices=("serial", "thread", "process"), default="serial")
+    parser.add_argument(
+        "--worker-backend",
+        choices=("serial", "thread", "process", "ray"),
+        default="serial",
+    )
     parser.add_argument("--max-retries", type=int, default=0)
     parser.add_argument("--no-resume", action="store_true")
     parser.add_argument("--run-id", default=None)
     args = parser.parse_args(argv)
-    reader_config = {
-        key: value
-        for key, value in {
-            "t4_maps_root": args.maps_root,
-            "t4_scene_tags_root": args.scene_tags_root,
-            "t4_attach_map_ids": args.attach_map_ids,
-        }.items()
-        if value not in (None, False)
-    }
+    agent_params: Mapping[str, Any] = {}
+    if args.agent_params_json is not None:
+        try:
+            value = json.loads(args.agent_params_json)
+        except json.JSONDecodeError as error:
+            parser.error(f"--agent-params-json must be valid JSON: {error}")
+        if not isinstance(value, Mapping):
+            parser.error("--agent-params-json must contain a JSON object")
+        agent_params = dict(value)
+    reader_config: dict[str, Any] = {}
+    if args.reader_config_json is not None:
+        try:
+            value = json.loads(args.reader_config_json)
+        except json.JSONDecodeError as error:
+            parser.error(f"--reader-config-json must be valid JSON: {error}")
+        if not isinstance(value, Mapping):
+            parser.error("--reader-config-json must contain a JSON object")
+        reader_config.update(value)
+    reader_config.update(
+        {
+            key: value
+            for key, value in {
+                "t4_maps_root": args.maps_root,
+                "t4_scene_tags_root": args.scene_tags_root,
+                "t4_attach_map_ids": args.attach_map_ids,
+            }.items()
+            if value not in (None, False)
+        }
+    )
     report = evaluate_data_list(
         args.data_list,
         agent_name=args.agent,
+        agent_params=agent_params,
         output_dir=args.output_dir,
         families=args.families,
         checkpoint_path=args.checkpoint,
@@ -410,7 +448,7 @@ def main(argv: Optional[list[str]] = None) -> int:
         run_id=args.run_id,
     )
     print(json.dumps(report, indent=2, sort_keys=True))
-    return 0
+    return 0 if report.get("run", {}).get("num_failed", 0.0) == 0.0 else 1
 
 
 if __name__ == "__main__":

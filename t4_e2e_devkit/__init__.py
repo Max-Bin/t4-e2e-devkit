@@ -22,6 +22,15 @@ _LAZY: dict[str, tuple[str, str]] = {
     "build_agent": ("t4_e2e_devkit.agents.registry", "build_agent"),
     "register_agent": ("t4_e2e_devkit.agents.registry", "register_agent"),
     "available_agents": ("t4_e2e_devkit.agents.registry", "available_agents"),
+    "ComponentRegistry": ("t4_e2e_devkit.config.registry", "ComponentRegistry"),
+    "resolve_component": ("t4_e2e_devkit.config.registry", "resolve_component"),
+    "DatasetConfig": ("t4_e2e_devkit.config.schema", "DatasetConfig"),
+    "EvaluationConfig": ("t4_e2e_devkit.config.schema", "EvaluationConfig"),
+    "ExperimentConfig": ("t4_e2e_devkit.config.schema", "ExperimentConfig"),
+    "SimulationConfig": ("t4_e2e_devkit.config.schema", "SimulationConfig"),
+    "WorkerConfig": ("t4_e2e_devkit.config.schema", "WorkerConfig"),
+    "OutputConfig": ("t4_e2e_devkit.config.schema", "OutputConfig"),
+    "load_experiment_config": ("t4_e2e_devkit.config.schema", "load_experiment_config"),
     # data
     "T4Dataset": ("t4_e2e_devkit.dataset.dataset", "T4Dataset"),
     "T4WindowBuilder": ("t4_e2e_devkit.dataset.window", "T4WindowBuilder"),
@@ -165,6 +174,18 @@ _LAZY: dict[str, tuple[str, str]] = {
     "ReactiveTrafficPolicy": (
         "t4_e2e_devkit.planning.simulation.interfaces",
         "ReactiveTrafficPolicy",
+    ),
+    "IDMTrafficAgentController": (
+        "t4_e2e_devkit.planning.simulation.multi_agent",
+        "IDMTrafficAgentController",
+    ),
+    "MultiAgentTrafficPolicy": (
+        "t4_e2e_devkit.planning.simulation.multi_agent",
+        "MultiAgentTrafficPolicy",
+    ),
+    "TrafficPolicyConfig": (
+        "t4_e2e_devkit.planning.simulation.multi_agent",
+        "TrafficPolicyConfig",
     ),
     "TrafficAgentController": (
         "t4_e2e_devkit.planning.simulation.interfaces",
@@ -391,6 +412,8 @@ _LAZY: dict[str, tuple[str, str]] = {
         "T4ReplayObservationSource",
     ),
     "MetricCache": ("t4_e2e_devkit.evaluation.metric_cache", "MetricCache"),
+    "MetricCatalog": ("t4_e2e_devkit.evaluation.metric_catalog", "MetricCatalog"),
+    "MetricSpec": ("t4_e2e_devkit.evaluation.metric_catalog", "MetricSpec"),
     "evaluate_data_list": ("t4_e2e_devkit.script.evaluate", "evaluate_data_list"),
     "FileBackedBarrier": (
         "t4_e2e_devkit.evaluation.file_backed_barrier",
@@ -401,6 +424,9 @@ _LAZY: dict[str, tuple[str, str]] = {
     "MetricEngine": ("t4_e2e_devkit.evaluation.metric_engine", "MetricEngine"),
     "MetricRecord": ("t4_e2e_devkit.evaluation.metric_engine", "MetricRecord"),
     "MetricReport": ("t4_e2e_devkit.evaluation.metric_engine", "MetricReport"),
+    "LeaderboardReport": ("t4_e2e_devkit.evaluation.leaderboard", "LeaderboardReport"),
+    "LeaderboardRow": ("t4_e2e_devkit.evaluation.leaderboard", "LeaderboardRow"),
+    "build_leaderboard": ("t4_e2e_devkit.evaluation.leaderboard", "build_leaderboard"),
     "AbstractMetricBuilder": ("t4_e2e_devkit.evaluation.metric_api", "AbstractMetricBuilder"),
     "CallableMetricBuilder": ("t4_e2e_devkit.evaluation.metric_api", "CallableMetricBuilder"),
     "MetricAggregator": ("t4_e2e_devkit.evaluation.metric_api", "MetricAggregator"),
@@ -545,6 +571,15 @@ _LAZY: dict[str, tuple[str, str]] = {
         "t4_e2e_devkit.evaluation.distributed",
         "DistributedExecutor",
     ),
+    "LocalDistributedLauncher": (
+        "t4_e2e_devkit.evaluation.orchestration",
+        "LocalDistributedLauncher",
+    ),
+    "DistributedLaunchResult": (
+        "t4_e2e_devkit.evaluation.orchestration",
+        "DistributedLaunchResult",
+    ),
+    "RankLaunch": ("t4_e2e_devkit.evaluation.orchestration", "RankLaunch"),
     "DistributedRunConfig": (
         "t4_e2e_devkit.evaluation.distributed",
         "DistributedRunConfig",
@@ -560,6 +595,18 @@ _LAZY: dict[str, tuple[str, str]] = {
     "merge_worker_results": (
         "t4_e2e_devkit.evaluation.worker_pool",
         "merge_worker_results",
+    ),
+    "TrajectorySubmission": (
+        "t4_e2e_devkit.evaluation.submission",
+        "TrajectorySubmission",
+    ),
+    "SubmissionPackage": (
+        "t4_e2e_devkit.evaluation.submission",
+        "SubmissionPackage",
+    ),
+    "SubmissionValidation": (
+        "t4_e2e_devkit.evaluation.submission",
+        "SubmissionValidation",
     ),
     "RewardConfig": ("t4_e2e_devkit.evaluation.tier4_metrics", "RewardConfig"),
     "FeatureCache": (
@@ -597,6 +644,14 @@ _LAZY: dict[str, tuple[str, str]] = {
     "write_results_dashboard": (
         "t4_e2e_devkit.visualization.dashboard",
         "write_results_dashboard",
+    ),
+    "ExperimentDashboard": (
+        "t4_e2e_devkit.visualization.experiment_dashboard",
+        "ExperimentDashboard",
+    ),
+    "write_experiment_dashboard": (
+        "t4_e2e_devkit.visualization.experiment_dashboard",
+        "write_experiment_dashboard",
     ),
     "PredictionVizCallback": (
         "t4_e2e_devkit.planning.training.callbacks",

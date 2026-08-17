@@ -16,8 +16,9 @@ replayed T4 window -> live T4AgentInput -> agent -> PerfectTracker
 ```
 
 The runtime replays recorded sensors, rebases vector map inputs around the
-simulated ego, and advances only the ego state. Other traffic participants are
-not reactive agents.
+simulated ego, and advances the ego through an injectable controller. Traffic
+is replayed by default; constant-velocity and stateful reactive annotation
+policies are available without changing recorded sensor payloads.
 
 The package is T4-only. It does not require an external database format or an
 experiment-tracking service. Generated reports, caches and videos belong under

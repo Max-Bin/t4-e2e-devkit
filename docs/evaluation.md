@@ -138,12 +138,12 @@ result artifacts.
 ### Rank execution and resume
 
 Ranks are deterministic partitions of the data-list rows. A rank directory is
-complete only after its `run.json` and worker manifest are written:
+finished only after its `run.json` and worker manifest are written:
 
 ```bash
 uv run t4e2e evaluate /path/to/val.json --agent my_agent \
   --output-dir results/evaluation/rank-0 \
-  --rank 0 --world-size 4 --workers 2 --worker-backend process --resume
+  --rank 0 --world-size 4 --workers 1 --worker-backend serial --resume
 
 uv run t4e2e merge-evaluation \
   --input-dir results/evaluation/rank-0 results/evaluation/rank-1 \
@@ -151,13 +151,16 @@ uv run t4e2e merge-evaluation \
   --output-dir results/evaluation/merged
 ```
 
-`--workers` selects serial, thread or local process execution within one rank.
+`--workers` selects serial, thread or local process execution within one rank;
+the optional Ray backend is loaded only when selected.
 `--rank/--world-size` are the only distributed coordination inputs; no
 scheduler or tracking service is required. `--resume` reuses successful rows
 only when their token and resolved configuration fingerprint match. The merge
 rejects missing or duplicate ranks, stale records, duplicate tokens and
 manifests whose task set differs from the records. Use `--allow-incomplete`
-only for an intentionally partial report.
+only for an intentionally partial report. Row failures remain inspectable in
+`failures.csv`; a finished report with failed rows is marked `failed` and the
+CLI exits non-zero.
 
 The local dashboard has no external dependency:
 
@@ -171,8 +174,8 @@ directory still links to its source CSV/JSON files with relative paths.
 
 ## Closed-loop rollout
 
-For an ego-only closed loop with recorded sensor replay, use
-`T4ClosedLoopRunner` from [`closed_loop.md`](closed_loop.md). The runner calls
+For a sensor-replay closed loop, use `T4ClosedLoopRunner` from
+[`closed_loop.md`](closed_loop.md). The runner calls
 the agent at each simulation tick, converts its trajectory to the source 10 Hz
 grid, and advances the ego with `PerfectTracker`. It is distinct from PDM
 proposal simulation: PDM rolls out a fixed proposal for scoring, while this
@@ -196,7 +199,9 @@ uniqueness before recomputing the aggregate.
 metrics remain in their own report section and are never folded into PDM or
 open-loop scores. Use `--rank`, `--world-size`, `--workers`,
 `--worker-backend`, `--max-retries`, and `--resume` for large or interrupted
-runs.
+runs. Recorded traffic is the default; `--traffic-policy constant_velocity`
+or `--traffic-policy idm` changes annotation geometry only and never
+re-renders sensors.
 
 ## Metric engine and local execution
 

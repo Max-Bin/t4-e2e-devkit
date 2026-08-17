@@ -415,7 +415,7 @@ class TrajectoryTargetBuilder(AbstractTargetBuilder):
 
 
 class OracleTargetBuilder(AbstractTargetBuilder):
-    """Everything a scorer-supervised agent needs beyond the trajectory.
+    """Build the privileged fields needed by an oracle scoring run.
 
     The future agent boxes stay ragged numpy arrays rather than tensors: they
     are consumed by the scorer, not by a network layer, and padding them to a

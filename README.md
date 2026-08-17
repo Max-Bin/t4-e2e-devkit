@@ -51,6 +51,12 @@ uv run t4e2e evaluate lists/val.json \
   --families open_loop pdm tier4 \
   --backend auto
 
+# Launch and merge all ranks on one machine.
+uv run t4e2e distribute evaluate lists/val.json \
+  --agent my_agent \
+  --output-dir results/evaluation \
+  --world-size 4 --workers 1 --worker-backend serial
+
 # Optional offline PDM reference cache and metadata sources
 uv run t4e2e evaluate lists/val.json \
   --agent my_agent \
@@ -83,6 +89,25 @@ uv run t4e2e evaluate-closed-loop \
 uv run t4e2e merge-closed-loop \
   --input-dir results/closed_loop/rank-0 results/closed_loop/rank-1 \
   --output-dir results/closed_loop/merged
+
+# Create and score a portable trajectory submission.
+uv run t4e2e submit lists/val.json \
+  --agent my_agent --output-dir results/submission
+uv run t4e2e score-submission lists/val.json \
+  --submission-dir results/submission \
+  --output-dir results/submission-score \
+  --families open_loop pdm tier4
+
+uv run t4e2e distribute score-submission lists/val.json \
+  --submission-dir results/submission \
+  --output-dir results/submission-score \
+  --world-size 4 --workers 1 --worker-backend serial
+
+# Compare multiple completed runs in one offline report.
+uv run t4e2e dashboard results/run-a results/run-b --out results/compare.html
+
+# Run the same workflow from a typed YAML configuration.
+uv run t4e2e run-config configs/evaluate.yaml --override workers.world_size=4
 ```
 
 `evaluate` defaults to `auto`: it selects the GPU scorer when CUDA is available
@@ -95,6 +120,12 @@ successful records with the same resolved configuration. `merge-evaluation`
 validates rank completeness, manifest membership, duplicate tokens and common
 configuration before recomputing the aggregate. All generated files belong in
 the ignored `results/` or `reports/` directories.
+
+`distribute` persists rank status and logs, retries failed ranks, resumes
+completed rank directories, and invokes the merger only after the declared
+rank set succeeds. The optional `ray` worker backend is loaded lazily when the
+internal environment provides it. Constructor options can be passed through
+`--agent-params-json` or the typed configuration's `agent_params` mapping.
 
 Build a reference cache only when an offline CPU run needs one. GPU evaluation
 can generate the reference online.
@@ -155,6 +186,7 @@ the `t4_e2e_devkit.agents` entry-point group.
 | [`docs/evaluation.md`](docs/evaluation.md) | scoring backends and sampling |
 | [`docs/closed_loop.md`](docs/closed_loop.md) | sensor-replay closed-loop rollout |
 | [`docs/runtime.md`](docs/runtime.md) | feature cache and local execution |
+| [`docs/internal_runtime.md`](docs/internal_runtime.md) | orchestration, submissions and run configuration |
 | [`docs/visualization.md`](docs/visualization.md) | BEV, cameras and sample image |
 | [`docs/vendor_audit.md`](docs/vendor_audit.md) | vendored TODO and provenance audit |
 | [`docs/migration.md`](docs/migration.md) | integrating an existing agent |

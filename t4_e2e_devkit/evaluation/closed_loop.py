@@ -115,6 +115,30 @@ class ClosedLoopTrace:
                 np.asarray(getattr(self, name), dtype=np.float64).reshape(-1),
             )
 
+        if not np.isfinite(self.poses_world).all():
+            raise ValueError("closed-loop trace poses_world must be finite")
+        for name in (
+            "time_s",
+            "speed_mps",
+            "acceleration_mps2",
+            "yaw_rate_radps",
+            "steering_rad",
+            "step_distance_m",
+            "path_length_m",
+        ):
+            if not np.isfinite(getattr(self, name)).all():
+                raise ValueError(f"closed-loop trace field {name!r} must be finite")
+        if not np.array_equal(self.step, np.arange(length, dtype=np.int64)):
+            raise ValueError("closed-loop trace step must be zero-based and contiguous")
+        if np.any(self.source_frames < 0) or np.any(np.diff(self.source_frames) <= 0):
+            raise ValueError("closed-loop trace source_frames must be non-negative and increasing")
+        if np.any(self.time_s < 0.0) or np.any(np.diff(self.time_s) <= 0.0):
+            raise ValueError("closed-loop trace time_s must be non-negative and increasing")
+        if np.any(self.step_distance_m < 0.0) or np.any(self.path_length_m < 0.0):
+            raise ValueError("closed-loop trace distances must be non-negative")
+        if np.any(np.diff(self.path_length_m) < -1.0e-8):
+            raise ValueError("closed-loop trace path_length_m must be non-decreasing")
+
         for name, dtype in (
             ("goal_distance_m", np.float64),
             ("collision", bool),
@@ -213,6 +237,49 @@ class ClosedLoopMetrics:
     termination_reason: Optional[str] = None
     token: Optional[str] = None
     trace: Optional[ClosedLoopTrace] = None
+
+    def __post_init__(self) -> None:
+        scalar_names = (
+            "duration_s",
+            "path_length_m",
+            "final_displacement_m",
+            "final_speed_mps",
+            "max_speed_mps",
+            "mean_abs_acceleration_mps2",
+            "max_abs_acceleration_mps2",
+            "max_abs_yaw_rate_radps",
+            "stuck",
+            "goal_reached",
+            "collision",
+            "first_collision_step",
+            "timeout",
+            "min_agent_clearance_m",
+            "min_ttc_s",
+            "ttc_violation",
+            "drivable_violation",
+            "road_border_violation",
+            "min_road_border_distance_m",
+        )
+        for name in scalar_names:
+            value = getattr(self, name)
+            if value is not None and not math.isfinite(float(value)):
+                raise ValueError(f"closed-loop metric {name!r} must be finite")
+        for name in (
+            "stuck",
+            "goal_reached",
+            "collision",
+            "timeout",
+            "ttc_violation",
+            "drivable_violation",
+            "road_border_violation",
+        ):
+            value = getattr(self, name)
+            if value is not None and not 0.0 <= float(value) <= 1.0:
+                raise ValueError(f"closed-loop metric {name!r} must be in [0, 1]")
+        if self.duration_s < 0.0 or self.path_length_m < 0.0:
+            raise ValueError("closed-loop duration and path length must be non-negative")
+        if self.first_collision_step is not None and self.first_collision_step < -1.0:
+            raise ValueError("first_collision_step must be -1 or non-negative")
 
     @property
     def values(self) -> Mapping[str, float]:

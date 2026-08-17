@@ -67,6 +67,7 @@ from t4_e2e_devkit.visualization.plots import (
 )
 
 from .dashboard import ResultsDashboard, write_results_dashboard
+from .experiment_dashboard import ExperimentDashboard, write_experiment_dashboard
 
 __all__ = [
     # bev
@@ -117,4 +118,6 @@ __all__ = [
     "save_figure",
     "ResultsDashboard",
     "write_results_dashboard",
+    "ExperimentDashboard",
+    "write_experiment_dashboard",
 ]

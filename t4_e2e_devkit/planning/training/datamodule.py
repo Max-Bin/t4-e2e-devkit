@@ -39,6 +39,7 @@ class T4DataModule(pl.LightningDataModule):
         prefetch_factor: int = 2,
         pin_memory: bool = True,
         seed: int = 0,
+        return_scenes: bool = False,
     ) -> None:
         """
         :param agent: the agent whose sensors and builders drive the pipeline.
@@ -51,6 +52,8 @@ class T4DataModule(pl.LightningDataModule):
         :param prefetch_factor: batches prefetched per worker.
         :param pin_memory: pin host memory for the device copy.
         :param seed: sampler seed.
+        :param return_scenes: include privileged scenes for explicit training-time
+            metric evaluation.
         """
         super().__init__()
         self.agent = agent
@@ -63,9 +66,12 @@ class T4DataModule(pl.LightningDataModule):
         self.prefetch_factor = prefetch_factor
         self.pin_memory = pin_memory
         self.seed = seed
+        self.return_scenes = bool(return_scenes)
 
         self._train: Optional[T4Dataset] = None
         self._val: Optional[T4Dataset] = None
+        self._train_sampler: Optional[T4SceneLocalitySampler] = None
+        self._val_sampler: Optional[T4SceneLocalitySampler] = None
 
     def setup(self, stage: Optional[str] = None) -> None:
         """
@@ -78,6 +84,7 @@ class T4DataModule(pl.LightningDataModule):
                 self.agent,
                 scene_filter=self.scene_filter,
                 reader_config=self.reader_config,
+                return_scene=self.return_scenes,
             )
         if self._val is None and self.val_data_list is not None:
             self._val = build_dataset_from_agent(
@@ -85,15 +92,21 @@ class T4DataModule(pl.LightningDataModule):
                 self.agent,
                 scene_filter=self.scene_filter,
                 reader_config=self.reader_config,
+                return_scene=self.return_scenes,
             )
 
     def _loader(self, dataset: T4Dataset, shuffle: bool) -> DataLoader:
+        sampler = T4SceneLocalitySampler(
+            dataset, shuffle=shuffle, seed=self.seed, drop_last=shuffle
+        )
+        if shuffle:
+            self._train_sampler = sampler
+        else:
+            self._val_sampler = sampler
         return DataLoader(
             dataset,
             batch_size=self.batch_size,
-            sampler=T4SceneLocalitySampler(
-                dataset, shuffle=shuffle, seed=self.seed, drop_last=shuffle
-            ),
+            sampler=sampler,
             num_workers=self.num_workers,
             collate_fn=collate_t4,
             pin_memory=self.pin_memory,
@@ -115,6 +128,12 @@ class T4DataModule(pl.LightningDataModule):
         if self._val is None:
             self.setup()
         return None if self._val is None else self._loader(self._val, shuffle=False)
+
+    def set_epoch(self, epoch: int) -> None:
+        """Set the epoch used by the locality-preserving training sampler."""
+
+        if self._train_sampler is not None:
+            self._train_sampler.set_epoch(epoch)
 
     def teardown(self, stage: Optional[str] = None) -> None:
         """

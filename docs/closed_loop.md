@@ -1,9 +1,9 @@
 # Closed-loop rollout
 
-The devkit supports an ego-only closed loop over T4 recordings:
+The devkit supports a sensor-replay closed loop over T4 recordings:
 
 ```text
-replayed T4 sensors + rebased vector map
+replayed T4 sensors + rebased vector map + traffic policy
                   ↓
             T4AgentInput
                   ↓
@@ -15,24 +15,26 @@ replayed T4 sensors + rebased vector map
                   ↺
 ```
 
-Other traffic participants are not simulated reactively. Their detections and
-the sensor payload are replayed from the recorded source frame. Camera images
-are therefore still the recorded pixels; the devkit does not render a new
-image from the simulated pose. Vector map geometry and the goal are rebased to
-the simulated ego frame when they are present.
+The default traffic policy replays recorded annotations. Optional constant-
+velocity and reactive multi-agent policies update annotation geometry while
+keeping camera and LiDAR payloads tied to the recorded source frame. The
+devkit does not render a new image or sweep from the simulated pose. Vector map
+geometry and the goal are rebased to the simulated ego frame when present.
 
 When replay annotations are available, the runner transforms their boxes into
 the rollout frame and records ego-agent collision ticks. It also attaches the
-world goal, timeout status, geometry events and a termination reason to
-`T4ClosedLoopResult`. The rollout remains ego-only: other agents do not react
-to the simulated ego.
+world goal, timeout status, geometry events, traffic state history when a
+stateful policy is used, and a termination reason to `T4ClosedLoopResult`.
 
 The optional per-tick geometry events include minimum signed agent clearance,
-constant-velocity replay TTC, drivable-area and road-border violations. TTC is
-a diagnostic projection of the recorded box velocity; it is not a traffic-agent
-simulator. A field is omitted when its annotations or map layer is unavailable.
+constant-velocity TTC, drivable-area and road-border violations. A field is
+omitted when its annotations or map layer is unavailable.
 The T4 map is a local tensor contract, so these checks are limited to the
 provided lane, polygon and road-border window rather than a global map query.
+
+Use `--stop-on-collision` or `--stop-on-goal` when the rollout should end at
+the first corresponding event. The default evaluates the full requested
+horizon and records the events without stopping.
 
 This is also the relevant NuPlan boundary: its standard sensor observation
 paths replay recorded sensor samples or tracked objects. They do not generate
@@ -100,8 +102,10 @@ with T4ClosedLoopRunner.from_scene_dir(
 ```
 
 Use the default replay policy for recorded traffic. The constant-velocity
-policy is a small controlled-test hook; it does not render sensors or model
-reactive traffic.
+policy advances annotations from their recorded velocity. For a stateful
+reactive rollout, pass `MultiAgentTrafficPolicy` with a controller factory;
+the built-in CLI option `--traffic-policy idm` provides a deterministic IDM
+controller. None of these policies render sensors.
 
 For a local simulation-manager boundary with lifecycle callbacks:
 
@@ -142,7 +146,7 @@ Large runs can be partitioned deterministically by rank and resumed:
 uv run t4e2e evaluate-closed-loop lists/val.json \
   --agent my_agent \
   --output-dir reports/rank-0 \
-  --rank 0 --world-size 8 --workers 2 --worker-backend process \
+  --rank 0 --world-size 8 --workers 1 --worker-backend serial \
   --max-retries 1 --resume
 ```
 

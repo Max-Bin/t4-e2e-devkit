@@ -2,7 +2,7 @@
 
 One place to discover everything the devkit can do::
 
-    t4e2e agents                 # what models are registered
+    t4e2e agents                 # what agents are registered
     t4e2e datalist ...           # build a data list
     t4e2e pdm-cache ...          # build the PDM-Closed reference cache
     t4e2e train ...              # train an agent (hydra)
@@ -322,6 +322,48 @@ def _cmd_merge_workers(argv: Sequence[str]) -> int:
     return merge_main(list(argv))
 
 
+def _cmd_distribute(argv: Sequence[str]) -> int:
+    from t4_e2e_devkit.script.distributed import main as distribute_main
+
+    return distribute_main(list(argv))
+
+
+def _cmd_submit(argv: Sequence[str]) -> int:
+    from t4_e2e_devkit.script.submit import main as submit_main
+
+    return submit_main(list(argv))
+
+
+def _cmd_merge_submission(argv: Sequence[str]) -> int:
+    from t4_e2e_devkit.script.merge_submission import main as merge_main
+
+    return merge_main(list(argv))
+
+
+def _cmd_score_submission(argv: Sequence[str]) -> int:
+    from t4_e2e_devkit.script.score_submission import main as score_main
+
+    return score_main(list(argv))
+
+
+def _cmd_merge_score_submission(argv: Sequence[str]) -> int:
+    from t4_e2e_devkit.script.merge_submission_score import main as merge_main
+
+    return merge_main(list(argv))
+
+
+def _cmd_leaderboard(argv: Sequence[str]) -> int:
+    from t4_e2e_devkit.script.leaderboard import main as leaderboard_main
+
+    return leaderboard_main(list(argv))
+
+
+def _cmd_run_config(argv: Sequence[str]) -> int:
+    from t4_e2e_devkit.script.run_experiment import main as run_main
+
+    return run_main(list(argv))
+
+
 def _cmd_evaluate(argv: Sequence[str]) -> int:
     from t4_e2e_devkit.script.evaluate import main as evaluate_main
 
@@ -336,12 +378,18 @@ def _cmd_merge_evaluation(argv: Sequence[str]) -> int:
 
 def _cmd_dashboard(argv: Sequence[str]) -> int:
     parser = argparse.ArgumentParser(prog="t4e2e dashboard")
-    parser.add_argument("results_dir", help="ignored results or report directory")
+    parser.add_argument("results_dir", nargs="+", help="one or more ignored results/report directories")
     parser.add_argument("--out", default=None, help="HTML output path")
+    parser.add_argument("--title", default="T4 experiment analysis")
     args = parser.parse_args(argv)
-    from t4_e2e_devkit.visualization.dashboard import write_results_dashboard
+    if len(args.results_dir) == 1:
+        from t4_e2e_devkit.visualization.dashboard import write_results_dashboard
 
-    print(write_results_dashboard(args.results_dir, args.out))
+        print(write_results_dashboard(args.results_dir[0], args.out, title=args.title))
+    else:
+        from t4_e2e_devkit.visualization.experiment_dashboard import write_experiment_dashboard
+
+        print(write_experiment_dashboard(args.results_dir, args.out, title=args.title))
     return 0
 
 
@@ -368,6 +416,13 @@ COMMANDS = {
     ),
     "merge-closed-loop": (_cmd_merge_closed_loop, "merge closed-loop rank reports"),
     "merge-workers": (_cmd_merge_workers, "merge distributed worker manifests"),
+    "distribute": (_cmd_distribute, "launch and merge all evaluation ranks"),
+    "submit": (_cmd_submit, "write a validated trajectory submission"),
+    "merge-submission": (_cmd_merge_submission, "merge rank trajectory submissions"),
+    "score-submission": (_cmd_score_submission, "score a trajectory submission"),
+    "merge-score-submission": (_cmd_merge_score_submission, "merge rank submission scores"),
+    "leaderboard": (_cmd_leaderboard, "rank completed result directories"),
+    "run-config": (_cmd_run_config, "run a typed experiment configuration"),
     "report-closed-loop": (_cmd_report_closed_loop, "render a local closed-loop HTML report"),
     "dashboard": (_cmd_dashboard, "render a local results dashboard"),
     "train": (

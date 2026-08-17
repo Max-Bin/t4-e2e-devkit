@@ -55,6 +55,7 @@ class T4Dataset(Dataset):
         scene_cache_size: int = DEFAULT_SCENE_CACHE_SIZE,
         feature_cache: Optional[Any] = None,
         feature_cache_signature: Optional[str] = None,
+        return_scene: bool = False,
     ) -> None:
         """
         :param data_list: a data list, or the path to one.
@@ -65,6 +66,8 @@ class T4Dataset(Dataset):
         :param target_builders: agent target builders.
         :param reader_config: extra reader settings (frame cache, image size).
         :param scene_cache_size: open scene builders to keep per worker.
+        :param return_scene: include the privileged scene as a third batch item;
+            useful for explicit training-time metric evaluation.
         """
         self.data_list = (
             data_list if isinstance(data_list, DataList) else load_data_list(data_list)
@@ -74,6 +77,7 @@ class T4Dataset(Dataset):
         self.feature_builders = list(feature_builders or [])
         self.target_builders = list(target_builders or [])
         self.reader_config = dict(reader_config or {})
+        self.return_scene = bool(return_scene)
         self.scene_cache_size = int(scene_cache_size)
         if self.scene_cache_size < 1:
             raise ValueError(
@@ -111,7 +115,8 @@ class T4Dataset(Dataset):
         scene = self.build_scene(scene_dir, center)
         if not self.feature_builders and not self.target_builders:
             return scene
-        return self.build_features(scene)
+        features, targets = self.build_features(scene)
+        return (features, targets, scene) if self.return_scene else (features, targets)
 
     # ------------------------------------------------------------------ #
     # Scene access
@@ -329,9 +334,18 @@ def collate_t4(batch: Sequence[Any]) -> Any:
         raise ValueError("cannot collate an empty T4 batch")
     first = batch[0]
 
-    if isinstance(first, tuple) and len(first) == 2 and isinstance(first[0], dict):
+    if isinstance(first, tuple) and len(first) in {2, 3} and isinstance(first[0], dict):
+        if any(
+            not isinstance(sample, tuple)
+            or len(sample) != len(first)
+            or not isinstance(sample[0], dict)
+            for sample in batch
+        ):
+            raise ValueError("T4 samples in one batch disagree about their tuple structure")
         features = _collate_mapping([sample[0] for sample in batch])
         targets = _collate_mapping([sample[1] for sample in batch])
+        if len(first) == 3:
+            return features, targets, [sample[2] for sample in batch]
         return features, targets
     if isinstance(first, dict):
         return _collate_mapping(list(batch))
@@ -386,6 +400,7 @@ def build_dataset_from_agent(
     scene_filter: Optional[SceneFilter] = None,
     reader_config: Optional[Dict[str, Any]] = None,
     include_targets: bool = True,
+    return_scene: bool = False,
 ) -> T4Dataset:
     """Construct the dataset an agent needs, from the agent itself.
 
@@ -398,6 +413,7 @@ def build_dataset_from_agent(
     :param scene_filter: the window shape.
     :param reader_config: extra reader settings.
     :param include_targets: build supervision targets (training) or not (inference).
+    :param return_scene: include the privileged scene in each training sample.
     :return: the configured dataset.
     """
     return T4Dataset(
@@ -407,4 +423,5 @@ def build_dataset_from_agent(
         feature_builders=agent.get_feature_builders(),
         target_builders=agent.get_target_builders() if include_targets else [],
         reader_config=reader_config,
+        return_scene=return_scene,
     )

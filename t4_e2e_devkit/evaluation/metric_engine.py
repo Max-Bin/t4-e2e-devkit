@@ -154,8 +154,10 @@ class MetricEngine:
             if compute is None:
                 raise ValueError("compute is required when registering a named metric")
             definition = MetricDefinition(definition, compute, family)
-        if not definition.name:
-            raise ValueError("metric name must not be empty")
+        if not definition.name or not definition.family:
+            raise ValueError("metric name and family must not be empty")
+        if not callable(definition.compute):
+            raise TypeError(f"metric {definition.name!r} compute must be callable")
         if definition.name in self._definitions:
             raise ValueError(f"metric is already registered: {definition.name}")
         self._definitions[definition.name] = definition
@@ -171,6 +173,17 @@ class MetricEngine:
         records: list[MetricRecord] = []
         wanted_names = None if metric_names is None else {str(name) for name in metric_names}
         wanted_families = None if families is None else {str(name) for name in families}
+        available_names = set(self._definitions)
+        available_families = {definition.family for definition in self.definitions}
+        unknown_names = sorted((wanted_names or set()) - available_names)
+        unknown_families = sorted((wanted_families or set()) - available_families)
+        if unknown_names or unknown_families:
+            details = []
+            if unknown_names:
+                details.append(f"unknown metric names: {unknown_names}")
+            if unknown_families:
+                details.append(f"unknown metric families: {unknown_families}")
+            raise ValueError("; ".join(details))
         explicit_selection = wanted_names is not None or wanted_families is not None
         definitions = tuple(
             definition

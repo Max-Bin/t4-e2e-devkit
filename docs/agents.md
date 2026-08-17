@@ -102,7 +102,7 @@ Built-in builders include:
 LiDAR is opt-in. A camera-only agent should set `lidar=False`; a map-only agent
 can use `SensorConfig.build_no_sensors()`.
 
-## Scoring proposals during training
+## Training-time PDM reporting
 
 `score_proposals` accepts raw tensors and a sampling declaration:
 
@@ -115,9 +115,10 @@ components = scorer.score_proposals(
 ```
 
 The scorer adapts every proposal to its configured evaluation grid before
-scoring. A trajectory shorter than that grid is rejected. `score_batch` gets
-sampling directly from each `Trajectory`, so it does not need producer-specific
-configuration.
+scoring. A trajectory shorter than that grid is rejected. The result is a
+detached metric label for logging; it is not part of the differentiable agent
+loss. `score_batch` gets sampling directly from each `Trajectory`, so it does
+not need producer-specific configuration.
 
 ## Oracles and deployment
 

@@ -162,7 +162,7 @@ def merge_closed_loop_reports(
         output / "run.json",
         {
             **run_config,
-            "status": "completed",
+            "status": "failed" if failures else "completed",
             "config_fingerprint": config_fingerprint,
             "num_completed": len(metrics),
             "num_failed": len(failures),
@@ -184,8 +184,8 @@ def _load_run(directory: Path) -> dict[str, Any]:
         raise ValueError(f"not a closed-loop run directory: {directory}")
     if run.get("version") != RUN_VERSION:
         raise ValueError(f"unsupported closed-loop run version in {directory}")
-    if run.get("status") != "completed":
-        raise ValueError(f"run is not completed: {directory}")
+    if run.get("status") not in {"completed", "failed"}:
+        raise ValueError(f"run is not finished: {directory}")
     return run
 
 
@@ -236,7 +236,7 @@ def main(argv: Optional[list[str]] = None) -> int:
         allow_incomplete=args.allow_incomplete,
     )
     print(json.dumps(report, indent=2, sort_keys=True))
-    return 0
+    return 0 if report.get("run", {}).get("num_failed", 0.0) == 0.0 else 1
 
 
 if __name__ == "__main__":

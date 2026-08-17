@@ -34,6 +34,8 @@ class DistributedRunConfig:
             raise ValueError(f"rank must be in [0, {self.world_size}), got {self.rank}")
         if self.workers < 1:
             raise ValueError("workers must be positive")
+        if self.backend not in {"serial", "thread", "process", "ray"}:
+            raise ValueError("backend must be serial, thread, process or ray")
 
 
 @dataclass(frozen=True)
@@ -110,6 +112,8 @@ class WorkerManifest:
         )
         if manifest.world_size < 1 or manifest.rank < 0 or manifest.rank >= manifest.world_size:
             raise ValueError(f"invalid rank/world size in worker manifest: {source}")
+        if len(set(manifest.task_ids)) != len(manifest.task_ids):
+            raise ValueError(f"worker manifest contains duplicate task IDs: {source}")
         result_ids = tuple(result.task_id for result in manifest.results)
         if set(result_ids) != set(manifest.task_ids) or len(result_ids) != len(manifest.task_ids):
             raise ValueError(f"worker manifest task_ids do not match results: {source}")

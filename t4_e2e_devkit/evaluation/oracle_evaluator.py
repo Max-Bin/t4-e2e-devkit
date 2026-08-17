@@ -261,7 +261,7 @@ def aggregate_t4_pdms(
 
 @dataclass(frozen=True)
 class T4OracleResult:
-    """Six original scorer heads and the original aggregate for a batch."""
+    """Six scoring components and the original aggregate for a batch."""
 
     # [B, N, 6] = NC, DAC, DDC, TTC, EP, Comfort
     components: torch.Tensor

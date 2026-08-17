@@ -6,6 +6,7 @@ batching and device placement are known.
 
 from __future__ import annotations
 
+import math
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import TYPE_CHECKING, Any, Dict, List, Mapping, Optional, Sequence, Tuple, Union
@@ -536,6 +537,7 @@ class Trajectory:
     trajectory_sampling: TrajectorySampling = DEFAULT_TRAJECTORY_SAMPLING
 
     def __post_init__(self) -> None:
+        validate_trajectory_sampling(self.trajectory_sampling)
         poses = np.asarray(self.poses, dtype=np.float32)
         if poses.ndim != 2:
             raise ValueError(f"Trajectory poses need two dimensions (samples, pose); got {poses.shape}")
@@ -546,6 +548,8 @@ class Trajectory:
             )
         if poses.shape[1] != 3:
             raise ValueError(f"Trajectory poses need (x, y, heading) at the last dim; got {poses.shape}")
+        if not np.isfinite(poses).all():
+            raise ValueError("Trajectory poses must contain only finite values")
         # The dataclass is the numpy boundary.  Normalising here keeps callers
         # that pass lists or float64 arrays from getting a delayed AttributeError
         # in ``__len__`` or silently changing dtype in the scorer.
@@ -583,6 +587,7 @@ class Trajectory:
         its meaning.
         """
 
+        validate_trajectory_sampling(target_sampling)
         source_interval = float(self.trajectory_sampling.interval_length)
         target_interval = float(target_sampling.interval_length)
         source_times = np.arange(len(self) + 1, dtype=np.float64) * source_interval
@@ -617,6 +622,41 @@ class Trajectory:
         heading = interpolate(unwrapped_heading)
         poses = np.column_stack((xy, heading)).astype(np.float32)
         return Trajectory(poses=poses, trajectory_sampling=target_sampling)
+
+
+def validate_trajectory_sampling(sampling: TrajectorySampling) -> TrajectorySampling:
+    """Validate and return one complete, positive trajectory grid.
+
+    ``TrajectorySampling`` is a vendored compatibility type with optional
+    constructor fields.  The devkit's public trajectory boundary is stricter:
+    every field must be resolved, finite and positive, and the three values
+    must describe the same horizon.
+    """
+
+    if not isinstance(sampling, TrajectorySampling):
+        raise TypeError(
+            "trajectory_sampling must be a TrajectorySampling instance; "
+            f"got {type(sampling).__name__}"
+        )
+    num_poses = sampling.num_poses
+    interval = sampling.interval_length
+    horizon = sampling.time_horizon
+    if isinstance(num_poses, bool) or not isinstance(num_poses, int) or num_poses <= 0:
+        raise ValueError(f"trajectory num_poses must be a positive integer, got {num_poses!r}")
+    for name, value in (("interval_length", interval), ("time_horizon", horizon)):
+        if value is None or not math.isfinite(float(value)) or float(value) <= 0.0:
+            raise ValueError(f"trajectory {name} must be a finite positive number, got {value!r}")
+    if not math.isclose(
+        float(num_poses) * float(interval),
+        float(horizon),
+        rel_tol=1e-9,
+        abs_tol=1e-10,
+    ):
+        raise ValueError(
+            "trajectory sampling is inconsistent: "
+            f"num_poses={num_poses}, interval_length={interval}, time_horizon={horizon}"
+        )
+    return sampling
 
 
 # --------------------------------------------------------------------------- #

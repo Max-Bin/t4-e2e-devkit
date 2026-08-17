@@ -36,6 +36,11 @@ from t4_e2e_devkit.evaluation.distributed import (
 )
 from t4_e2e_devkit.evaluation.executor import LocalExecutor, rank_indices
 from t4_e2e_devkit.evaluation.file_backed_barrier import FileBackedBarrier
+from t4_e2e_devkit.evaluation.leaderboard import (
+    LeaderboardReport,
+    LeaderboardRow,
+    build_leaderboard,
+)
 from t4_e2e_devkit.evaluation.metric_api import (
     AbstractMetricBuilder,
     CallableMetricBuilder,
@@ -62,6 +67,7 @@ from t4_e2e_devkit.evaluation.metric_builders import (
     TTCMetricBuilder,
 )
 from t4_e2e_devkit.evaluation.metric_cache import MetricCache
+from t4_e2e_devkit.evaluation.metric_catalog import MetricCatalog, MetricSpec
 from t4_e2e_devkit.evaluation.metric_engine import (
     MetricContext,
     MetricDefinition,
@@ -103,6 +109,11 @@ from t4_e2e_devkit.evaluation.open_loop import (
     aggregate_open_loop_metrics,
     compute_open_loop_metrics,
 )
+from t4_e2e_devkit.evaluation.orchestration import (
+    DistributedLaunchResult,
+    LocalDistributedLauncher,
+    RankLaunch,
+)
 from t4_e2e_devkit.evaluation.pdm_score import (
     BACKENDS,
     ScoringError,
@@ -111,6 +122,11 @@ from t4_e2e_devkit.evaluation.pdm_score import (
     compare_backends,
 )
 from t4_e2e_devkit.evaluation.report import aggregate_evaluation
+from t4_e2e_devkit.evaluation.submission import (
+    SubmissionPackage,
+    SubmissionValidation,
+    TrajectorySubmission,
+)
 from t4_e2e_devkit.evaluation.tier4_metrics import RewardConfig, aggregate_tier4_metrics
 from t4_e2e_devkit.evaluation.worker_pool import (
     WorkerPool,
@@ -131,6 +147,7 @@ __all__ = [
     "CollisionMetricBuilder",
     "ComfortMetricBuilder",
     "DistributedExecutor",
+    "DistributedLaunchResult",
     "DistributedRunConfig",
     "FileBackedBarrier",
     "DrivableAreaMetricBuilder",
@@ -143,10 +160,13 @@ __all__ = [
     "ProgressMetricBuilder",
     "RewardConfig",
     "ScoringError",
+    "SubmissionPackage",
+    "SubmissionValidation",
     "T4PDMScorer",
     "T4PDMScorerConfig",
     "T4SafetyMetricBuilder",
     "TTCMetricBuilder",
+    "TrajectorySubmission",
     "TrafficLightMetricBuilder",
     "StopLineViolationMetricBuilder",
     "aggregate_closed_loop_metrics",
@@ -162,6 +182,8 @@ __all__ = [
     "load_rollout_artifact",
     "load_rollout_metrics",
     "MetricCache",
+    "MetricCatalog",
+    "MetricSpec",
     "MetricAggregator",
     "MetricBuilderRegistry",
     "MetricCallback",
@@ -175,6 +197,11 @@ __all__ = [
     "MetricStatistics",
     "MetricTimeSeries",
     "LocalExecutor",
+    "LocalDistributedLauncher",
+    "RankLaunch",
+    "LeaderboardReport",
+    "LeaderboardRow",
+    "build_leaderboard",
     "WorkerPool",
     "WorkerResources",
     "WorkerResult",

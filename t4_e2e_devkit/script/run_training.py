@@ -3,7 +3,7 @@
 Hydra entry point, matching the reference repositories' launch convention::
 
     python -m t4_e2e_devkit.script.run_training \\
-        agent=my_model \\
+        agent=my_agent \\
         train_data_list=/path/to/t4_train.json \\
         val_data_list=/path/to/t4_val.json \\
         experiment_name=my_run \\
@@ -53,7 +53,8 @@ def run_training(cfg: DictConfig) -> str:
     agent.initialize()
 
     visualize = cfg.get("visualize")
-    needs_pdm_reference = bool(cfg.get("scorer_supervision")) or bool(
+    score_training_batches = bool(cfg.get("score_training_batches"))
+    needs_pdm_reference = score_training_batches or bool(
         visualize
         and visualize.get("enabled")
         and cfg.get("val_data_list")
@@ -66,11 +67,12 @@ def run_training(cfg: DictConfig) -> str:
         val_data_list=cfg.get("val_data_list"),
         scene_filter=SceneFilter(**OmegaConf.to_container(cfg.scene_filter)),
         reader_config=reader_config,
+        return_scenes=score_training_batches,
         **OmegaConf.to_container(cfg.dataloader),
     )
 
     scorer = None
-    if cfg.get("scorer_supervision", False):
+    if score_training_batches:
         from t4_e2e_devkit.evaluation.pdm_score import T4PDMScorer
 
         scorer = T4PDMScorer(
@@ -85,10 +87,8 @@ def run_training(cfg: DictConfig) -> str:
     OmegaConf.save(cfg, output_dir / "config.yaml")
 
     # Which metric selects the best checkpoint is a real decision, not a
-    # default.  For a scorer-supervised run without validation, total loss is
-    # the wrong one: it can improve because the trajectory generator improved
-    # while the scorer's proposal ranking simultaneously collapsed, and the
-    # ranking is what a deployed model uses.
+    # default.  The PDM report is deliberately independent from the objective;
+    # it is logged for comparison and does not select a checkpoint by itself.
     monitor = cfg.get("monitor")
     if monitor is None:
         monitor = "val/loss" if cfg.get("val_data_list") else "train/loss"

@@ -24,6 +24,7 @@ one-step actuator command through the same object.
 from __future__ import annotations
 
 from abc import ABC, abstractmethod
+from collections.abc import Mapping
 from typing import Any, Dict, List, Union
 
 import numpy as np
@@ -119,6 +120,10 @@ class AbstractT4Agent(torch.nn.Module, ABC):
         """:return: Lightning callbacks this agent contributes."""
         return []
 
+    def get_training_metrics(self) -> List[Any]:
+        """Return detached metrics to log during training and validation."""
+        return []
+
     # ------------------------------------------------------------------ #
     # Inference
     # ------------------------------------------------------------------ #
@@ -149,6 +154,10 @@ class AbstractT4Agent(torch.nn.Module, ABC):
         """
         self.eval()
         device = self.device
+        sampling = self.trajectory_sampling
+        from t4_e2e_devkit.common.dataclasses import validate_trajectory_sampling
+
+        validate_trajectory_sampling(sampling)
 
         features: Dict[str, torch.Tensor] = {}
         for builder in self.get_feature_builders():
@@ -161,14 +170,35 @@ class AbstractT4Agent(torch.nn.Module, ABC):
         with torch.no_grad():
             predictions = self.forward(features)
 
+        if not isinstance(predictions, Mapping):
+            raise TypeError(
+                f"{type(self).__name__}.forward must return a dict, got "
+                f"{type(predictions).__name__}"
+            )
         if "trajectory" not in predictions:
             raise KeyError(
                 f"{type(self).__name__}.forward must return a 'trajectory' key; "
                 f"got {sorted(predictions)}"
             )
-        poses = predictions["trajectory"].squeeze(0).float().cpu().numpy()
+        output = predictions["trajectory"]
+        if not torch.is_tensor(output):
+            raise TypeError(
+                f"{type(self).__name__}.forward['trajectory'] must be a tensor, "
+                f"got {type(output).__name__}"
+            )
+        expected_shape = (1, sampling.num_poses, 3)
+        if tuple(output.shape) != expected_shape:
+            raise ValueError(
+                f"{type(self).__name__}.forward['trajectory'] must have shape "
+                f"{expected_shape}, got {tuple(output.shape)}"
+            )
+        if not output.is_floating_point():
+            raise TypeError("forward['trajectory'] must be a floating-point tensor")
+        if not torch.isfinite(output).all():
+            raise ValueError("forward['trajectory'] contains NaN or Inf")
+        poses = output[0].float().cpu().numpy()
         return Trajectory(poses=np.asarray(poses, dtype=np.float32),
-                          trajectory_sampling=self.trajectory_sampling)
+                          trajectory_sampling=sampling)
 
     def compute_control(self, agent_input: T4AgentInput) -> Dict[str, float]:
         """One-step actuator command for deployment.
