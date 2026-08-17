@@ -42,10 +42,11 @@ no future data. Target builders and evaluators receive the privileged
 ## Scenario and runtime interfaces
 
 `T4ScenarioBuilder` enumerates data-list rows as materialized `T4Scenario`
-objects. A scenario exposes indexed ego status, tracked objects, timestamps,
-replayed sensor frames, route lane IDs, traffic-light states and the optional
-`T4MapAPI`. History and future accessors sample a declared time horizon without
-assuming a fixed number of trajectory points.
+objects. A scenario exposes indexed ego state, tracked objects, timestamps,
+replayed sensor frames, mission goal, route lane/road-block IDs,
+traffic-light states and the optional `T4MapAPI`. History and future accessors
+sample a declared time horizon without assuming a fixed number of trajectory
+points.
 
 Closed loop separates three replaceable components:
 
@@ -56,12 +57,16 @@ ObservationProvider + TrafficPolicy + EgoController
 ```
 
 The defaults are recorded observation replay, recorded traffic and the
-kinematic tracker. A custom controller or traffic policy can be injected for a
-controlled experiment; camera and LiDAR payloads remain recorded data.
+kinematic tracker. A custom controller, per-track reactive policy or lifecycle
+callback can be injected for a controlled experiment; camera and LiDAR
+payloads remain recorded data.
 
-`T4MapAPI` keeps source IDs, tags and geometry for lanelets, line strings,
-crosswalks, stop lines, traffic lights, regulatory elements and drivable areas.
-Tensor rows retain the model contract; ID matches are side metadata.
+`T4MapAPI` keeps source IDs, tags and geometry for lanelets, lane connectors,
+roadblocks, intersections, line strings, crosswalks, stop lines, traffic lights,
+regulatory elements and drivable areas when those objects exist in the Lanelet2
+export. It also exposes successor/predecessor, adjacency, route-chain and
+lane-to-regulatory-object queries. Tensor rows retain the model contract; ID
+matches are side metadata.
 
 ## Evaluation and feature execution
 

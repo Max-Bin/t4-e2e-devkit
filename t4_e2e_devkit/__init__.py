@@ -132,6 +132,10 @@ _LAZY: dict[str, tuple[str, str]] = {
         "t4_e2e_devkit.planning.simulation.interfaces",
         "CallableTrafficPolicy",
     ),
+    "CallableTrafficAgentController": (
+        "t4_e2e_devkit.planning.simulation.interfaces",
+        "CallableTrafficAgentController",
+    ),
     "ReplayObservationProvider": (
         "t4_e2e_devkit.planning.simulation.interfaces",
         "ReplayObservationProvider",
@@ -144,12 +148,45 @@ _LAZY: dict[str, tuple[str, str]] = {
         "t4_e2e_devkit.planning.simulation.interfaces",
         "ConstantVelocityTrafficPolicy",
     ),
+    "ConstantVelocityTrafficAgentController": (
+        "t4_e2e_devkit.planning.simulation.interfaces",
+        "ConstantVelocityTrafficAgentController",
+    ),
+    "ReactiveTrafficPolicy": (
+        "t4_e2e_devkit.planning.simulation.interfaces",
+        "ReactiveTrafficPolicy",
+    ),
+    "TrafficAgentController": (
+        "t4_e2e_devkit.planning.simulation.interfaces",
+        "TrafficAgentController",
+    ),
+    "TrafficAgentState": (
+        "t4_e2e_devkit.planning.simulation.interfaces",
+        "TrafficAgentState",
+    ),
+    "SimulationCallback": (
+        "t4_e2e_devkit.planning.simulation.interfaces",
+        "SimulationCallback",
+    ),
+    "SimulationTick": (
+        "t4_e2e_devkit.planning.simulation.interfaces",
+        "SimulationTick",
+    ),
+    "SimulationRequest": (
+        "t4_e2e_devkit.planning.simulation.manager",
+        "SimulationRequest",
+    ),
+    "T4SimulationManager": (
+        "t4_e2e_devkit.planning.simulation.manager",
+        "T4SimulationManager",
+    ),
     "MetricCache": ("t4_e2e_devkit.evaluation.metric_cache", "MetricCache"),
     "MetricContext": ("t4_e2e_devkit.evaluation.metric_engine", "MetricContext"),
     "MetricDefinition": ("t4_e2e_devkit.evaluation.metric_engine", "MetricDefinition"),
     "MetricEngine": ("t4_e2e_devkit.evaluation.metric_engine", "MetricEngine"),
     "MetricRecord": ("t4_e2e_devkit.evaluation.metric_engine", "MetricRecord"),
     "MetricReport": ("t4_e2e_devkit.evaluation.metric_engine", "MetricReport"),
+    "RewardConfig": ("t4_e2e_devkit.evaluation.tier4_metrics", "RewardConfig"),
     "FeatureCache": (
         "t4_e2e_devkit.planning.training.feature_cache",
         "FeatureCache",
@@ -233,6 +270,7 @@ if TYPE_CHECKING:  # let type checkers and IDEs see the real symbols
     from t4_e2e_devkit.evaluation.pdm_score import T4PDMScorer
     from t4_e2e_devkit.evaluation.reference_provider import T4PDMReferenceProvider
     from t4_e2e_devkit.evaluation.report import aggregate_evaluation
+    from t4_e2e_devkit.evaluation.tier4_metrics import RewardConfig
     from t4_e2e_devkit.planning.scenario_builder.abstract_scenario import (
         AbstractScenario,
         T4Scenario,
@@ -249,14 +287,22 @@ if TYPE_CHECKING:  # let type checkers and IDEs see the real symbols
     )
     from t4_e2e_devkit.planning.simulation.interfaces import (
         CallableObservationProvider,
+        CallableTrafficAgentController,
         CallableTrafficPolicy,
+        ConstantVelocityTrafficAgentController,
         ConstantVelocityTrafficPolicy,
         EgoController,
         ObservationProvider,
+        ReactiveTrafficPolicy,
         ReplayObservationProvider,
         ReplayTrafficPolicy,
+        SimulationCallback,
+        SimulationTick,
+        TrafficAgentController,
+        TrafficAgentState,
         TrafficPolicy,
     )
+    from t4_e2e_devkit.planning.simulation.manager import SimulationRequest, T4SimulationManager
     from t4_e2e_devkit.planning.training.callbacks import PredictionVizCallback
     from t4_e2e_devkit.planning.training.feature_cache import FeatureCache
     from t4_e2e_devkit.visualization.plots import render_prediction_bev

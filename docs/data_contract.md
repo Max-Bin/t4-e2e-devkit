@@ -98,8 +98,10 @@ portable filename; local filesystem prefixes are not serialized. `None` means
 padding, missing source geometry or an unsuccessful match; IDs are never
 fabricated. Unmatched rows retain their candidate IDs and reason for audit.
 `T4MapAPI.get_objects()` and `query_objects()` expose source tags and geometry
-for lanelets, line strings, crosswalks, stop lines, traffic lights, regulatory
-elements and areas.
+for lanelets, lane connectors, roadblocks, intersections, line strings,
+crosswalks, stop lines, traffic lights, regulatory elements and areas when
+present in the source map. Topology helpers expose successors, predecessors,
+adjacency, route chains and lane-associated regulatory objects.
 
 To export an audit sidecar, choose an ignored runtime directory explicitly:
 

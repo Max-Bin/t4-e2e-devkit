@@ -6,11 +6,17 @@ import hashlib
 import json
 from dataclasses import dataclass, field
 from numbers import Real
-from typing import Any, Callable, Iterable, Mapping, Optional, Sequence
+from typing import TYPE_CHECKING, Any, Callable, Iterable, Mapping, Optional, Sequence
+
+import numpy as np
 
 from t4_e2e_devkit.common.dataclasses import T4Scene, Trajectory
 from t4_e2e_devkit.evaluation.metric_cache import MetricCache
 from t4_e2e_devkit.planning.simulation.closed_loop import T4ClosedLoopResult
+
+if TYPE_CHECKING:
+    from t4_e2e_devkit.evaluation.pdm_score import T4PDMScorer
+    from t4_e2e_devkit.evaluation.tier4_metrics import RewardConfig
 
 
 @dataclass(frozen=True)
@@ -23,12 +29,30 @@ class MetricContext:
     scene: Optional[T4Scene] = None
     closed_loop: Optional[T4ClosedLoopResult] = None
     metadata: Mapping[str, Any] = field(default_factory=dict)
+    pdm_scorer: Optional["T4PDMScorer"] = None
+    tier4_config: Optional["RewardConfig"] = None
 
     @property
     def signature(self) -> str:
-        """Stable signature for caller-provided metric inputs/configuration."""
-        payload = json.dumps(dict(self.metadata), sort_keys=True, default=str).encode("utf-8")
-        return hashlib.sha256(payload).hexdigest()
+        """Stable signature for metric inputs and caller configuration.
+
+        The first version of the engine keyed its cache only by ``metadata``.
+        That made two different predictions for the same token collide when a
+        caller did not provide a manual version string.  Include the numeric
+        inputs and scorer settings here so cache reuse remains correct while
+        keeping the cache key independent of Python object identities.
+        """
+        payload = {
+            "metadata": _jsonable(dict(self.metadata)),
+            "prediction": _trajectory_signature(self.prediction),
+            "ground_truth": _ground_truth_signature(self.ground_truth),
+            "scene": _scene_signature(self.scene),
+            "closed_loop": _closed_loop_signature(self.closed_loop),
+            "pdm_scorer": _scorer_signature(self.pdm_scorer),
+            "tier4_config": _jsonable(self.tier4_config),
+        }
+        encoded = json.dumps(payload, sort_keys=True, default=str).encode("utf-8")
+        return hashlib.sha256(encoded).hexdigest()
 
 
 MetricComputer = Callable[[MetricContext], Mapping[str, float] | float]
@@ -42,6 +66,7 @@ class MetricDefinition:
     name: str
     compute: MetricComputer
     family: str = "default"
+    supports: Optional[Callable[[MetricContext], bool]] = None
 
 
 @dataclass(frozen=True)
@@ -146,18 +171,26 @@ class MetricEngine:
         records: list[MetricRecord] = []
         wanted_names = None if metric_names is None else {str(name) for name in metric_names}
         wanted_families = None if families is None else {str(name) for name in families}
+        explicit_selection = wanted_names is not None or wanted_families is not None
         definitions = tuple(
             definition
             for definition in self.definitions
             if (wanted_names is None or definition.name in wanted_names)
             and (wanted_families is None or definition.family in wanted_families)
+            and (
+                explicit_selection
+                or definition.supports is None
+                or definition.supports(context)
+            )
         )
         if not definitions:
             raise ValueError("no registered metrics match metric_names/families")
+        context_signature = context.signature if cache is not None else None
         for definition in definitions:
             cache_key = None
             if cache is not None:
-                cache_key = cache.key(context.token, definition.name, context.signature)
+                assert context_signature is not None
+                cache_key = cache.key(context.token, definition.name, context_signature)
                 cached = cache.load(cache_key)
                 if cached is not None:
                     try:
@@ -209,11 +242,35 @@ class MetricEngine:
 
     @classmethod
     def t4_default(cls) -> "MetricEngine":
-        """Create an engine with the dependency-light T4 metric families."""
+        """Create an engine with all built-in, independent metric families.
+
+        PDM and T4 metrics are registered as adapters rather than folded into
+        open-loop or closed-loop records.  Callers can select one family with
+        ``families=...`` and can inject a configured scorer through
+        :class:`MetricContext` when the default CPU scorer is not appropriate.
+        """
+        return cls.with_t4_metrics()
+
+    @classmethod
+    def with_t4_metrics(
+        cls,
+        *,
+        pdm_scorer: Optional["T4PDMScorer"] = None,
+        tier4_config: Optional["RewardConfig"] = None,
+        include_pdm: bool = True,
+        include_tier4: bool = True,
+    ) -> "MetricEngine":
+        """Build the standard engine with explicit family registration.
+
+        ``pdm_scorer`` is optional to keep construction cheap.  When the PDM
+        family is evaluated without a scorer, one CPU scorer is created lazily.
+        This means an open-loop-only run never initializes the PDM stack.
+        """
         from t4_e2e_devkit.evaluation.closed_loop import compute_closed_loop_metrics
         from t4_e2e_devkit.evaluation.open_loop import compute_open_loop_metrics
 
         engine = cls()
+        scorer = pdm_scorer
 
         def open_loop(context: MetricContext) -> Mapping[str, float]:
             if context.prediction is None or context.ground_truth is None:
@@ -232,9 +289,196 @@ class MetricEngine:
                 token=context.token,
             ).values
 
-        engine.register("open_loop", open_loop, family="open_loop")
-        engine.register("closed_loop", closed_loop, family="closed_loop")
+        def pdm(context: MetricContext) -> Mapping[str, float]:
+            nonlocal scorer
+            if context.prediction is None:
+                raise ValueError("pdm requires prediction")
+            scene = context.scene
+            if scene is None and isinstance(context.ground_truth, T4Scene):
+                scene = context.ground_truth
+            if scene is None:
+                raise ValueError("pdm requires scene or a T4Scene ground_truth")
+            active_scorer = context.pdm_scorer
+            if active_scorer is None:
+                if scorer is None:
+                    from t4_e2e_devkit.evaluation.pdm_score import T4PDMScorer
+
+                    scorer = T4PDMScorer(backend="cpu")
+                active_scorer = scorer
+            result = active_scorer.score(context.prediction, scene)
+            return {**result.components, "score": float(result.score)}
+
+        def tier4(context: MetricContext) -> Mapping[str, float]:
+            if context.prediction is None:
+                raise ValueError("tier4 requires prediction")
+            scene = context.scene
+            if scene is None and isinstance(context.ground_truth, T4Scene):
+                scene = context.ground_truth
+            if scene is None:
+                raise ValueError("tier4 requires scene or a T4Scene ground_truth")
+            from t4_e2e_devkit.evaluation.tier4_metrics import compute_tier4_metrics
+
+            return compute_tier4_metrics(
+                context.prediction,
+                scene,
+                config=context.tier4_config or tier4_config,
+            )
+
+        engine.register(
+            MetricDefinition(
+                "open_loop",
+                open_loop,
+                family="open_loop",
+                supports=lambda context: context.prediction is not None
+                and context.ground_truth is not None,
+            )
+        )
+        engine.register(
+            MetricDefinition(
+                "closed_loop",
+                closed_loop,
+                family="closed_loop",
+                supports=lambda context: context.closed_loop is not None,
+            )
+        )
+        if include_pdm:
+            engine.register(
+                MetricDefinition(
+                    "pdm",
+                    pdm,
+                    family="pdm",
+                    supports=lambda context: context.prediction is not None
+                    and (
+                        context.scene is not None
+                        or isinstance(context.ground_truth, T4Scene)
+                    ),
+                )
+            )
+        if include_tier4:
+            engine.register(
+                MetricDefinition(
+                    "tier4",
+                    tier4,
+                    family="tier4",
+                    supports=lambda context: context.prediction is not None
+                    and (
+                        context.scene is not None
+                        or isinstance(context.ground_truth, T4Scene)
+                    ),
+                )
+            )
         return engine
+
+
+def _array_signature(value: Any) -> Optional[dict[str, Any]]:
+    if value is None:
+        return None
+    array = np.ascontiguousarray(np.asarray(value))
+    return {
+        "shape": list(array.shape),
+        "dtype": str(array.dtype),
+        "sha256": hashlib.sha256(array.tobytes()).hexdigest(),
+    }
+
+
+def _jsonable(value: Any) -> Any:
+    """Convert common config/dataclass values to deterministic JSON data."""
+    if value is None or isinstance(value, (str, bool, int, float)):
+        return value
+    if isinstance(value, np.ndarray):
+        return _array_signature(value)
+    if isinstance(value, Mapping):
+        return {str(key): _jsonable(item) for key, item in value.items()}
+    if isinstance(value, (list, tuple)):
+        return [_jsonable(item) for item in value]
+    if hasattr(value, "__dataclass_fields__"):
+        return _jsonable(
+            {name: getattr(value, name) for name in value.__dataclass_fields__}
+        )
+    if hasattr(value, "__dict__"):
+        return _jsonable(vars(value))
+    return str(value)
+
+
+def _trajectory_signature(trajectory: Optional[Trajectory]) -> Any:
+    if trajectory is None:
+        return None
+    sampling = trajectory.trajectory_sampling
+    return {
+        "poses": _array_signature(trajectory.poses),
+        "num_poses": int(sampling.num_poses),
+        "interval_length": float(sampling.interval_length),
+    }
+
+
+def _ground_truth_signature(value: Optional[Trajectory | T4Scene]) -> Any:
+    if value is None:
+        return None
+    if isinstance(value, Trajectory):
+        return _trajectory_signature(value)
+    return _scene_signature(value)
+
+
+def _scene_signature(scene: Optional[T4Scene]) -> Any:
+    if scene is None:
+        return None
+    frame = scene.current_frame
+    map_signature = None
+    if frame.map_tensors is not None:
+        map_signature = {
+            name: _array_signature(value)
+            for name, value in frame.map_tensors.as_dict().items()
+        }
+    annotations = frame.annotations
+    annotation_signature = None
+    if annotations is not None:
+        annotation_signature = {
+            "boxes": _array_signature(annotations.boxes),
+            "labels": _array_signature(annotations.labels),
+            "track_tokens": _jsonable(annotations.track_tokens),
+        }
+    return {
+        "token": scene.scene_metadata.token,
+        "future_ego_poses": _array_signature(scene.future_ego_poses),
+        "future_annotations": None
+        if scene.future_annotations is None
+        else [
+            {
+                "boxes": _array_signature(item.boxes),
+                "labels": _array_signature(item.labels),
+            }
+            for item in scene.future_annotations
+        ],
+        "map": map_signature,
+        "annotations": annotation_signature,
+        "goal_pose": _array_signature(scene.goal_pose),
+        "pdm_progress": scene.pdm_progress,
+    }
+
+
+def _closed_loop_signature(result: Optional[T4ClosedLoopResult]) -> Any:
+    if result is None:
+        return None
+    return {
+        "source_frames": _array_signature(result.source_frames),
+        "poses": _array_signature(result.realized_poses_world),
+        "dt_s": float(result.dt_s),
+        "goal": _array_signature(result.goal_pose_world),
+        "collision_steps": _jsonable(result.collision_steps),
+        "timeout": result.timeout,
+        "termination_reason": result.termination_reason,
+    }
+
+
+def _scorer_signature(scorer: Any) -> Any:
+    if scorer is None:
+        return None
+    return {
+        "type": f"{type(scorer).__module__}.{type(scorer).__qualname__}",
+        "backend": getattr(scorer, "backend", None),
+        "device": str(getattr(scorer, "device", "")),
+        "config": _jsonable(getattr(scorer, "config", None)),
+    }
 
 
 __all__ = [

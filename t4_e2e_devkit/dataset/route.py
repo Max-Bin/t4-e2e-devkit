@@ -68,6 +68,16 @@ class T4RouteMetadata:
             and primitive.primitive_type.lower() == "lane"
         )
 
+    @property
+    def route_roadblock_ids(self) -> tuple[str, ...]:
+        """Ordered road-block primitives when the route export contains them."""
+        return tuple(
+            primitive.id
+            for segment in self.segments
+            for primitive in segment.primitives
+            if primitive.primitive_type.lower() in {"roadblock", "roadblock_connector"}
+        )
+
 
 def _pose(value: Any) -> Optional[tuple[float, ...]]:
     if not isinstance(value, Mapping):

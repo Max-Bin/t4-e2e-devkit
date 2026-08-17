@@ -43,7 +43,7 @@ from t4_e2e_devkit.evaluation.pdm_score import (
     compare_backends,
 )
 from t4_e2e_devkit.evaluation.report import aggregate_evaluation
-from t4_e2e_devkit.evaluation.tier4_metrics import aggregate_tier4_metrics
+from t4_e2e_devkit.evaluation.tier4_metrics import RewardConfig, aggregate_tier4_metrics
 
 __all__ = [
     "BACKENDS",
@@ -53,6 +53,7 @@ __all__ = [
     "OpenLoopMetricConfig",
     "OpenLoopMetrics",
     "PDMResults",
+    "RewardConfig",
     "ScoringError",
     "T4PDMScorer",
     "T4PDMScorerConfig",

@@ -46,6 +46,9 @@ class AbstractScenario(Protocol):
     def get_ego_status_at_iteration(self, iteration: int) -> EgoStatus:
         ...
 
+    def get_ego_state_at_iteration(self, iteration: int) -> EgoStatus:
+        ...
+
     def get_ego_future_trajectory(
         self,
         iteration: int,
@@ -66,6 +69,9 @@ class AbstractScenario(Protocol):
         ...
 
     def get_map_api(self) -> Optional[T4MapAPI]:
+        ...
+
+    def get_mission_goal(self) -> Optional[np.ndarray]:
         ...
 
 
@@ -118,6 +124,16 @@ class T4Scenario:
         return self.get_ego_status_at_iteration(0)
 
     @property
+    def initial_ego_state(self) -> EgoStatus:
+        """:return: NuPlan-style alias for :attr:`initial_ego_status`."""
+        return self.initial_ego_status
+
+    @property
+    def map_name(self) -> Optional[str]:
+        """:return: source map name when a map facade is attached."""
+        return None if self._map_api is None else self._map_api.map_name
+
+    @property
     def number_of_iterations(self) -> int:
         """:return: current iteration plus every available future pose."""
         return self.get_number_of_iterations()
@@ -145,6 +161,10 @@ class T4Scenario:
                 f"scenario {self.token} has no ego status at iteration {iteration}; "
                 f"valid range is [0, {len(statuses)})"
             ) from None
+
+    def get_ego_state_at_iteration(self, iteration: int) -> EgoStatus:
+        """NuPlan-style alias for :meth:`get_ego_status_at_iteration`."""
+        return self.get_ego_status_at_iteration(iteration)
 
     def get_past_ego_statuses(
         self,
@@ -252,6 +272,10 @@ class T4Scenario:
             timestamp_us=timestamp,
         )
 
+    def get_tracked_objects(self, iteration: int = 0) -> DetectionsTracks:
+        """Convenience alias used by simulation consumers."""
+        return self.get_tracked_objects_at_iteration(iteration)
+
     def get_past_tracked_objects(
         self,
         iteration: int = 0,
@@ -305,6 +329,23 @@ class T4Scenario:
             raise IndexError(f"no sensor frame at history offset {iteration}")
         return self._scene.frames[index]
 
+    def get_past_sensor_frames(
+        self,
+        iteration: int = 0,
+        time_horizon: Optional[float] = None,
+        num_samples: Optional[int] = None,
+    ) -> List[T4Frame]:
+        """Return recorded sensor frames in chronological order through now."""
+        if iteration != 0:
+            raise ValueError("T4 scenario past sensor samples are anchored at iteration 0")
+        offsets = self._sample_indices(
+            time_horizon,
+            num_samples,
+            len(self._scene.frames) - 1,
+            reverse=True,
+        )
+        return [self._scene.frames[self._scene.current_frame_index - offset] for offset in offsets]
+
     def get_sensors_at_iteration(self, iteration: int = 0) -> T4Frame:
         """NuPlan-style alias for the recorded T4 sensor frame."""
 
@@ -317,6 +358,29 @@ class T4Scenario:
     def get_route_lane_ids(self) -> tuple[str, ...]:
         route = self._scene.scene_metadata.route_metadata
         return () if route is None else route.route_lane_ids
+
+    def get_route_roadblock_ids(self) -> tuple[str, ...]:
+        """Return route road-block IDs when they are present in route metadata."""
+        route = self._scene.scene_metadata.route_metadata
+        return () if route is None else route.route_roadblock_ids
+
+    def get_mission_goal(self) -> Optional[np.ndarray]:
+        """Return the scene-local goal pose as ``[x, y, cos, sin]``."""
+        if self._scene.goal_pose is None:
+            return None
+        return np.asarray(self._scene.goal_pose, dtype=np.float32).copy()
+
+    def get_expert_ego_trajectory(
+        self,
+        time_horizon: Optional[float] = None,
+        num_samples: Optional[int] = None,
+    ) -> List[EgoStatus]:
+        """Return the recorded future ego trajectory for evaluation consumers."""
+        return self.get_future_ego_statuses(
+            iteration=0,
+            time_horizon=time_horizon,
+            num_samples=num_samples,
+        )
 
     def get_traffic_light_status_at_iteration(
         self, iteration: int = 0

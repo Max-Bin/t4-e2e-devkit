@@ -44,6 +44,9 @@ class T4Lanelet:
     tags: Mapping[str, str]
     incoming_ids: tuple[str, ...] = ()
     outgoing_ids: tuple[str, ...] = ()
+    lanelet_type: str = "lanelet"
+    turn_direction: str = "unknown"
+    regulatory_element_ids: tuple[str, ...] = ()
 
 
 @dataclass(frozen=True)
@@ -169,6 +172,14 @@ def _parse_osm(path: Path) -> _ParsedMap:
                 polygon=polygon,
                 speed_limit_mps=_speed_limit_mps(tags),
                 tags=dict(tags),
+                lanelet_type=_lanelet_type(tags),
+                turn_direction=_turn_direction(tags),
+                regulatory_element_ids=tuple(
+                    ref
+                    for kind, role, ref in members
+                    if kind == "relation"
+                    or "regulatory" in role.lower()
+                ),
             )
         )
 
@@ -250,6 +261,14 @@ def _classify_object_type(tags: Mapping[str, str]) -> Optional[str]:
         str(tags.get(key, "")).strip().lower()
         for key in ("type", "subtype", "role", "classification", "kind")
     )
+    if "roadblock_connector" in values or "roadblock connector" in values:
+        return "roadblock_connector"
+    if "roadblock" in values:
+        return "roadblock"
+    if "intersection" in values:
+        return "intersection"
+    if "lane_connector" in values or "lane connector" in values:
+        return "lane_connector"
     if "traffic_light" in values or "traffic light" in values:
         return "traffic_light"
     if "stop_line" in values or "stop line" in values:
@@ -258,6 +277,20 @@ def _classify_object_type(tags: Mapping[str, str]) -> Optional[str]:
         return "crosswalk"
     if "drivable_area" in values or tags.get("drivable_area", "").lower() in {"1", "yes", "true"}:
         return "drivable_area"
+    if "speed_bump" in values or "speed bump" in values:
+        return "speed_bump"
+    if "stop_sign" in values or "stop sign" in values:
+        return "stop_sign"
+    if "yield" in values:
+        return "yield"
+    if "walkway" in values or "sidewalk" in values:
+        return "walkway"
+    if "carpark" in values or "car_park" in values or "parking" in values:
+        return "carpark_area"
+    if "pudo" in values or "pick_up" in values or "drop_off" in values:
+        return "pudo"
+    if "turn_stop" in values or "turn stop" in values:
+        return "turn_stop"
     if tags.get("area", "").lower() in {"1", "yes", "true"} or "area" in values:
         return "area"
     if (
@@ -269,6 +302,23 @@ def _classify_object_type(tags: Mapping[str, str]) -> Optional[str]:
     if tags.get("type", "").lower() == "regulatory_element":
         return "regulatory_element"
     return None
+
+
+def _lanelet_type(tags: Mapping[str, str]) -> str:
+    values = " ".join(
+        str(tags.get(key, "")).strip().lower()
+        for key in ("type", "subtype", "kind", "lanelet_type", "role")
+    )
+    return "lane_connector" if "connector" in values else "lanelet"
+
+
+def _turn_direction(tags: Mapping[str, str]) -> str:
+    value = str(
+        tags.get("turn_direction", tags.get("turn", tags.get("lane_connector_type", "")))
+    ).strip().lower()
+    if value in {"left", "right", "straight", "uturn", "u_turn", "u-turn"}:
+        return "uturn" if value in {"u_turn", "u-turn"} else value
+    return "unknown"
 
 
 def _repair_polygon(points: np.ndarray) -> Optional[Polygon]:
@@ -297,7 +347,15 @@ def _way_geometry(
     points = _way_points(refs, nodes)
     if points is None:
         return None
-    if object_type in {"area", "drivable_area", "crosswalk"}:
+    if object_type in {
+        "area",
+        "drivable_area",
+        "crosswalk",
+        "roadblock",
+        "roadblock_connector",
+        "intersection",
+        "carpark_area",
+    }:
         polygon = _repair_polygon(points)
         if polygon is not None:
             return polygon
@@ -324,7 +382,15 @@ def _relation_geometry(
             geometries.append(Point(nodes[member_id]))
     if not geometries:
         return None
-    if object_type in {"area", "drivable_area", "crosswalk"}:
+    if object_type in {
+        "area",
+        "drivable_area",
+        "crosswalk",
+        "roadblock",
+        "roadblock_connector",
+        "intersection",
+        "carpark_area",
+    }:
         polygons = [geometry for geometry in geometries if isinstance(geometry, Polygon)]
         if polygons:
             return unary_union(polygons)
@@ -537,6 +603,8 @@ class T4MapAPI:
 
         types = {"lanelet"}
         types.update(self._objects_by_type)
+        if self.get_lane_connectors():
+            types.add("lane_connector")
         if any(obj.tags.get("type", "") == "regulatory_element" for obj in self._objects):
             types.add("regulatory_element")
         return tuple(sorted(types))
@@ -566,6 +634,8 @@ class T4MapAPI:
             return tuple(self._lanes) + tuple(sorted(self._objects, key=lambda obj: (obj.object_type, obj.id)))
         if normalized == "lanelet":
             return self._lanes
+        if normalized == "lane_connector":
+            return self.get_lane_connectors()
         if raw_type in {"polygon", "polygons", "areas"}:
             return tuple(obj for obj in self._objects if obj.is_area)
         if normalized == "regulatory_element":
@@ -630,6 +700,133 @@ class T4MapAPI:
     def get_drivable_areas(self) -> tuple[T4MapObject, ...]:
         return self._objects_by_type.get("drivable_area", ())
 
+    def get_lane_connectors(self) -> tuple[T4Lanelet, ...]:
+        """Return lanelets marked as connectors by their source tags."""
+
+        return tuple(lane for lane in self._lanes if lane.lanelet_type == "lane_connector")
+
+    def get_roadblocks(self) -> tuple[T4MapObject, ...]:
+        """Return source road-block objects when the export contains them."""
+
+        return self._objects_by_type.get("roadblock", ())
+
+    def get_roadblock_connectors(self) -> tuple[T4MapObject, ...]:
+        """Return source road-block connector objects when available."""
+
+        return self._objects_by_type.get("roadblock_connector", ())
+
+    def get_intersections(self) -> tuple[T4MapObject, ...]:
+        """Return source intersection objects when available."""
+
+        return self._objects_by_type.get("intersection", ())
+
+    def get_route_lanes(self) -> tuple[T4Lanelet, ...]:
+        """Return route lanes in the order provided by route metadata."""
+
+        return tuple(
+            lane for lane_id in self.route_lane_ids if (lane := self.get_lane(lane_id)) is not None
+        )
+
+    def get_lane_connector_type(self, lane_id: str | int) -> Optional[str]:
+        """Return a normalized turn direction for a lane connector."""
+
+        lane = self.get_lane(lane_id)
+        if lane is None or lane.lanelet_type != "lane_connector":
+            return None
+        return lane.turn_direction
+
+    def get_adjacent_lanes(
+        self,
+        lane_id: str | int,
+        *,
+        max_distance: float = 0.25,
+    ) -> tuple[T4Lanelet, ...]:
+        """Return parallel lanelets whose polygons touch or nearly touch."""
+
+        if max_distance < 0.0:
+            raise ValueError("max_distance must be non-negative")
+        lane = self.get_lane(lane_id)
+        if lane is None:
+            return ()
+        candidates = (
+            other
+            for other in self._lanes
+            if other.id != lane.id and lane.polygon.distance(other.polygon) <= max_distance
+        )
+        return tuple(sorted(candidates, key=lambda item: item.id))
+
+    def get_lane_chain(
+        self,
+        lane_id: str | int,
+        *,
+        max_length: Optional[int] = None,
+    ) -> tuple[T4Lanelet, ...]:
+        """Follow the deterministic first successor until a branch or end."""
+
+        if max_length is not None and max_length < 1:
+            raise ValueError("max_length must be positive when provided")
+        result: list[T4Lanelet] = []
+        visited: set[str] = set()
+        current = self.get_lane(lane_id)
+        while current is not None and current.id not in visited:
+            result.append(current)
+            visited.add(current.id)
+            if max_length is not None and len(result) >= max_length:
+                break
+            successors = self.get_successors(current.id)
+            if len(successors) != 1:
+                break
+            current = successors[0]
+        return tuple(result)
+
+    def get_related_objects(
+        self,
+        lane_id: str | int,
+        object_type: Optional[str] = None,
+        *,
+        radius: float = 2.0,
+    ) -> tuple[T4MapObject, ...]:
+        """Find semantic objects associated with a lane geometry.
+
+        Lanelet2 exports differ in whether regulatory members are explicit. A
+        geometric fallback keeps this query useful for both forms while never
+        inventing source IDs.
+        """
+
+        if radius < 0.0:
+            raise ValueError("radius must be non-negative")
+        lane = self.get_lane(lane_id)
+        if lane is None:
+            return ()
+        requested = self.get_objects(object_type)
+        objects = tuple(obj for obj in requested if isinstance(obj, T4MapObject))
+        expanded = lane.polygon.buffer(float(radius))
+        related_ids = set(lane.regulatory_element_ids)
+        return tuple(
+            sorted(
+                (
+                    obj
+                    for obj in objects
+                    if obj.id in related_ids or expanded.intersects(obj.geometry)
+                ),
+                key=lambda obj: (lane.polygon.distance(obj.geometry), obj.id),
+            )
+        )
+
+    def get_stop_lines_for_lane(
+        self, lane_id: str | int, *, radius: float = 2.0
+    ) -> tuple[T4MapObject, ...]:
+        """Return stop lines associated with a lane."""
+
+        return self.get_related_objects(lane_id, "stop_line", radius=radius)
+
+    def get_traffic_lights_for_lane(
+        self, lane_id: str | int, *, radius: float = 10.0
+    ) -> tuple[T4MapObject, ...]:
+        """Return traffic lights associated with a lane."""
+
+        return self.get_related_objects(lane_id, "traffic_light", radius=radius)
+
     def get_lane(self, lane_id: str | int) -> Optional[T4Lanelet]:
         return self._by_id.get(str(lane_id))
 
@@ -677,11 +874,23 @@ class T4MapAPI:
             return ()
         return tuple(self._by_id[value] for value in lane.outgoing_ids if value in self._by_id)
 
+    def get_successor_ids(self, lane_id: str | int) -> tuple[str, ...]:
+        """Return stable successor IDs without materializing lane objects."""
+
+        lane = self.get_lane(lane_id)
+        return () if lane is None else lane.outgoing_ids
+
     def get_predecessors(self, lane_id: str | int) -> tuple[T4Lanelet, ...]:
         lane = self.get_lane(lane_id)
         if lane is None:
             return ()
         return tuple(self._by_id[value] for value in lane.incoming_ids if value in self._by_id)
+
+    def get_predecessor_ids(self, lane_id: str | int) -> tuple[str, ...]:
+        """Return stable predecessor IDs without materializing lane objects."""
+
+        lane = self.get_lane(lane_id)
+        return () if lane is None else lane.incoming_ids
 
     def match_local_centerlines(
         self,
@@ -1014,6 +1223,13 @@ def _normalize_object_type(object_type: Optional[str]) -> Optional[str]:
         "traffic_lights": "traffic_light",
         "regulatory_elements": "regulatory_element",
         "drivable_areas": "drivable_area",
+        "lane_connectors": "lane_connector",
+        "roadblocks": "roadblock",
+        "roadblock_connectors": "roadblock_connector",
+        "intersections": "intersection",
+        "sidewalk": "walkway",
+        "sidewalks": "walkway",
+        "parking": "carpark_area",
     }.get(value, value)
 
 

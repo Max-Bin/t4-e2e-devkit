@@ -199,3 +199,39 @@ def test_map_api_recovers_semantic_objects_and_matches_tensor_rows(tmp_path):
     )
     assert polygon_match[0].source_object_id == "20"
     assert line_match[0].source_object_id == "21"
+
+
+def test_map_api_exposes_connectors_roadblocks_and_lane_relations(tmp_path):
+    osm = tmp_path / "topology.osm"
+    osm.write_text(
+        """<?xml version="1.0"?>
+<osm>
+  <node id="1"><tag k="local_x" v="0"/><tag k="local_y" v="1"/></node>
+  <node id="2"><tag k="local_x" v="10"/><tag k="local_y" v="1"/></node>
+  <node id="3"><tag k="local_x" v="0"/><tag k="local_y" v="-1"/></node>
+  <node id="4"><tag k="local_x" v="10"/><tag k="local_y" v="-1"/></node>
+  <way id="10"><nd ref="1"/><nd ref="2"/></way>
+  <way id="11"><nd ref="3"/><nd ref="4"/></way>
+  <relation id="100">
+    <member type="way" role="left" ref="10"/>
+    <member type="way" role="right" ref="11"/>
+    <tag k="type" v="lanelet"/><tag k="subtype" v="lane_connector"/>
+    <tag k="turn_direction" v="left"/>
+  </relation>
+  <relation id="200"><member type="way" role="interior" ref="10"/>
+    <tag k="type" v="roadblock"/></relation>
+  <relation id="300"><member type="way" role="interior" ref="11"/>
+    <tag k="type" v="intersection"/></relation>
+</osm>
+""",
+        encoding="utf-8",
+    )
+
+    api = T4MapAPI(osm, route_lane_ids=["100"])
+
+    assert [lane.id for lane in api.get_lane_connectors()] == ["100"]
+    assert api.get_lane_connector_type("100") == "left"
+    assert [lane.id for lane in api.get_route_lanes()] == ["100"]
+    assert [obj.id for obj in api.get_roadblocks()] == ["200"]
+    assert [obj.id for obj in api.get_intersections()] == ["300"]
+    assert api.get_map_object("100", "lane_connector").id == "100"

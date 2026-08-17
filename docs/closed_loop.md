@@ -103,6 +103,21 @@ Use the default replay policy for recorded traffic. The constant-velocity
 policy is a small controlled-test hook; it does not render sensors or model
 reactive traffic.
 
+For a local simulation-manager boundary with lifecycle callbacks:
+
+```python
+from t4_e2e_devkit import SimulationRequest, T4SimulationManager
+
+with T4SimulationManager.from_scene_dir(agent, scene_dir, root) as manager:
+    result = manager.run(SimulationRequest(start_frame=100, num_steps=40))
+```
+
+Callbacks may implement `on_start`, `on_step`, `on_end` and `on_error`.
+`on_step` receives the replay scene, agent observation, plan and realized
+states for that tick. `ReactiveTrafficPolicy` is available when a controlled
+experiment needs per-track state updates; it must be explicitly injected. The
+default manager remains deterministic and local.
+
 `result.collision_steps` is `None` when the replay source has no annotations;
 an empty tuple means annotations were present and no collision was observed.
 `result.timeout` is available when the scene provides a goal and the requested

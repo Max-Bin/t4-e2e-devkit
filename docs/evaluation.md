@@ -164,6 +164,13 @@ report = engine.evaluate(
 `MetricCache("results/cache")` can be passed to `evaluate` for atomic,
 content-addressed reuse. The cache contains metric outputs only.
 
+`MetricEngine.t4_default()` registers four independent adapters: `open_loop`,
+`pdm`, `tier4` and `closed_loop`. PDM and T4 terms are never folded into the
+open-loop or closed-loop aggregates. A PDM scorer and T4 threshold config can be
+provided through `MetricContext`; the PDM CPU scorer is constructed lazily only
+when that family is selected. The cache signature includes the prediction,
+scene/GT arrays, closed-loop realization and metric configuration.
+
 `LocalExecutor` in `t4_e2e_devkit.evaluation.executor` runs an ordered map
 serially or with local processes. Its rank/world-size sharding is deterministic
 and independent of Slurm, Ray and tracking services.

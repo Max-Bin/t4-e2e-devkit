@@ -48,6 +48,8 @@ from t4_e2e_devkit.planning.simulation.interfaces import (
     ObservationProvider,
     ReplayObservationProvider,
     ReplayTrafficPolicy,
+    SimulationCallback,
+    SimulationTick,
     TrafficPolicy,
 )
 from t4_e2e_devkit.planning.simulation.trajectory.trajectory_sampling import (
@@ -72,6 +74,8 @@ class T4ClosedLoopConfig:
     max_speed_mps: float = 20.0
     goal_radius_m: float = 2.0
     ttc_horizon_s: Optional[float] = 1.0
+    stop_on_collision: bool = False
+    stop_on_goal: bool = False
 
     def __post_init__(self) -> None:
         if self.dt_s <= 0.0:
@@ -350,6 +354,7 @@ class T4ClosedLoopRunner:
         controller: Optional[EgoController] = None,
         observation_provider: Optional[ObservationProvider] = None,
         traffic_policy: Optional[TrafficPolicy] = None,
+        callbacks: Optional[List[SimulationCallback]] = None,
     ) -> None:
         if getattr(agent, "requires_scene", False):
             raise ValueError(
@@ -368,6 +373,7 @@ class T4ClosedLoopRunner:
             observation_provider or ReplayObservationProvider()
         )
         self.traffic_policy: TrafficPolicy = traffic_policy or ReplayTrafficPolicy()
+        self.callbacks = tuple(callbacks or ())
 
     @classmethod
     def from_scene_dir(
@@ -381,6 +387,7 @@ class T4ClosedLoopRunner:
         controller: Optional[EgoController] = None,
         observation_provider: Optional[ObservationProvider] = None,
         traffic_policy: Optional[TrafficPolicy] = None,
+        callbacks: Optional[List[SimulationCallback]] = None,
     ) -> "T4ClosedLoopRunner":
         """Create a runner whose observations come from one T4 scene directory."""
 
@@ -409,6 +416,7 @@ class T4ClosedLoopRunner:
             controller=controller,
             observation_provider=observation_provider,
             traffic_policy=traffic_policy,
+            callbacks=callbacks,
         )
 
     def close(self) -> None:
@@ -425,7 +433,35 @@ class T4ClosedLoopRunner:
         del exc_type, exc_value, traceback
         self.close()
 
-    def run(self, start_frame: int, num_steps: int) -> T4ClosedLoopResult:
+    def run(
+        self,
+        start_frame: int,
+        num_steps: int,
+        *,
+        callbacks: Optional[List[SimulationCallback]] = None,
+    ) -> T4ClosedLoopResult:
+        """Run a rollout and notify optional lifecycle callbacks."""
+
+        active_callbacks = self.callbacks if callbacks is None else tuple(callbacks)
+        try:
+            result = self._run(
+                start_frame=int(start_frame),
+                num_steps=int(num_steps),
+                callbacks=active_callbacks,
+            )
+        except BaseException as error:
+            _notify_callbacks(active_callbacks, "on_error", error)
+            raise
+        _notify_callbacks(active_callbacks, "on_end", result)
+        return result
+
+    def _run(
+        self,
+        start_frame: int,
+        num_steps: int,
+        *,
+        callbacks: tuple[SimulationCallback, ...] = (),
+    ) -> T4ClosedLoopResult:
         """Run ``num_steps`` ticks, using source frames ``start_frame + k``."""
 
         if start_frame < self.config.history_frames - 1:
@@ -437,6 +473,12 @@ class T4ClosedLoopRunner:
             raise ValueError(f"num_steps must be positive, got {num_steps}")
 
         self._controller.reset()
+        reset_policy = getattr(self.traffic_policy, "reset", None)
+        if reset_policy is not None:
+            reset_policy()
+        reset_agent = getattr(self.agent, "reset", None)
+        if reset_agent is not None:
+            reset_agent()
 
         first_scene = self.scene_provider(int(start_frame))
         if len(first_scene.frames) != self.config.history_frames:
@@ -450,6 +492,12 @@ class T4ClosedLoopRunner:
         initial_speed = max(0.0, float(np.linalg.norm(initial_velocity)))
         state = KinematicState(*initial_pose, speed_mps=initial_speed)
         goal_pose_world = _goal_pose_world(first_scene)
+        _notify_callbacks(
+            callbacks,
+            "on_start",
+            first_scene.scene_metadata.token,
+            state,
+        )
 
         history_world = _scene_history_world_poses(first_scene)
         source_frames: List[int] = []
@@ -527,6 +575,21 @@ class T4ClosedLoopRunner:
             )
             geometry_events.append(geometry_event if geometry_event.available else None)
             geometry_events_available = geometry_events_available or geometry_event.available
+            if geometry_event.collision_tokens:
+                collision_events_available = True
+                if step not in collision_steps:
+                    collision_steps.append(step)
+
+            tick = SimulationTick(
+                step=step,
+                source_frame=source_frame,
+                scene=replay_scene,
+                observation=agent_input,
+                state=state,
+                next_state=next_state,
+                plan=raw_plan,
+            )
+            _notify_callbacks(callbacks, "on_step", tick)
 
             source_frames.append(source_frame)
             plans.append(raw_plan)
@@ -536,12 +599,22 @@ class T4ClosedLoopRunner:
                 (history_world[1:], state.pose[None, :]), axis=0
             )
 
+            goal_reached = goal_pose_world is not None and float(
+                np.linalg.norm(state.pose[:2] - goal_pose_world[:2])
+            ) <= self.config.goal_radius_m
+            collision_detected = bool(collision_tokens) or bool(geometry_event.collision_tokens)
+            if (self.config.stop_on_collision and collision_detected) or (
+                self.config.stop_on_goal and goal_reached
+            ):
+                break
+
         if last_replay_scene is not None:
             final_collision_tokens = _replay_collision_tokens(states[-1], last_replay_scene)
             if final_collision_tokens is not None:
                 collision_events_available = True
-                if final_collision_tokens and (num_steps - 1) not in collision_steps:
-                    collision_steps.append(num_steps - 1)
+                final_step = len(source_frames) - 1
+                if final_collision_tokens and final_step not in collision_steps:
+                    collision_steps.append(final_step)
                     collision_steps.sort()
 
             final_geometry = compute_replay_geometry(
@@ -597,6 +670,7 @@ def run_t4_closed_loop(
     controller: Optional[EgoController] = None,
     observation_provider: Optional[ObservationProvider] = None,
     traffic_policy: Optional[TrafficPolicy] = None,
+    callbacks: Optional[List[SimulationCallback]] = None,
 ) -> T4ClosedLoopResult:
     """Convenience function for one sensor-replay closed-loop rollout."""
 
@@ -609,6 +683,7 @@ def run_t4_closed_loop(
         controller=controller,
         observation_provider=observation_provider,
         traffic_policy=traffic_policy,
+        callbacks=callbacks,
     ) as runner:
         return runner.run(start_frame=start_frame, num_steps=num_steps)
 
@@ -938,3 +1013,16 @@ def _build_live_agent_input(
 
 def _wrapped_angle(angle: float) -> float:
     return float((angle + math.pi) % (2.0 * math.pi) - math.pi)
+
+
+def _notify_callbacks(
+    callbacks: tuple[SimulationCallback, ...],
+    method_name: str,
+    *arguments,
+) -> None:
+    """Call only hooks implemented by a callback object."""
+
+    for callback in callbacks:
+        method = getattr(callback, method_name, None)
+        if method is not None:
+            method(*arguments)

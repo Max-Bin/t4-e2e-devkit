@@ -18,9 +18,12 @@ from t4_e2e_devkit.planning.simulation.closed_loop import (
     T4ClosedLoopRunner,
 )
 from t4_e2e_devkit.planning.simulation.interfaces import (
+    ConstantVelocityTrafficAgentController,
     ConstantVelocityTrafficPolicy,
+    ReactiveTrafficPolicy,
     ReplayTrafficPolicy,
 )
+from t4_e2e_devkit.planning.simulation.manager import SimulationRequest, T4SimulationManager
 from t4_e2e_devkit.planning.simulation.trajectory.trajectory_sampling import TrajectorySampling
 
 
@@ -116,3 +119,58 @@ def test_constant_velocity_policy_does_not_mutate_replay_scene():
     assert updated.current_frame.annotations.boxes[0, 0] == 2.0
     assert scene.current_frame.annotations.boxes[0, 0] == 1.0
     assert SensorConfig.build_no_sensors().lidar is False
+
+
+def test_reactive_policy_updates_each_agent_and_preserves_replay_input():
+    scene = _scene(10)
+    scene.current_frame.annotations = Annotations(
+        boxes=np.array([[1.0, 2.0, 0.0, 1.0, 2.0, 1.0, 0.0, 2.0, 0.0]], dtype=np.float32),
+        labels=np.array([0], dtype=np.int64),
+        track_tokens=["agent-1"],
+    )
+
+    updated = ReactiveTrafficPolicy(ConstantVelocityTrafficAgentController()).update(
+        scene,
+        state=KinematicState(0.0, 0.0, 0.0, 1.0),
+        step=0,
+        dt_s=0.5,
+    )
+
+    assert updated.current_frame.annotations.boxes[0, 0] == 2.0
+    assert updated.current_frame.annotations.track_tokens == ["agent-1"]
+    assert scene.current_frame.annotations.boxes[0, 0] == 1.0
+
+
+class _Lifecycle:
+    def __init__(self):
+        self.starts = []
+        self.steps = []
+        self.ends = []
+
+    def on_start(self, token, state):
+        self.starts.append((token, state))
+
+    def on_step(self, tick):
+        self.steps.append(tick)
+
+    def on_end(self, result):
+        self.ends.append(result)
+
+
+def test_simulation_manager_runs_ordered_requests_with_lifecycle_hooks():
+    lifecycle = _Lifecycle()
+    runner = T4ClosedLoopRunner(
+        _Agent(),
+        lambda frame: _scene(frame),
+        T4ClosedLoopConfig(history_frames=3),
+    )
+    manager = T4SimulationManager(runner, callbacks=[lifecycle])
+
+    results = manager.run_many(
+        [SimulationRequest(start_frame=10, num_steps=1), SimulationRequest(10, 2)]
+    )
+
+    assert [len(result.source_frames) for result in results] == [1, 2]
+    assert len(lifecycle.starts) == 2
+    assert len(lifecycle.steps) == 3
+    assert len(lifecycle.ends) == 2
