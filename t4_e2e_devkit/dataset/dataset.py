@@ -1,7 +1,7 @@
 """The map-style dataset every T4 model trains and evaluates on.
 
 One row is ``(scene_dir, center_frame)``, so the dataset is a plain
-``torch.utils.data.Dataset`` with random access and no iterable-shard
+``torch.utils.data.Dataset`` with random access and no iterable-dataset
 bookkeeping.  What it yields depends on what the agent asked for:
 
 * with feature/target builders -- the ``(features, targets)`` tensor dicts the

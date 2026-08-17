@@ -24,6 +24,13 @@ from t4_e2e_devkit.dataset.route import (
     T4RouteSegment,
     load_t4_route,
 )
+from t4_e2e_devkit.dataset.scenario_filter import (
+    ScenarioFilter,
+    ScenarioSampling,
+    filter_scenarios,
+    sample_scenarios,
+    select_scenarios,
+)
 from t4_e2e_devkit.dataset.scene_tags import T4SceneTag, T4SceneTagIndex
 from t4_e2e_devkit.dataset.window import T4WindowBuilder, WindowError
 
@@ -41,6 +48,8 @@ __all__ = [
     "T4RoutePrimitive",
     "T4RouteSegment",
     "T4WindowBuilder",
+    "ScenarioFilter",
+    "ScenarioSampling",
     "WindowError",
     "assert_batch_contract",
     "build_dataset_from_agent",
@@ -48,4 +57,7 @@ __all__ = [
     "describe_data_list",
     "load_data_list",
     "load_t4_route",
+    "filter_scenarios",
+    "sample_scenarios",
+    "select_scenarios",
 ]

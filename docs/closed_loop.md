@@ -136,13 +136,13 @@ scene and are addressed by `source_frame`. The directory also contains:
 - `failures.csv`: rows that exhausted their retry budget;
 - `report.html`: a self-contained local summary with no external service.
 
-Large runs can be split deterministically and resumed:
+Large runs can be partitioned deterministically by rank and resumed:
 
 ```bash
 uv run t4e2e evaluate-closed-loop lists/val.json \
   --agent my_agent \
-  --output-dir reports/closed_loop \
-  --num-shards 8 --shard-index 0 \
+  --output-dir reports/rank-0 \
+  --rank 0 --world-size 8 --workers 2 --worker-backend process \
   --max-retries 1 --resume
 ```
 
@@ -150,12 +150,12 @@ uv run t4e2e evaluate-closed-loop lists/val.json \
 configuration still match. A changed rollout setting or data-list selection
 causes that row to run again.
 
-Shard reports can be merged after all workers finish. The default requires the
-complete declared shard set and rejects duplicate rollout tokens:
+Rank reports can be merged after all ranks finish. The default requires the
+complete declared rank set and rejects duplicate rollout tokens:
 
 ```bash
 uv run t4e2e merge-closed-loop \
-  --input-dir reports/shard-0 reports/shard-1 reports/shard-2 reports/shard-3 \
+  --input-dir reports/rank-0 reports/rank-1 reports/rank-2 reports/rank-3 \
   --output-dir reports/merged
 ```
 

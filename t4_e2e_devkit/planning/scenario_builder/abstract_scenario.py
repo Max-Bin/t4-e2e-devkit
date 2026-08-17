@@ -49,10 +49,32 @@ class AbstractScenario(Protocol):
     def get_ego_state_at_iteration(self, iteration: int) -> EgoStatus:
         ...
 
+    def get_scenario_type(self) -> str:
+        ...
+
+    def get_log_name(self) -> str:
+        ...
+
     def get_ego_future_trajectory(
         self,
         iteration: int,
         time_horizon: float,
+        num_samples: Optional[int] = None,
+    ) -> Iterable[EgoStatus]:
+        ...
+
+    def get_past_ego_states(
+        self,
+        iteration: int,
+        time_horizon: Optional[float],
+        num_samples: Optional[int] = None,
+    ) -> Iterable[EgoStatus]:
+        ...
+
+    def get_future_ego_states(
+        self,
+        iteration: int,
+        time_horizon: Optional[float],
         num_samples: Optional[int] = None,
     ) -> Iterable[EgoStatus]:
         ...
@@ -71,7 +93,18 @@ class AbstractScenario(Protocol):
     def get_map_api(self) -> Optional[T4MapAPI]:
         ...
 
+    def get_route_roadblock_ids(self) -> Iterable[str]:
+        ...
+
     def get_mission_goal(self) -> Optional[np.ndarray]:
+        ...
+
+    def get_past_sensor_data(
+        self,
+        iteration: int,
+        time_horizon: Optional[float],
+        num_samples: Optional[int] = None,
+    ) -> Iterable[T4Frame]:
         ...
 
 
@@ -215,6 +248,26 @@ class T4Scenario:
 
         return self.get_future_ego_statuses(iteration, time_horizon, num_samples)
 
+    def get_past_ego_states(
+        self,
+        iteration: int = 0,
+        time_horizon: Optional[float] = None,
+        num_samples: Optional[int] = None,
+    ) -> List[EgoStatus]:
+        """Return recorded ego states in chronological order through now."""
+
+        return self.get_past_ego_statuses(iteration, time_horizon, num_samples)
+
+    def get_future_ego_states(
+        self,
+        iteration: int = 0,
+        time_horizon: Optional[float] = None,
+        num_samples: Optional[int] = None,
+    ) -> List[EgoStatus]:
+        """Return recorded future ego states, including the current state."""
+
+        return self.get_future_ego_statuses(iteration, time_horizon, num_samples)
+
     def get_past_timestamps(
         self,
         iteration: int = 0,
@@ -350,6 +403,43 @@ class T4Scenario:
         """NuPlan-style alias for the recorded T4 sensor frame."""
 
         return self.get_sensor_frame_at_iteration(iteration)
+
+    def get_past_sensor_data(
+        self,
+        iteration: int = 0,
+        time_horizon: Optional[float] = None,
+        num_samples: Optional[int] = None,
+    ) -> List[T4Frame]:
+        """Return replayed sensor frames through the current iteration.
+
+        T4 stores sensor replay for the current and past frames only.  Future
+        sensor rendering is intentionally not synthesized by this adapter.
+        """
+
+        return self.get_past_sensor_frames(iteration, time_horizon, num_samples)
+
+    def get_future_sensor_data(
+        self,
+        iteration: int = 0,
+        time_horizon: Optional[float] = None,
+        num_samples: Optional[int] = None,
+    ) -> List[T4Frame]:
+        """Reject unavailable future sensor frames explicitly."""
+
+        del iteration, time_horizon, num_samples
+        raise ValueError("T4 sensor replay has no future sensor frames")
+
+    def get_scenario_type(self) -> str:
+        """Return the scenario taxonomy label used by filters and reports."""
+        return self.scenario_type
+
+    def get_log_name(self) -> str:
+        """Return the portable scene/log identifier."""
+        return self.log_name
+
+    def get_map_name(self) -> Optional[str]:
+        """Return the map location name when a source map is attached."""
+        return self.map_name
 
     def get_map_api(self) -> Optional[T4MapAPI]:
         """:return: optional source-map facade used to assemble this scenario."""

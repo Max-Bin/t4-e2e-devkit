@@ -75,7 +75,7 @@ records plus family aggregates. Select `metric_names` or `families` when a
 context contains only one family. `MetricCache` stores atomic JSON metric
 records. `FeatureCache` stores versioned, content-addressed numeric builder
 outputs and never accepts raw sensor bytes. `LocalExecutor` provides ordered
-serial or multiprocessing execution and deterministic rank sharding without a
+serial or multiprocessing execution and deterministic rank partitioning without a
 scheduler dependency.
 
 ## Core types

@@ -20,7 +20,7 @@ than the small duplication of passing two objects around.
 from __future__ import annotations
 
 from abc import ABC, abstractmethod
-from typing import Dict
+from typing import Dict, Optional, Sequence
 
 import numpy as np
 import torch
@@ -49,6 +49,16 @@ class AbstractFeatureBuilder(ABC):
     def get_unique_name(self) -> str:
         """:return: a name identifying this builder, used for caching."""
 
+    def get_feature_unique_name(self) -> str:
+        """Compatibility alias used by feature-cache orchestration."""
+
+        return self.get_unique_name()
+
+    def get_features_from_scenario(self, scenario: T4Scene) -> Dict[str, torch.Tensor]:
+        """Build features from a scenario exposing ``get_agent_input``."""
+
+        return self.compute_features(scenario.get_agent_input())
+
     @abstractmethod
     def compute_features(self, agent_input: T4AgentInput) -> Dict[str, torch.Tensor]:
         """
@@ -64,12 +74,94 @@ class AbstractTargetBuilder(ABC):
     def get_unique_name(self) -> str:
         """:return: a name identifying this builder, used for caching."""
 
+    def get_target_unique_name(self) -> str:
+        """Compatibility alias used by target-cache orchestration."""
+
+        return self.get_unique_name()
+
+    def get_targets(self, scenario: T4Scene) -> Dict[str, torch.Tensor]:
+        """Compatibility alias for :meth:`compute_targets`."""
+
+        return self.compute_targets(scenario)
+
     @abstractmethod
     def compute_targets(self, scene: T4Scene) -> Dict[str, torch.Tensor]:
         """
         :param scene: the privileged view of one window, future included.
         :return: named target tensors, without a batch dimension.
         """
+
+
+class FeatureBuilderRegistry:
+    """Stable registry for composing independent feature builders."""
+
+    def __init__(self, builders: Optional[Sequence[AbstractFeatureBuilder]] = None) -> None:
+        self._builders: dict[str, AbstractFeatureBuilder] = {}
+        for builder in builders or ():
+            self.register(builder)
+
+    @property
+    def builders(self) -> tuple[AbstractFeatureBuilder, ...]:
+        return tuple(self._builders.values())
+
+    def register(self, builder: AbstractFeatureBuilder) -> None:
+        name = str(builder.get_unique_name())
+        if not name:
+            raise ValueError("feature builder name must not be empty")
+        if name in self._builders:
+            raise ValueError(f"feature builder is already registered: {name}")
+        self._builders[name] = builder
+
+    def compute(self, agent_input: T4AgentInput) -> Dict[str, torch.Tensor]:
+        features: Dict[str, torch.Tensor] = {}
+        for builder in self._builders.values():
+            values = builder.compute_features(agent_input)
+            overlap = set(features).intersection(values)
+            if overlap:
+                raise ValueError(f"feature builders emitted duplicate fields: {sorted(overlap)}")
+            features.update(values)
+        return features
+
+    def compute_features(self, agent_input: T4AgentInput) -> Dict[str, torch.Tensor]:
+        """Explicit alias for callers that distinguish features from targets."""
+
+        return self.compute(agent_input)
+
+
+class TargetBuilderRegistry:
+    """Stable registry for composing independent target builders."""
+
+    def __init__(self, builders: Optional[Sequence[AbstractTargetBuilder]] = None) -> None:
+        self._builders: dict[str, AbstractTargetBuilder] = {}
+        for builder in builders or ():
+            self.register(builder)
+
+    @property
+    def builders(self) -> tuple[AbstractTargetBuilder, ...]:
+        return tuple(self._builders.values())
+
+    def register(self, builder: AbstractTargetBuilder) -> None:
+        name = str(builder.get_unique_name())
+        if not name:
+            raise ValueError("target builder name must not be empty")
+        if name in self._builders:
+            raise ValueError(f"target builder is already registered: {name}")
+        self._builders[name] = builder
+
+    def compute(self, scene: T4Scene) -> Dict[str, torch.Tensor]:
+        targets: Dict[str, torch.Tensor] = {}
+        for builder in self._builders.values():
+            values = builder.compute_targets(scene)
+            overlap = set(targets).intersection(values)
+            if overlap:
+                raise ValueError(f"target builders emitted duplicate fields: {sorted(overlap)}")
+            targets.update(values)
+        return targets
+
+    def compute_targets(self, scene: T4Scene) -> Dict[str, torch.Tensor]:
+        """Explicit alias for callers that distinguish targets from features."""
+
+        return self.compute(scene)
 
 
 # --------------------------------------------------------------------------- #

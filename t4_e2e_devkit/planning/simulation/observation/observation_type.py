@@ -37,6 +37,7 @@ class CameraChannel(Enum):
     CAM_BACK_LEFT_WIDE = "CAM_BACK_LEFT_WIDE"
     CAM_BACK_RIGHT = "CAM_BACK_RIGHT"
     CAM_BACK_RIGHT_WIDE = "CAM_BACK_RIGHT_WIDE"
+    CAM_BACK_WIDE = "CAM_BACK_WIDE"
     CAM_TRAFFIC_LIGHT_FAR = "CAM_TRAFFIC_LIGHT_FAR"
 
 
@@ -68,7 +69,12 @@ class Observation(ABC):  # noqa: B024 - marker base, matching nuPlan's shape
 
 
 @dataclass
-class Sensors(Observation):
+class AbstractObservation(Observation):
+    """Named base for observation providers and simulator integrations."""
+
+
+@dataclass
+class Sensors(AbstractObservation):
     """Raw sensor output: point clouds and images, as arrays.
 
     ``pointcloud`` values are ``[N, 5]`` float arrays of
@@ -82,7 +88,24 @@ class Sensors(Observation):
 
 
 @dataclass
-class DetectionsTracks(Observation):
+class DetectionsTracks(AbstractObservation):
     """Output of the perception system, i.e. tracks."""
 
     tracked_objects: TrackedObjects
+
+
+@dataclass
+class TracksObservation(DetectionsTracks):
+    """NuPlan-compatible alias for a tracked-object observation."""
+
+
+__all__ = [
+    "AbstractObservation",
+    "CameraChannel",
+    "DetectionsTracks",
+    "LidarChannel",
+    "Observation",
+    "SensorChannel",
+    "Sensors",
+    "TracksObservation",
+]

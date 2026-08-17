@@ -158,7 +158,7 @@ def test_closed_loop_command_writes_family_reports(tmp_path, monkeypatch):
     assert resumed["run"]["num_resumed"] == pytest.approx(1.0)
 
 
-def test_closed_loop_command_shards_and_retries_rows(tmp_path, monkeypatch):
+def test_closed_loop_command_partitions_and_retries_rows(tmp_path, monkeypatch):
     from t4_e2e_devkit.planning.simulation.closed_loop import T4ClosedLoopResult
     from t4_e2e_devkit.script import evaluate_closed_loop as command
 
@@ -194,8 +194,8 @@ def test_closed_loop_command_shards_and_retries_rows(tmp_path, monkeypatch):
         agent_name="agent",
         output_dir=tmp_path / "retry",
         num_steps=1,
-        shard_index=1,
-        num_shards=2,
+        rank=1,
+        world_size=2,
         max_retries=1,
     )
 
@@ -205,7 +205,7 @@ def test_closed_loop_command_shards_and_retries_rows(tmp_path, monkeypatch):
     assert report["run"]["num_failed"] == pytest.approx(0.0)
 
 
-def test_closed_loop_shards_merge_and_recompute_local_report(tmp_path, monkeypatch):
+def test_closed_loop_ranks_merge_and_recompute_local_report(tmp_path, monkeypatch):
     from t4_e2e_devkit.planning.simulation.closed_loop import T4ClosedLoopResult
     from t4_e2e_devkit.script import evaluate_closed_loop as command
     from t4_e2e_devkit.script.merge_closed_loop import merge_closed_loop_reports
@@ -230,22 +230,22 @@ def test_closed_loop_shards_merge_and_recompute_local_report(tmp_path, monkeypat
     command.evaluate_closed_loop(
         data_list,
         agent_name="agent",
-        output_dir=tmp_path / "shard0",
+        output_dir=tmp_path / "rank0",
         num_steps=1,
-        shard_index=0,
-        num_shards=2,
+        rank=0,
+        world_size=2,
     )
     command.evaluate_closed_loop(
         data_list,
         agent_name="agent",
-        output_dir=tmp_path / "shard1",
+        output_dir=tmp_path / "rank1",
         num_steps=1,
-        shard_index=1,
-        num_shards=2,
+        rank=1,
+        world_size=2,
     )
 
     merged = merge_closed_loop_reports(
-        [tmp_path / "shard0", tmp_path / "shard1"],
+        [tmp_path / "rank0", tmp_path / "rank1"],
         tmp_path / "merged",
     )
     assert merged["closed_loop"]["num_rollouts"] == pytest.approx(2.0)

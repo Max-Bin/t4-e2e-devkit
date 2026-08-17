@@ -147,8 +147,8 @@ def _run_summary(run: Mapping[str, Any]) -> str:
         "num_failed",
         "num_rows",
         "num_attempts",
-        "num_shards",
-        "shard_index",
+        "rank",
+        "world_size",
         "merged",
     )
     cells = []

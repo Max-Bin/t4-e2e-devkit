@@ -8,7 +8,7 @@ One place to discover everything the devkit can do::
     t4e2e train ...              # train an agent (hydra)
     t4e2e score ...              # score an agent (hydra)
     t4e2e evaluate-closed-loop ... # evaluate sensor-replay closed loop
-    t4e2e merge-closed-loop ... # merge completed closed-loop shards
+    t4e2e merge-closed-loop ... # merge completed closed-loop rank reports
     t4e2e report-closed-loop ... # render a local HTML report
     t4e2e inspect LIST           # explain a data list, filter policy included
     t4e2e rigs SCENE...          # what cameras a scene has, and how they are stored
@@ -316,6 +316,12 @@ def _cmd_merge_closed_loop(argv: Sequence[str]) -> int:
     return merge_main(list(argv))
 
 
+def _cmd_merge_workers(argv: Sequence[str]) -> int:
+    from t4_e2e_devkit.script.merge_workers import main as merge_main
+
+    return merge_main(list(argv))
+
+
 def _cmd_report_closed_loop(argv: Sequence[str]) -> int:
     parser = argparse.ArgumentParser(prog="t4e2e report-closed-loop")
     parser.add_argument("report_dir", help="evaluation report directory")
@@ -335,7 +341,8 @@ COMMANDS = {
         _cmd_evaluate_closed_loop,
         "evaluate sensor-replay closed loop",
     ),
-    "merge-closed-loop": (_cmd_merge_closed_loop, "merge closed-loop shard reports"),
+    "merge-closed-loop": (_cmd_merge_closed_loop, "merge closed-loop rank reports"),
+    "merge-workers": (_cmd_merge_workers, "merge distributed worker manifests"),
     "report-closed-loop": (_cmd_report_closed_loop, "render a local closed-loop HTML report"),
     "train": (
         lambda argv: _forward("t4_e2e_devkit.script.run_training", argv),

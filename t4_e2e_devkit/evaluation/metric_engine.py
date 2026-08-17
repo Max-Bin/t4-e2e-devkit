@@ -240,6 +240,42 @@ class MetricEngine:
             )
         return MetricReport(tuple(records))
 
+    def evaluate_history(
+        self,
+        history: Any,
+        builders: Sequence[Any],
+        *,
+        scenario_token: Optional[str] = None,
+    ) -> tuple[Any, ...]:
+        """Run NuPlan-shaped metric builders on one simulation history.
+
+        The family engine above emits compact scalar records.  This adapter
+        keeps richer time-series/statistic results separate so simulation
+        consumers can use the same engine without flattening their reports.
+        """
+
+        from t4_e2e_devkit.evaluation.metric_api import MetricBuilderRegistry
+
+        registry = MetricBuilderRegistry(builders)
+        return registry.compute(history, scenario_token=scenario_token)
+
+    @staticmethod
+    def aggregate_history_metrics(
+        results: Iterable[Any],
+        *,
+        weights: Optional[Mapping[str, float]] = None,
+        include_failures: bool = False,
+    ) -> dict[str, dict[str, float]]:
+        """Aggregate rich builder results by metric family and statistic."""
+
+        from t4_e2e_devkit.evaluation.metric_api import MetricAggregator
+
+        return MetricAggregator().aggregate(
+            results,
+            weights=weights,
+            include_failures=include_failures,
+        )
+
     @classmethod
     def t4_default(cls) -> "MetricEngine":
         """Create an engine with all built-in, independent metric families.

@@ -99,6 +99,10 @@ DEVKIT_AUTHORED_IN_VENDORED_TREES = frozenset(
         # Copies a single function out of a nuPlan module whose remaining
         # contents pull in SimulationHistory; see the module docstring.
         "common/geometry/derivatives.py",
+        # T4's map facade is authored here and only uses the local map API;
+        # it lives beside the copied abstract map vocabulary for one import surface.
+        "common/maps/__init__.py",
+        "common/maps/t4_map_adapter.py",
         # The adapter that feeds a T4Scene to TIER IV's metric functions.
         "evaluation/tier4_metrics/__init__.py",
         # GPU online PDM-Closed reference generation is devkit-owned; it lives

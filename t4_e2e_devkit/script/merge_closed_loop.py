@@ -1,4 +1,4 @@
-"""Merge deterministic closed-loop evaluation shards."""
+"""Merge deterministic closed-loop evaluation ranks."""
 
 from __future__ import annotations
 
@@ -35,12 +35,15 @@ _VOLATILE_RUN_KEYS = {
     "num_resumed",
     "num_attempts",
     "num_rows",
-    "num_shards",
-    "shard_index",
-    "shard_rows",
+    "rank",
+    "world_size",
+    "rank_rows",
     "merged",
     "input_dirs",
-    "source_num_shards",
+    "source_world_size",
+    "workers",
+    "worker_backend",
+    "manifest",
 }
 
 
@@ -50,7 +53,7 @@ def merge_closed_loop_reports(
     *,
     allow_incomplete: bool = False,
 ) -> dict[str, dict[str, float]]:
-    """Merge completed shard directories and recompute their aggregate."""
+    """Merge completed rank directories and recompute their aggregate."""
 
     sources = [Path(value).resolve() for value in input_dirs]
     if not sources:
@@ -62,18 +65,18 @@ def merge_closed_loop_reports(
     runs = [_load_run(source) for source in sources]
     signatures = [_run_signature(run) for run in runs]
     if any(signature != signatures[0] for signature in signatures[1:]):
-        raise ValueError("closed-loop shard configurations do not match")
+        raise ValueError("closed-loop rank configurations do not match")
 
-    source_num_shards = int(runs[0].get("num_shards", 1))
-    shard_indices = [int(run.get("shard_index", 0)) for run in runs]
-    if len(set(shard_indices)) != len(shard_indices):
-        raise ValueError(f"duplicate shard indices: {shard_indices}")
+    source_world_size = int(runs[0].get("world_size", 1))
+    ranks = [int(run.get("rank", 0)) for run in runs]
+    if len(set(ranks)) != len(ranks):
+        raise ValueError(f"duplicate ranks: {ranks}")
     if not allow_incomplete:
-        expected = set(range(source_num_shards))
-        actual = set(shard_indices)
-        if source_num_shards != len(sources) or actual != expected:
+        expected = set(range(source_world_size))
+        actual = set(ranks)
+        if source_world_size != len(sources) or actual != expected:
             raise ValueError(
-                "incomplete shard set; expected indices "
+                "incomplete rank set; expected ranks "
                 f"{sorted(expected)}, got {sorted(actual)}. "
                 "Pass --allow-incomplete to merge a subset explicitly."
             )
@@ -83,17 +86,17 @@ def merge_closed_loop_reports(
     for source, run in zip(sources, runs, strict=True):
         artifact_dir = source / "rollouts"
         paths = sorted(artifact_dir.glob("*.json"))
-        expected_rows = int(run.get("shard_rows", -1))
+        expected_rows = int(run.get("rank_rows", -1))
         if expected_rows >= 0 and len(paths) != expected_rows:
             raise ValueError(
                 f"{source} contains {len(paths)} artifacts, but run.json declares "
-                f"{expected_rows} shard rows"
+                f"{expected_rows} rank rows"
             )
         for path in paths:
             payload = load_rollout_artifact(path)
             token = str(payload["token"])
             if token in seen_tokens:
-                raise ValueError(f"duplicate rollout token across shards: {token}")
+                raise ValueError(f"duplicate rollout token across ranks: {token}")
             seen_tokens.add(token)
             metrics = None
             if payload["status"] == "ok":
@@ -115,12 +118,12 @@ def merge_closed_loop_reports(
         **base_config,
         "format": RUN_FORMAT,
         "version": RUN_VERSION,
-        "num_shards": len(sources),
-        "shard_index": None,
-        "shard_rows": len(entries),
+        "world_size": len(sources),
+        "rank": None,
+        "rank_rows": len(entries),
         "merged": True,
         "input_dirs": [str(source) for source in sources],
-        "source_num_shards": source_num_shards,
+        "source_world_size": source_world_size,
     }
     config_fingerprint = _fingerprint(run_config)
     output = Path(output_dir)
@@ -138,7 +141,7 @@ def merge_closed_loop_reports(
             "num_completed": float(len(metrics)),
             "num_failed": float(len(failures)),
             "num_inputs": float(len(sources)),
-            "source_num_shards": float(source_num_shards),
+            "source_world_size": float(source_world_size),
             "merged": 1.0,
         }
     )
@@ -197,14 +200,14 @@ def _write_json(path: Path, value: Any) -> None:
 def main(argv: Optional[list[str]] = None) -> int:
     parser = argparse.ArgumentParser(
         prog="t4e2e merge-closed-loop",
-        description="Merge completed sensor-replay closed-loop shard reports.",
+        description="Merge completed sensor-replay closed-loop rank reports.",
     )
-    parser.add_argument("--input-dir", nargs="+", required=True, help="completed shard reports")
+    parser.add_argument("--input-dir", nargs="+", required=True, help="completed rank reports")
     parser.add_argument("--output-dir", required=True, help="merged report directory")
     parser.add_argument(
         "--allow-incomplete",
         action="store_true",
-        help="merge a subset of the declared shards",
+        help="merge a subset of the declared ranks",
     )
     args = parser.parse_args(argv)
     report = merge_closed_loop_reports(

@@ -3,7 +3,7 @@ from __future__ import annotations
 import numpy as np
 import pytest
 
-from t4_e2e_devkit.evaluation.executor import LocalExecutor, shard_indices
+from t4_e2e_devkit.evaluation.executor import LocalExecutor, rank_indices
 from t4_e2e_devkit.planning.training.feature_cache import FeatureCache
 
 
@@ -46,12 +46,12 @@ def test_feature_cache_get_or_compute_only_runs_on_a_miss(tmp_path):
     assert calls["count"] == 1
 
 
-def test_local_executor_is_ordered_and_shards_deterministically():
+def test_local_executor_is_ordered_and_partitions_by_rank_deterministically():
     values = list(range(8))
-    assert shard_indices(8, rank=1, world_size=3) == (1, 4, 7)
+    assert rank_indices(8, rank=1, world_size=3) == (1, 4, 7)
     executor = LocalExecutor(workers=1)
     assert executor.map(_square, values) == [value * value for value in values]
-    assert executor.shard(values, rank=1, world_size=3) == [1, 4, 7]
+    assert executor.select_rank(values, rank=1, world_size=3) == [1, 4, 7]
     assert executor.map_indexed(_square, values, rank=1, world_size=3) == [
         (1, 1),
         (4, 16),

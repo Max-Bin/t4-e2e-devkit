@@ -62,7 +62,7 @@ uv run t4e2e evaluate-closed-loop \
   --output-dir reports/closed_loop
 
 uv run t4e2e merge-closed-loop \
-  --input-dir reports/shard-0 reports/shard-1 \
+  --input-dir reports/rank-0 reports/rank-1 \
   --output-dir reports/closed_loop_merged
 ```
 

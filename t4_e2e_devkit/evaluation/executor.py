@@ -11,8 +11,8 @@ T = TypeVar("T")
 R = TypeVar("R")
 
 
-def shard_indices(length: int, rank: int = 0, world_size: int = 1) -> tuple[int, ...]:
-    """Return deterministic ``rank``-strided indices for a finite collection."""
+def rank_indices(length: int, rank: int = 0, world_size: int = 1) -> tuple[int, ...]:
+    """Return deterministic indices assigned to one distributed rank."""
 
     if length < 0:
         raise ValueError("length must be non-negative")
@@ -46,10 +46,10 @@ class LocalExecutor:
                     f"available: {available}"
                 )
 
-    def shard(self, items: Sequence[T], rank: int = 0, world_size: int = 1) -> list[T]:
+    def select_rank(self, items: Sequence[T], rank: int = 0, world_size: int = 1) -> list[T]:
         """Return this rank's stable subset without reordering the input."""
 
-        return [items[index] for index in shard_indices(len(items), rank, world_size)]
+        return [items[index] for index in rank_indices(len(items), rank, world_size)]
 
     def map(
         self,
@@ -62,7 +62,7 @@ class LocalExecutor:
         """Apply ``function`` in deterministic input order."""
 
         values = list(items)
-        selected = self.shard(values, rank=rank, world_size=world_size)
+        selected = self.select_rank(values, rank=rank, world_size=world_size)
         if self.workers == 1 or len(selected) <= 1:
             return [function(value) for value in selected]
         context = mp.get_context(self.start_method) if self.start_method else None
@@ -80,7 +80,7 @@ class LocalExecutor:
         """Return ``(original_index, result)`` pairs for deterministic merging."""
 
         values = list(items)
-        indices = shard_indices(len(values), rank, world_size)
+        indices = rank_indices(len(values), rank, world_size)
         selected_results = self.map(
             function,
             [values[index] for index in indices],
@@ -102,4 +102,4 @@ class LocalExecutor:
         return self.map(function, items, rank=rank, world_size=world_size)
 
 
-__all__ = ["LocalExecutor", "shard_indices"]
+__all__ = ["LocalExecutor", "rank_indices"]

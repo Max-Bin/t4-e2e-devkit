@@ -139,12 +139,14 @@ uv run t4e2e evaluate-closed-loop \
 
 The command writes `closed_loop.csv`, `aggregate.json`, `aggregate.yaml`,
 `closed_loop_ticks.csv`, `run.json`, `report.html`, and one artifact per row under
-`rollouts/`. Shards are merged with `t4e2e merge-closed-loop`; the merge checks
-the common configuration and token uniqueness before recomputing the aggregate.
+`rollouts/`, and a rank manifest. Rank outputs are merged with
+`t4e2e merge-closed-loop`; the merge checks the common configuration and token
+uniqueness before recomputing the aggregate.
 `failures.csv` records rows that exhausted their retry budget. Closed-loop
 metrics remain in their own report section and are never folded into PDM or
-open-loop scores. Use `--num-shards`, `--shard-index`, `--max-retries`, and
-`--resume` for large or interrupted runs.
+open-loop scores. Use `--rank`, `--world-size`, `--workers`,
+`--worker-backend`, `--max-retries`, and `--resume` for large or interrupted
+runs.
 
 ## Metric engine and local execution
 
@@ -172,5 +174,5 @@ when that family is selected. The cache signature includes the prediction,
 scene/GT arrays, closed-loop realization and metric configuration.
 
 `LocalExecutor` in `t4_e2e_devkit.evaluation.executor` runs an ordered map
-serially or with local processes. Its rank/world-size sharding is deterministic
+serially or with local processes. Its rank/world-size partitioning is deterministic
 and independent of Slurm, Ray and tracking services.

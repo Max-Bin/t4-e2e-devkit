@@ -32,6 +32,11 @@ _LAZY: dict[str, tuple[str, str]] = {
     "T4RoutePrimitive": ("t4_e2e_devkit.dataset.route", "T4RoutePrimitive"),
     "T4RouteSegment": ("t4_e2e_devkit.dataset.route", "T4RouteSegment"),
     "load_t4_route": ("t4_e2e_devkit.dataset.route", "load_t4_route"),
+    "ScenarioFilter": ("t4_e2e_devkit.dataset.scenario_filter", "ScenarioFilter"),
+    "ScenarioSampling": ("t4_e2e_devkit.dataset.scenario_filter", "ScenarioSampling"),
+    "filter_scenarios": ("t4_e2e_devkit.dataset.scenario_filter", "filter_scenarios"),
+    "sample_scenarios": ("t4_e2e_devkit.dataset.scenario_filter", "sample_scenarios"),
+    "select_scenarios": ("t4_e2e_devkit.dataset.scenario_filter", "select_scenarios"),
     "collate_t4": ("t4_e2e_devkit.dataset.dataset", "collate_t4"),
     "AbstractScenario": (
         "t4_e2e_devkit.planning.scenario_builder.abstract_scenario",
@@ -57,6 +62,7 @@ _LAZY: dict[str, tuple[str, str]] = {
     "T4Lanelet": ("t4_e2e_devkit.common.t4_map", "T4Lanelet"),
     "T4MapObject": ("t4_e2e_devkit.common.t4_map", "T4MapObject"),
     "T4MapAPI": ("t4_e2e_devkit.common.t4_map", "T4MapAPI"),
+    "T4MapAdapter": ("t4_e2e_devkit.common.maps.t4_map_adapter", "T4MapAdapter"),
     "T4AgentInput": ("t4_e2e_devkit.common.dataclasses", "T4AgentInput"),
     "T4Scene": ("t4_e2e_devkit.common.dataclasses", "T4Scene"),
     "Trajectory": ("t4_e2e_devkit.common.dataclasses", "Trajectory"),
@@ -180,19 +186,178 @@ _LAZY: dict[str, tuple[str, str]] = {
         "t4_e2e_devkit.planning.simulation.manager",
         "T4SimulationManager",
     ),
+    "T4AgentPlanner": (
+        "t4_e2e_devkit.planning.simulation.planner.agent_planner",
+        "T4AgentPlanner",
+    ),
+    "AbstractEgoController": (
+        "t4_e2e_devkit.planning.simulation.runtime",
+        "AbstractEgoController",
+    ),
+    "AbstractObservation": (
+        "t4_e2e_devkit.planning.simulation.runtime",
+        "AbstractObservation",
+    ),
+    "KinematicEgoController": (
+        "t4_e2e_devkit.planning.simulation.runtime",
+        "KinematicEgoController",
+    ),
+    "LogPlaybackController": (
+        "t4_e2e_devkit.planning.simulation.runtime",
+        "LogPlaybackController",
+    ),
+    "PlannerReport": (
+        "t4_e2e_devkit.planning.simulation.runtime",
+        "PlannerReport",
+    ),
+    "SimulationRunReport": (
+        "t4_e2e_devkit.planning.simulation.runtime",
+        "SimulationRunReport",
+    ),
+    "ReplaySimulationTimeController": (
+        "t4_e2e_devkit.planning.simulation.runtime",
+        "ReplaySimulationTimeController",
+    ),
+    "SimulationHistory": (
+        "t4_e2e_devkit.planning.simulation.runtime",
+        "SimulationHistory",
+    ),
+    "SimulationHistoryBuffer": (
+        "t4_e2e_devkit.planning.simulation.runtime",
+        "SimulationHistoryBuffer",
+    ),
+    "SimulationHistorySample": (
+        "t4_e2e_devkit.planning.simulation.runtime",
+        "SimulationHistorySample",
+    ),
+    "SimulationManager": (
+        "t4_e2e_devkit.planning.simulation.runtime",
+        "SimulationManager",
+    ),
+    "SimulationRunner": (
+        "t4_e2e_devkit.planning.simulation.runtime",
+        "SimulationRunner",
+    ),
+    "SimulationSetup": (
+        "t4_e2e_devkit.planning.simulation.runtime",
+        "SimulationSetup",
+    ),
+    "SimulationTimeController": (
+        "t4_e2e_devkit.planning.simulation.runtime",
+        "SimulationTimeController",
+    ),
+    "StepSimulationTimeController": (
+        "t4_e2e_devkit.planning.simulation.runtime",
+        "StepSimulationTimeController",
+    ),
+    "TracksObservation": (
+        "t4_e2e_devkit.planning.simulation.observation.observation_type",
+        "TracksObservation",
+    ),
+    "T4ReplayObservation": (
+        "t4_e2e_devkit.planning.simulation.observation.replay",
+        "T4ReplayObservation",
+    ),
+    "T4ReplayObservationSource": (
+        "t4_e2e_devkit.planning.simulation.observation.replay",
+        "T4ReplayObservationSource",
+    ),
     "MetricCache": ("t4_e2e_devkit.evaluation.metric_cache", "MetricCache"),
     "MetricContext": ("t4_e2e_devkit.evaluation.metric_engine", "MetricContext"),
     "MetricDefinition": ("t4_e2e_devkit.evaluation.metric_engine", "MetricDefinition"),
     "MetricEngine": ("t4_e2e_devkit.evaluation.metric_engine", "MetricEngine"),
     "MetricRecord": ("t4_e2e_devkit.evaluation.metric_engine", "MetricRecord"),
     "MetricReport": ("t4_e2e_devkit.evaluation.metric_engine", "MetricReport"),
+    "AbstractMetricBuilder": ("t4_e2e_devkit.evaluation.metric_api", "AbstractMetricBuilder"),
+    "CallableMetricBuilder": ("t4_e2e_devkit.evaluation.metric_api", "CallableMetricBuilder"),
+    "MetricAggregator": ("t4_e2e_devkit.evaluation.metric_api", "MetricAggregator"),
+    "MetricBuilderRegistry": ("t4_e2e_devkit.evaluation.metric_api", "MetricBuilderRegistry"),
+    "MetricCallback": ("t4_e2e_devkit.evaluation.metric_api", "MetricCallback"),
+    "MetricResult": ("t4_e2e_devkit.evaluation.metric_api", "MetricResult"),
+    "MetricStatistic": ("t4_e2e_devkit.evaluation.metric_api", "MetricStatistic"),
+    "MetricStatistics": ("t4_e2e_devkit.evaluation.metric_api", "MetricStatistics"),
+    "MetricTimeSeries": ("t4_e2e_devkit.evaluation.metric_api", "MetricTimeSeries"),
+    "MappingMetricBuilder": (
+        "t4_e2e_devkit.evaluation.metric_builders",
+        "MappingMetricBuilder",
+    ),
+    "OpenLoopMetricBuilder": (
+        "t4_e2e_devkit.evaluation.metric_builders",
+        "OpenLoopMetricBuilder",
+    ),
+    "ClosedLoopMetricBuilder": (
+        "t4_e2e_devkit.evaluation.metric_builders",
+        "ClosedLoopMetricBuilder",
+    ),
+    "PDMMetricBuilder": (
+        "t4_e2e_devkit.evaluation.metric_builders",
+        "PDMMetricBuilder",
+    ),
+    "T4SafetyMetricBuilder": (
+        "t4_e2e_devkit.evaluation.metric_builders",
+        "T4SafetyMetricBuilder",
+    ),
+    "ComfortMetricBuilder": (
+        "t4_e2e_devkit.evaluation.metric_builders",
+        "ComfortMetricBuilder",
+    ),
+    "ProgressMetricBuilder": (
+        "t4_e2e_devkit.evaluation.metric_builders",
+        "ProgressMetricBuilder",
+    ),
+    "CollisionMetricBuilder": (
+        "t4_e2e_devkit.evaluation.metric_builders",
+        "CollisionMetricBuilder",
+    ),
+    "DrivableAreaMetricBuilder": (
+        "t4_e2e_devkit.evaluation.metric_builders",
+        "DrivableAreaMetricBuilder",
+    ),
+    "TrafficLightMetricBuilder": (
+        "t4_e2e_devkit.evaluation.metric_builders",
+        "TrafficLightMetricBuilder",
+    ),
+    "StopLineViolationMetricBuilder": (
+        "t4_e2e_devkit.evaluation.metric_builders",
+        "StopLineViolationMetricBuilder",
+    ),
+    "TTCMetricBuilder": (
+        "t4_e2e_devkit.evaluation.metric_builders",
+        "TTCMetricBuilder",
+    ),
+    "WorkerPool": ("t4_e2e_devkit.evaluation.worker_pool", "WorkerPool"),
+    "WorkerResources": ("t4_e2e_devkit.evaluation.worker_pool", "WorkerResources"),
+    "WorkerResult": ("t4_e2e_devkit.evaluation.worker_pool", "WorkerResult"),
+    "WorkerTask": ("t4_e2e_devkit.evaluation.worker_pool", "WorkerTask"),
+    "DistributedExecutor": (
+        "t4_e2e_devkit.evaluation.distributed",
+        "DistributedExecutor",
+    ),
+    "DistributedRunConfig": (
+        "t4_e2e_devkit.evaluation.distributed",
+        "DistributedRunConfig",
+    ),
+    "WorkerManifest": (
+        "t4_e2e_devkit.evaluation.distributed",
+        "WorkerManifest",
+    ),
+    "merge_worker_manifests": (
+        "t4_e2e_devkit.evaluation.distributed",
+        "merge_worker_manifests",
+    ),
+    "merge_worker_results": (
+        "t4_e2e_devkit.evaluation.worker_pool",
+        "merge_worker_results",
+    ),
     "RewardConfig": ("t4_e2e_devkit.evaluation.tier4_metrics", "RewardConfig"),
     "FeatureCache": (
         "t4_e2e_devkit.planning.training.feature_cache",
         "FeatureCache",
     ),
+    "FeatureBuilderRegistry": ("t4_e2e_devkit.agents.builders", "FeatureBuilderRegistry"),
+    "TargetBuilderRegistry": ("t4_e2e_devkit.agents.builders", "TargetBuilderRegistry"),
     "LocalExecutor": ("t4_e2e_devkit.evaluation.executor", "LocalExecutor"),
-    "shard_indices": ("t4_e2e_devkit.evaluation.executor", "shard_indices"),
+    "rank_indices": ("t4_e2e_devkit.evaluation.executor", "rank_indices"),
     # evaluation
     "T4PDMScorer": ("t4_e2e_devkit.evaluation.pdm_score", "T4PDMScorer"),
     "T4PDMReferenceProvider": (
@@ -223,6 +388,7 @@ __all__ = ["__version__", *sorted(_LAZY)]
 
 if TYPE_CHECKING:  # let type checkers and IDEs see the real symbols
     from t4_e2e_devkit.agents.abstract_agent import AbstractT4Agent
+    from t4_e2e_devkit.agents.builders import FeatureBuilderRegistry, TargetBuilderRegistry
     from t4_e2e_devkit.agents.registry import available_agents, build_agent, register_agent
     from t4_e2e_devkit.common.dataclasses import (
         MapObjectIds,
@@ -236,6 +402,7 @@ if TYPE_CHECKING:  # let type checkers and IDEs see the real symbols
         aggregate_pdm_results,
         aggregate_results,
     )
+    from t4_e2e_devkit.common.maps.t4_map_adapter import T4MapAdapter
     from t4_e2e_devkit.common.t4_map import T4Lanelet, T4MapAPI, T4MapObject
     from t4_e2e_devkit.dataset.datalist import load_data_list
     from t4_e2e_devkit.dataset.dataset import T4Dataset, collate_t4
@@ -245,6 +412,13 @@ if TYPE_CHECKING:  # let type checkers and IDEs see the real symbols
         T4RouteSegment,
         load_t4_route,
     )
+    from t4_e2e_devkit.dataset.scenario_filter import (
+        ScenarioFilter,
+        ScenarioSampling,
+        filter_scenarios,
+        sample_scenarios,
+        select_scenarios,
+    )
     from t4_e2e_devkit.dataset.scene_tags import T4SceneTag, T4SceneTagIndex
     from t4_e2e_devkit.dataset.window import T4WindowBuilder
     from t4_e2e_devkit.evaluation.closed_loop import (
@@ -253,7 +427,38 @@ if TYPE_CHECKING:  # let type checkers and IDEs see the real symbols
         ClosedLoopTrace,
         compute_closed_loop_metrics,
     )
-    from t4_e2e_devkit.evaluation.executor import LocalExecutor, shard_indices
+    from t4_e2e_devkit.evaluation.distributed import (
+        DistributedExecutor,
+        DistributedRunConfig,
+        WorkerManifest,
+        merge_worker_manifests,
+    )
+    from t4_e2e_devkit.evaluation.executor import LocalExecutor, rank_indices
+    from t4_e2e_devkit.evaluation.metric_api import (
+        AbstractMetricBuilder,
+        CallableMetricBuilder,
+        MetricAggregator,
+        MetricBuilderRegistry,
+        MetricCallback,
+        MetricResult,
+        MetricStatistic,
+        MetricStatistics,
+        MetricTimeSeries,
+    )
+    from t4_e2e_devkit.evaluation.metric_builders import (
+        ClosedLoopMetricBuilder,
+        CollisionMetricBuilder,
+        ComfortMetricBuilder,
+        DrivableAreaMetricBuilder,
+        MappingMetricBuilder,
+        OpenLoopMetricBuilder,
+        PDMMetricBuilder,
+        ProgressMetricBuilder,
+        StopLineViolationMetricBuilder,
+        T4SafetyMetricBuilder,
+        TrafficLightMetricBuilder,
+        TTCMetricBuilder,
+    )
     from t4_e2e_devkit.evaluation.metric_cache import MetricCache
     from t4_e2e_devkit.evaluation.metric_engine import (
         MetricContext,
@@ -271,6 +476,13 @@ if TYPE_CHECKING:  # let type checkers and IDEs see the real symbols
     from t4_e2e_devkit.evaluation.reference_provider import T4PDMReferenceProvider
     from t4_e2e_devkit.evaluation.report import aggregate_evaluation
     from t4_e2e_devkit.evaluation.tier4_metrics import RewardConfig
+    from t4_e2e_devkit.evaluation.worker_pool import (
+        WorkerPool,
+        WorkerResources,
+        WorkerResult,
+        WorkerTask,
+        merge_worker_results,
+    )
     from t4_e2e_devkit.planning.scenario_builder.abstract_scenario import (
         AbstractScenario,
         T4Scenario,
@@ -303,6 +515,29 @@ if TYPE_CHECKING:  # let type checkers and IDEs see the real symbols
         TrafficPolicy,
     )
     from t4_e2e_devkit.planning.simulation.manager import SimulationRequest, T4SimulationManager
+    from t4_e2e_devkit.planning.simulation.observation.observation_type import TracksObservation
+    from t4_e2e_devkit.planning.simulation.observation.replay import (
+        T4ReplayObservation,
+        T4ReplayObservationSource,
+    )
+    from t4_e2e_devkit.planning.simulation.planner.agent_planner import T4AgentPlanner
+    from t4_e2e_devkit.planning.simulation.runtime import (
+        AbstractEgoController,
+        AbstractObservation,
+        KinematicEgoController,
+        LogPlaybackController,
+        PlannerReport,
+        ReplaySimulationTimeController,
+        SimulationHistory,
+        SimulationHistoryBuffer,
+        SimulationHistorySample,
+        SimulationManager,
+        SimulationRunner,
+        SimulationRunReport,
+        SimulationSetup,
+        SimulationTimeController,
+        StepSimulationTimeController,
+    )
     from t4_e2e_devkit.planning.training.callbacks import PredictionVizCallback
     from t4_e2e_devkit.planning.training.feature_cache import FeatureCache
     from t4_e2e_devkit.visualization.plots import render_prediction_bev

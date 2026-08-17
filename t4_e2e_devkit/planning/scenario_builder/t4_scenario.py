@@ -9,6 +9,11 @@ from typing import Any, Dict, Optional
 from t4_e2e_devkit.common.constants import T4_INTERVAL_LENGTH
 from t4_e2e_devkit.common.dataclasses import SceneFilter, SensorConfig
 from t4_e2e_devkit.dataset.datalist import DataList, load_data_list
+from t4_e2e_devkit.dataset.scenario_filter import (
+    ScenarioFilter,
+    ScenarioSampling,
+    select_scenarios,
+)
 from t4_e2e_devkit.dataset.window import T4WindowBuilder
 from t4_e2e_devkit.planning.scenario_builder.abstract_scenario import T4Scenario
 
@@ -43,10 +48,32 @@ class T4ScenarioBuilder:
         if self.interval_length <= 0.0:
             raise ValueError("interval_length must be positive")
 
-    def get_scenarios(self, limit: Optional[int] = None) -> Iterator[T4Scenario]:
-        """Yield scenarios in data-list order, closing readers on completion."""
+    def get_scenarios(
+        self,
+        limit: Optional[int] = None,
+        *,
+        scenario_filter: Optional[ScenarioFilter] = None,
+        sampling: Optional[ScenarioSampling] = None,
+    ) -> Iterator[T4Scenario]:
+        """Yield scenarios with optional filtering and deterministic sampling.
+
+        The no-filter path remains streaming.  Filtering and sampling operate
+        on materialized scenarios because their predicates depend on scenario
+        metadata exposed after a window has been built.
+        """
         if limit is not None and limit < 0:
             raise ValueError("limit must be non-negative")
+        if scenario_filter is not None or sampling is not None:
+            scenarios = list(self._iter_scenarios(limit=None))
+            selected = select_scenarios(scenarios, scenario_filter, sampling)
+            if limit is not None:
+                selected = selected[:limit]
+            yield from selected
+            return
+        yield from self._iter_scenarios(limit=limit)
+
+    def _iter_scenarios(self, limit: Optional[int] = None) -> Iterator[T4Scenario]:
+        """Stream scenarios in data-list order and close readers on completion."""
         builders: dict[str, T4WindowBuilder] = {}
         try:
             for row_index, (scene_dir, center_frame) in enumerate(self.data_list):
@@ -72,9 +99,21 @@ class T4ScenarioBuilder:
             for builder in builders.values():
                 builder.close()
 
-    def build_all(self, limit: Optional[int] = None) -> list[T4Scenario]:
+    def build_all(
+        self,
+        limit: Optional[int] = None,
+        *,
+        scenario_filter: Optional[ScenarioFilter] = None,
+        sampling: Optional[ScenarioSampling] = None,
+    ) -> list[T4Scenario]:
         """:return: materialized scenarios, useful for small evaluation sets."""
-        return list(self.get_scenarios(limit=limit))
+        return list(
+            self.get_scenarios(
+                limit=limit,
+                scenario_filter=scenario_filter,
+                sampling=sampling,
+            )
+        )
 
     def get_scenario(self, token: str) -> T4Scenario:
         """Build one scenario from ``scene_relative_path@center_frame``."""
