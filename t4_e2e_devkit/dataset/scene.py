@@ -895,8 +895,8 @@ class T4SceneReader:
 
     @staticmethod
     def _resolve_camera_names(config: Any) -> List[str]:
-        configured = _as_list(_cfg_get(config, "camera_names", None))
-        if not configured:
+        raw_configured = _cfg_get(config, "camera_names", None)
+        if raw_configured is None:
             # The direct T4 adapter is intentionally explicit.  A dynamic
             # number of cameras would not match the fixed camera-aware
             # register tensor, so callers must configure the camera vocabulary.
@@ -904,6 +904,12 @@ class T4SceneReader:
                 "T4 reader requires config.camera_names so camera order and "
                 "the number of camera registers are fixed"
             )
+        configured = _as_list(raw_configured)
+        if not configured:
+            # Map/LiDAR-only consumers have no camera register. This is
+            # distinct from an omitted configuration, which remains an error
+            # for direct camera-aware reader use.
+            return []
         return normalize_t4_camera_names(configured)
 
     @property

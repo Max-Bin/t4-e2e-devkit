@@ -115,12 +115,12 @@ class T4WindowBuilder:
         self.scene_filter = scene_filter or SceneFilter()
 
         config: Dict[str, Any] = dict(reader_config or {})
-        # The reader resolves its camera register from this key and requires it
-        # unconditionally, because the register ORDER is part of the learned
-        # contract and cannot be rebuilt per frame.  Resolving the register is
-        # not decoding: a map-only or LiDAR-only agent still gets a register
-        # here, and still reads zero JPEGs, because decoding is driven by
-        # ``sensor_config`` in :meth:`read_cameras`.
+        # A camera-aware reader needs an explicit fixed register because its
+        # order is part of the learned contract. A no-sensor reader has no
+        # camera contract at all, however: requiring even a calibrated camera
+        # register would make map/LiDAR-only scoring fail on scenes that carry
+        # no JPEG camera files. Keep the register genuinely empty in that
+        # path; ``read_cameras`` already returns ``None`` without decoding.
         #
         # The register is resolved against THIS scene's rig rather than taken
         # from a global default.  The fleet has at least three registers -- the
@@ -128,17 +128,20 @@ class T4WindowBuilder:
         # x2_dev with a centred CAM_BACK and only one wide view -- so a fixed
         # default fails outright on two of them.  See
         # :mod:`t4_e2e_devkit.dataset.rigs`.
-        requested = config.get("camera_names")
-        if requested is None and self.sensor_config.cameras:
-            requested = list(self.sensor_config.cameras.keys())
-        # Resolved against cameras that are BOTH calibrated and stored, not
-        # against the calibration register alone: 208 prd_jt scenes calibrate the
-        # five wide views while exporting only two of them.
-        config["camera_names"] = resolve_camera_names(
-            requested,
-            readable_camera_names(self.scene_dir),
-            scene_dir=self.scene_dir,
-        )
+        if not self.sensor_config.any_camera:
+            config["camera_names"] = []
+        else:
+            requested = config.get("camera_names")
+            if requested is None:
+                requested = list(self.sensor_config.cameras.keys())
+            # Resolve against cameras that are BOTH calibrated and stored, not
+            # against the calibration register alone: 208 prd_jt scenes
+            # calibrate the five wide views while exporting only two of them.
+            config["camera_names"] = resolve_camera_names(
+                requested,
+                readable_camera_names(self.scene_dir),
+                scene_dir=self.scene_dir,
+            )
         config.setdefault("t4_image_size_hw", list(T4_DEFAULT_IMAGE_SIZE_HW))
         self.reader_config = config
         self._include_history_annotations = _as_bool(
