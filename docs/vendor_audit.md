@@ -14,5 +14,5 @@ The remaining upstream TODOs were reviewed as follows:
 | comfort and IDM constants | retained; changing defaults would silently change the reference metric |
 | route readability and parameter loading | retained; maintenance-only, no T4 behavior change |
 These files must not be edited in place to remove a TODO. A behavioral change
-belongs in a devkit adapter with a regression test, or in the public upstream
-source followed by a vendor sync.
+belongs in a devkit-owned integration module with a regression test, or in the
+public upstream source followed by a vendor sync.

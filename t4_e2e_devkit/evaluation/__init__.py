@@ -136,6 +136,15 @@ from t4_e2e_devkit.evaluation.prediction_manifest import (
     trajectory_to_poses,
     validate_prediction_keys,
 )
+from t4_e2e_devkit.evaluation.prediction_scoring import (
+    METRIC_TO_REPORT,
+    REPORT_METRIC_KEYS,
+    score_prediction_manifest,
+)
+from t4_e2e_devkit.evaluation.proposal_scoring import (
+    PendingProposalScore,
+    T4ProposalScorer,
+)
 from t4_e2e_devkit.evaluation.report import aggregate_evaluation
 from t4_e2e_devkit.evaluation.submission import (
     SubmissionPackage,
@@ -207,6 +216,11 @@ __all__ = [
     "load_prediction_manifest",
     "trajectory_to_poses",
     "validate_prediction_keys",
+    "PendingProposalScore",
+    "T4ProposalScorer",
+    "METRIC_TO_REPORT",
+    "REPORT_METRIC_KEYS",
+    "score_prediction_manifest",
     "load_rollout_artifact",
     "load_rollout_metrics",
     "MetricCache",

@@ -14,6 +14,10 @@ _LAZY: dict[str, tuple[str, str]] = {
         "t4_e2e_devkit.planning.training.callbacks",
         "PredictionVizCallback",
     ),
+    "OfficialDevkitScoreCallback": (
+        "t4_e2e_devkit.planning.training.official_score",
+        "OfficialDevkitScoreCallback",
+    ),
     "TrajectoryVizCallback": (
         "t4_e2e_devkit.planning.training.callbacks",
         "TrajectoryVizCallback",
@@ -44,6 +48,7 @@ if TYPE_CHECKING:
     from t4_e2e_devkit.planning.training.datamodule import T4DataModule
     from t4_e2e_devkit.planning.training.feature_cache import FeatureCache
     from t4_e2e_devkit.planning.training.lightning_module import T4LightningModule
+    from t4_e2e_devkit.planning.training.official_score import OfficialDevkitScoreCallback
 
 
 def __getattr__(name: str) -> Any:

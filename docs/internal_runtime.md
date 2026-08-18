@@ -1,8 +1,8 @@
-# Internal runtime
+# Runtime orchestration
 
-This package targets reproducible T4 experiments on internal infrastructure.
-Generated state belongs under ignored `results/` or `reports/` directories;
-scene data and sensor payloads are never copied into a report.
+This document describes portable local orchestration for reproducible T4
+experiments. Generated state belongs under ignored `results/` or `reports/`
+directories; scene data and sensor payloads are never copied into a report.
 
 ## Distributed execution
 

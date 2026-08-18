@@ -114,8 +114,8 @@ uv run python tools/vendor.py status
 uv run python tools/vendor.py check
 ```
 
-Do not hand-edit a vendored module. Put interface changes in a devkit-authored
-adapter or wrapper; re-run the vendor tool when the upstream source changes.
+Do not hand-edit a vendored module. Put interface changes in a devkit-owned
+integration module; re-run the vendor tool when the upstream source changes.
 
 ## Shared constants
 

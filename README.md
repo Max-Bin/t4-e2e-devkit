@@ -1,202 +1,190 @@
 # t4-e2e-devkit
 
-A shared dataset, agent, evaluation and visualization interface for end-to-end
-planning on T4 scenes.
+A model-neutral dataset, planning, evaluation and visualization toolkit for
+T4 scenes. It provides one contract for scene windows, sensor inputs,
+trajectories, scoring and local reports.
 
 ```text
-scene files -> T4Scene -> T4AgentInput -> agent -> Trajectory -> scorer
-                 \-> target builders                         \-> PDM metrics
+T4 scene files -> data list -> T4Scene -> model -> prediction manifest
+                                      └── evaluator / visualizer
 ```
 
-The reader, contract and scorer are shared. An agent contributes only its
-sensor declaration, feature builders, target sampling, network, loss and
-optimizer.
+The repository supports the T4 scene format only. It does not require a
+NuPlan database or an experiment-tracking service. Evaluation returns ordinary
+Python dictionaries and local files, so a caller may send the results to any
+logger or dashboard.
 
-## Install
+## Public entry points
+
+| Capability | Entry point | Result |
+| --- | --- | --- |
+| Build a data list | `t4e2e datalist` | Reproducible evaluation windows |
+| Inspect a data list | `t4e2e inspect` | Window count, root and filters |
+| Render one window | `t4e2e visualize` | BEV, camera or summary image |
+| Score external predictions | `t4e2e score-manifest` | v2 metrics from JSONL predictions |
+| Run a registered agent | `t4e2e evaluate` | Open-loop and PDM reports |
+| Run sensor-replay closed loop | `t4e2e evaluate-closed-loop` | Kinematic rollout and metrics |
+| Score during training | `OfficialDevkitScoreCallback` | Distributed GPU scoring and generic logger output |
+
+LiDAR is opt-in. Map-only and camera-only visualization do not decode it. The
+public camera path currently supports the configured wide, JPEG-backed camera
+channels; narrow and video-backed channels are not part of the input contract.
+
+## Install and verify
+
+Python 3.10–3.12 is supported. The recommended development workflow uses
+`uv`:
 
 ```bash
 uv sync
+uv run t4e2e check
 uv run pytest -q
 uv run ruff check .
-uv run t4e2e check --vendor
 ```
 
-Optional dependencies:
+Install optional dependencies only when they are needed:
 
 ```bash
 uv sync --extra camera
 uv sync --extra lidar
 ```
 
-See [`docs/environment.md`](docs/environment.md) for dataset and CUDA tests.
+The repository does not contain scenes, maps, scene tags, checkpoints or
+generated reports. Keep data lists, manifests, images and reports under an
+ignored `results/` or `reports/` directory.
 
 ## Quick start
 
+### 1. Build and inspect a data list
+
 ```bash
 uv run t4e2e datalist \
-  --root /path/to/t4_dataset \
+  --root /path/to/t4 \
   --glob 'prd_jt/*/*/*' \
-  --out lists/val.json
+  --out results/val.datalist.json
 
-# Optional semantic scene filtering
-uv run t4e2e datalist \
-  --root /path/to/t4_dataset \
-  --scene-tags-root /path/to/scene_tags \
-  --include-tag-event lane_change \
-  --out lists/lane-change.json
+uv run t4e2e inspect results/val.datalist.json
+```
 
-uv run t4e2e evaluate lists/val.json \
+A data list fixes the `(scene, center_frame)` windows and records the policy
+used to construct them. Evaluation does not rediscover windows by scanning the
+dataset at runtime.
+
+### 2. Render one BEV frame
+
+```bash
+uv run t4e2e visualize /path/to/t4/prd_jt/scene/date/time \
+  --root /path/to/t4 \
+  --center 100 \
+  --mode bev \
+  --no-lidar \
+  --out results/visualization/window.png
+```
+
+Use `--mode cameras` for camera panels or `--mode summary` for a combined
+view. The Python equivalent is [`examples/render_bev.py`](examples/render_bev.py).
+The deterministic synthetic sample is [`docs/assets/bev_sample.png`](docs/assets/bev_sample.png);
+regenerate it with:
+
+```bash
+uv run python docs/examples/generate_bev_sample.py
+```
+
+### 3. Score predictions from any model repository
+
+A model repository can stay independent of the devkit and export the shared
+`t4-e2e.predictions` JSONL manifest:
+
+```bash
+uv run t4e2e score-manifest results/val.datalist.json \
+  --predictions results/model/predictions.jsonl \
+  --output-dir results/model/score \
+  --version v2 \
+  --backend auto
+```
+
+Omitting `--metrics` computes the complete v2 metric set. Use
+`--backend gpu` to require CUDA or `--backend cpu` for the reference path.
+The command writes `aggregate.json` and, by default, `per_window.csv`.
+[`examples/write_prediction_manifest.py`](examples/write_prediction_manifest.py)
+converts neutral NumPy outputs to the shared format.
+
+### 4. Let the devkit call a registered agent
+
+Implement `AbstractT4Agent`, declare its sensors and trajectory sampling, and
+register it through the package entry-point group:
+
+```bash
+uv run t4e2e evaluate results/val.datalist.json \
   --agent my_agent \
-  --output-dir results/evaluation \
+  --output-dir results/my_agent/evaluation \
   --families open_loop pdm \
   --pdm-version navsim-v2 \
   --backend auto
-
-# Report only the fields needed by a run.
-uv run t4e2e evaluate lists/val.json \
-  --agent my_agent \
-  --output-dir results/evaluation/selected \
-  --families pdm \
-  --pdm-metrics ego_progress score
-
-# Launch and merge all ranks on one machine.
-uv run t4e2e distribute evaluate lists/val.json \
-  --agent my_agent \
-  --output-dir results/evaluation \
-  --world-size 4 --workers 1 --worker-backend serial
-
-# Optional map and scene-tag metadata sources
-uv run t4e2e evaluate lists/val.json \
-  --agent my_agent \
-  --output-dir results/evaluation \
-  --maps-root /path/to/maps \
-  --scene-tags-root /path/to/scene-tags \
-  --attach-map-ids
-
-uv run t4e2e visualize \
-  /path/to/t4_dataset/prd_jt/scene \
-  --mode bev \
-  --out results/visualization/window.png
-
-# Run independent ranks, then merge their portable reports.
-uv run t4e2e evaluate lists/val.json --agent my_agent \
-  --output-dir results/evaluation/rank-0 --rank 0 --world-size 4 --resume
-uv run t4e2e merge-evaluation \
-  --input-dir results/evaluation/rank-0 results/evaluation/rank-1 \
-              results/evaluation/rank-2 results/evaluation/rank-3 \
-  --output-dir results/evaluation/merged
-uv run t4e2e dashboard results/evaluation/merged \
-  --out results/evaluation/merged/dashboard.html
-
-uv run t4e2e evaluate-closed-loop \
-  lists/val.json \
-  --agent my_agent \
-  --output-dir results/closed_loop
-
-uv run t4e2e merge-closed-loop \
-  --input-dir results/closed_loop/rank-0 results/closed_loop/rank-1 \
-  --output-dir results/closed_loop/merged
-
-# Create and score a portable trajectory submission.
-uv run t4e2e submit lists/val.json \
-  --agent my_agent --output-dir results/submission
-uv run t4e2e score-submission lists/val.json \
-  --submission-dir results/submission \
-  --output-dir results/submission-score \
-  --families open_loop pdm
-
-uv run t4e2e distribute score-submission lists/val.json \
-  --submission-dir results/submission \
-  --output-dir results/submission-score \
-  --world-size 4 --workers 1 --worker-backend serial
-
-# Compare multiple completed runs in one offline report.
-uv run t4e2e dashboard results/run-a results/run-b --out results/compare.html
-
-# Run the same workflow from a typed YAML configuration.
-uv run t4e2e run-config configs/evaluate.yaml --override workers.world_size=4
 ```
 
-`evaluate` defaults to `auto`: it selects the GPU scorer when CUDA is available
-and otherwise uses the CPU audit scorer. An explicit `--backend gpu` never falls
-back; it fails clearly when CUDA is unavailable. `evaluate` writes one record
-per row, family CSV files, `aggregate.json` and a rank manifest.
-`--rank/--world-size` partition the data list deterministically;
-`--workers/--worker-backend` control local execution and `--resume` reuses only
-successful records with the same resolved configuration. `merge-evaluation`
-validates rank completeness, manifest membership, duplicate tokens and common
-configuration before recomputing the aggregate. All generated files belong in
-the ignored `results/` or `reports/` directories.
-
-`distribute` persists rank status and logs, retries failed ranks, resumes
-completed rank directories, and invokes the merger only after the declared
-rank set succeeds. The optional `ray` worker backend is loaded lazily when the
-internal environment provides it. Constructor options can be passed through
-`--agent-params-json` or the typed configuration's `agent_params` mapping.
-PDM outputs accept an ordered metric subset through `--pdm-metrics` or
-`scorer.metric_names`; `score` computes its dependencies without adding them to
-the output fields.
+Use this path when the model can be installed into the evaluation environment.
+Use the prediction-manifest path when the model owns its inference runtime.
+Both paths use the same trajectory and scoring contracts.
 
 ## Trajectory contract
 
-Every `Trajectory` contains poses and its sampling metadata:
+Every trajectory declares its sampling grid; time is never inferred from the
+number of points:
 
 ```python
 from t4_e2e_devkit.planning.simulation.trajectory.trajectory_sampling import (
     TrajectorySampling,
 )
 
-TrajectorySampling(num_poses=80, interval_length=0.1)  # 8 s
-TrajectorySampling(num_poses=8, interval_length=0.5)   # 4 s
+TrajectorySampling(num_poses=80, interval_length=0.1)  # 8 seconds
+TrajectorySampling(num_poses=8, interval_length=0.5)   # 4 seconds
 ```
 
-The evaluator converts either grid to its configured scoring grid. The
-visualizer keeps the original grid. A source trajectory must cover the target
-horizon; otherwise the call fails with a clear error.
+Poses use the current ego frame as `(x, y, heading)`: `x` is forward, `y` is
+left and heading is in radians. The current pose at `t=0` is implicit; pose
+`i` is at `(i + 1) * interval_length`. The scorer resamples any uniform grid
+that covers its four-second horizon and rejects shorter trajectories. The
+visualizer preserves the source grid.
 
-The default scene ranges are 31 history frames, 80 recorded future frames and a
-4-second PDM scoring horizon. These are separate ranges, not one fixed model
-shape.
+## Distributed evaluation
 
-## Add an agent
+For a small run, use `evaluate` directly. For larger runs, partition rows by
+rank and merge the portable reports:
 
-```python
-from t4_e2e_devkit.agents import AbstractT4Agent, MapFeatureBuilder
-from t4_e2e_devkit.common.dataclasses import SensorConfig
+```bash
+uv run t4e2e evaluate results/val.datalist.json \
+  --agent my_agent \
+  --output-dir results/evaluation/rank-0 \
+  --rank 0 --world-size 4
 
-
-class MyAgent(AbstractT4Agent):
-    def name(self):
-        return "my_agent"
-
-    def get_sensor_config(self):
-        return SensorConfig.build_current_frame(lidar=False)
-
-    def get_feature_builders(self):
-        return [MapFeatureBuilder()]
-
-    def forward(self, features):
-        return {"trajectory": self.network(features)}
+uv run t4e2e merge-evaluation \
+  --input-dir results/evaluation/rank-0 results/evaluation/rank-1 \
+               results/evaluation/rank-2 results/evaluation/rank-3 \
+  --output-dir results/evaluation/merged
 ```
 
-Declare `trajectory_sampling` and implement the remaining training methods as
-described in [`docs/agents.md`](docs/agents.md). Register external agents via
-the `t4_e2e_devkit.agents` entry-point group.
+`--rank/--world-size` define deterministic data sharding. `--workers` controls
+local execution within one rank. `distribute` adds rank launching, retries,
+resume and merge orchestration without requiring a scheduler or tracking
+service.
 
 ## Documentation
 
-| document | contents |
-|---|---|
-| [`docs/architecture.md`](docs/architecture.md) | package boundaries and ownership |
-| [`docs/data_contract.md`](docs/data_contract.md) | scene files, tensors and time ranges |
-| [`docs/agents.md`](docs/agents.md) | agent interface and builders |
-| [`docs/evaluation.md`](docs/evaluation.md) | scoring backends and sampling |
-| [`docs/closed_loop.md`](docs/closed_loop.md) | sensor-replay closed-loop rollout |
-| [`docs/runtime.md`](docs/runtime.md) | feature cache and local execution |
-| [`docs/internal_runtime.md`](docs/internal_runtime.md) | orchestration, submissions and run configuration |
-| [`docs/visualization.md`](docs/visualization.md) | BEV, cameras and sample image |
-| [`docs/vendor_audit.md`](docs/vendor_audit.md) | vendored TODO and provenance audit |
-| [`docs/migration.md`](docs/migration.md) | integrating an existing agent |
-| [`docs/environment.md`](docs/environment.md) | setup and validation |
+| Document | Contents |
+| --- | --- |
+| [`examples/README.md`](examples/README.md) | Copyable evaluation and BEV examples |
+| [`docs/integration.md`](docs/integration.md) | Integration routes, manifests, agents and training callbacks |
+| [`docs/data_contract.md`](docs/data_contract.md) | Scene layout, tensors, sensors and time ranges |
+| [`docs/evaluation.md`](docs/evaluation.md) | Metrics, sampling, backends and distributed scoring |
+| [`docs/visualization.md`](docs/visualization.md) | BEV, camera projection, legend and trajectory roles |
+| [`docs/agents.md`](docs/agents.md) | Agent, feature-builder and target-builder interfaces |
+| [`docs/closed_loop.md`](docs/closed_loop.md) | Sensor replay and kinematic closed loop |
+| [`docs/runtime.md`](docs/runtime.md) | Feature cache and local execution |
+| [`docs/internal_runtime.md`](docs/internal_runtime.md) | Orchestration, submissions and configuration |
+| [`docs/architecture.md`](docs/architecture.md) | Module boundaries and ownership |
+| [`docs/environment.md`](docs/environment.md) | Environments, data checks and optional dependencies |
 
-The rich BEV sample is [`docs/assets/bev_sample.png`](docs/assets/bev_sample.png).
+Keep generated artifacts in ignored runtime directories. Do not publish local
+dataset roots, scene-tag files, checkpoint paths or other machine-specific
+metadata in source files or public documentation.

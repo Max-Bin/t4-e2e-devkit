@@ -1,8 +1,8 @@
-# Adapter guide
+# Model integration guide
 
-An agent only needs to implement the `AbstractT4Agent` interface. Keep model
-code in the agent package; this repository owns T4 data loading, sampling,
-evaluation and visualization.
+A model only needs to implement the `AbstractT4Agent` interface when it uses
+the registered-agent path. Keep model code in its own package; this repository
+owns T4 data loading, sampling, evaluation and visualization.
 
 ## Trajectory contract
 
@@ -21,9 +21,10 @@ rejected. Heading interpolation unwraps angles before interpolation.
 ## Metric entry points
 
 Use `T4NavSimScorer` for the PDM family. Select `version="v1"` or
-`version="v2"` in `T4NavSimScorerConfig`. The default `backend="auto"` uses
-CUDA when available; pass `backend="cpu"` or `backend="gpu"` to force a path.
-The CLI uses `--pdm-version navsim-v1` or `--pdm-version navsim-v2`.
+`version="v2"` in `T4NavSimScorerConfig`; omit `metric_names` for the complete
+version-specific result. The default `backend="auto"` uses CUDA when
+available; pass `backend="cpu"` or `backend="gpu"` to force a path. The CLI
+uses `--pdm-version navsim-v1` or `--pdm-version navsim-v2`.
 
 Use `compute_open_loop_metrics` for trajectory error and
 `T4ClosedLoopRunner` plus `compute_closed_loop_metrics` for sensor-replay
@@ -44,6 +45,8 @@ and are ignored by Git.
 my_agent = "my_package.agent:MyAgent"
 ```
 
-The adapter declares its sensor configuration, feature/target builders and
+The agent declares its sensor configuration, feature/target builders and
 trajectory sampling. Inference receives `T4AgentInput`; privileged scenes are
-reserved for evaluation and closed-loop orchestration.
+reserved for evaluation and closed-loop orchestration. For a model that already
+owns inference, export a `t4-e2e.predictions` manifest instead; see
+[`integration.md`](integration.md).

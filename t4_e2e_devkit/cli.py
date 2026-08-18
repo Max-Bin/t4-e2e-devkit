@@ -337,6 +337,12 @@ def _cmd_score_submission(argv: Sequence[str]) -> int:
     return score_main(list(argv))
 
 
+def _cmd_score_manifest(argv: Sequence[str]) -> int:
+    from t4_e2e_devkit.script.score_prediction_manifest import main as score_main
+
+    return score_main(list(argv))
+
+
 def _cmd_merge_score_submission(argv: Sequence[str]) -> int:
     from t4_e2e_devkit.script.merge_submission_score import main as merge_main
 
@@ -408,6 +414,7 @@ COMMANDS = {
     "merge-workers": (_cmd_merge_workers, "merge distributed worker manifests"),
     "distribute": (_cmd_distribute, "launch and merge all evaluation ranks"),
     "submit": (_cmd_submit, "write a validated trajectory submission"),
+    "score-manifest": (_cmd_score_manifest, "score an external prediction manifest"),
     "merge-submission": (_cmd_merge_submission, "merge rank trajectory submissions"),
     "score-submission": (_cmd_score_submission, "score a trajectory submission"),
     "merge-score-submission": (_cmd_merge_score_submission, "merge rank submission scores"),

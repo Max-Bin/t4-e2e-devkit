@@ -1,118 +1,143 @@
 # Visualization
 
-The renderer draws a single current-frame BEV from the scene's map tensors,
+The renderer produces a single current-frame view from T4 map tensors,
 annotations and trajectories. It does not require LiDAR. Camera and LiDAR
-overlays are optional.
+overlays are separate opt-in layers.
 
 ## Quick start
 
 ```bash
-uv run t4e2e visualize <scene_dir> --mode bev --out window.png
-uv run t4e2e visualize <scene_dir> --mode summary --out window.png
+uv run t4e2e visualize /path/to/t4/scene/date/time \
+  --root /path/to/t4 \
+  --center 100 \
+  --mode bev \
+  --no-lidar \
+  --out results/visualization/window.png
+
+uv run t4e2e visualize /path/to/t4/scene/date/time \
+  --root /path/to/t4 \
+  --center 100 \
+  --mode summary \
+  --no-lidar \
+  --out results/visualization/summary.png
 ```
+
+The equivalent Python API is intentionally small:
 
 ```python
 from t4_e2e_devkit.dataset.window import T4WindowBuilder
 from t4_e2e_devkit.visualization import plot_bev_frame, save_figure
 
-builder = T4WindowBuilder(scene_dir, root)
-scene = builder.build(builder.valid_centers()[0])
-figure, _ = plot_bev_frame(
-    scene,
-    {"prediction": prediction, "ground_truth": scene.get_future_trajectory()},
-)
-save_figure(figure, "window.png")
-builder.close()
+builder = T4WindowBuilder(scene_dir, dataset_root)
+try:
+    scene = builder.build(builder.valid_centers()[0])
+    figure, _ = plot_bev_frame(
+        scene,
+        {"ground_truth": scene.get_future_trajectory()},
+        {"legend": True},
+    )
+    save_figure(figure, "results/visualization/window.png")
+finally:
+    builder.close()
 ```
 
-`prediction` may be a `Trajectory` on any valid time grid. Visualization keeps
-that grid; it does not convert every trajectory to a common point count.
+`Trajectory` inputs preserve their declared sampling grid. The renderer does
+not convert all trajectories to one point count.
 
-## Training callback
+## What each trajectory means
 
-All model adapters can use the same logger-neutral callback:
+`plot_bev_frame` accepts these built-in keys:
 
-```python
-from t4_e2e_devkit.planning.training import PredictionVizCallback
+| Key | Owner | Rendering |
+| --- | --- | --- |
+| `history` | Recorded ego history | Dashed line |
+| `ground_truth` | Recorded ego future | Blue-to-red time-colored points |
+| `prediction` | Model-planned ego trajectory | Solid orange line |
 
-callback = PredictionVizCallback(n_samples=4, every_n_epochs=1)
-```
+The `ground_truth` and `prediction` entries are both ego trajectories. They are
+not trajectories of other agents. Other-agent future traces are generated from
+privileged future annotations and are labeled `other-agent future` when a
+dynamic scene provides them. They are purple point traces, not model output.
 
-During validation, append dictionaries with `gt_xy` and `pred_xy` to
-`pl_module._viz_samples`; `lanes` and `route` are optional. The callback calls
-the trainer logger's generic `log_image` method and never imports a specific
-tracking service. The adapter owns only the logger wiring; the BEV renderer,
-colors and map interpretation stay shared.
+The arrows attached to object boxes show the recorded current velocity of that
+object. They are not additional trajectory predictions. The ego vehicle is
+drawn as the footprint at the origin, with its scene-specific length and width;
+it is not hidden behind the trajectory layer.
 
-## Available views
+## Available views and functions
 
-| function | purpose |
-|---|---|
-| `plot_bev_frame` | map, ego footprint, agents, goal and trajectories |
+| Function | Purpose |
+| --- | --- |
+| `plot_bev_frame` | Map, ego footprint, agents, goal and trajectory roles |
 | `plot_scene_summary` | BEV plus decoded camera views when available |
-| `plot_cameras_frame` | camera images with optional boxes, LiDAR and trajectory projection |
-| `plot_bev_with_score` | BEV beside PDM components |
-| `plot_agent_comparison` | several trajectories on one scene |
-| `reference_trajectories` | recorded history and GT |
+| `plot_cameras_frame` | Camera images with boxes and optional projections |
+| `plot_bev_with_score` | BEV beside PDM metric components |
+| `plot_agent_comparison` | Several ego trajectories in one scene |
+| `reference_trajectories` | Recorded ego history and future |
+| `render_prediction_bev` | Lightweight map-and-trajectory image for callbacks |
 
-The rich synthetic sample is [bev_sample.png](assets/bev_sample.png). It
-contains lane boundaries, route lanes, signal states, road markings, agents of
-different classes, neighbour future traces, the ego footprint, goal and
-multiple trajectory roles. It is map-and-annotation only; no LiDAR is used. The
-legend identifies the ego GT future, other-agent history/future and class
-colours. Regenerate it with:
+The deterministic rich sample is [`assets/bev_sample.png`](assets/bev_sample.png).
+It exercises lane boundaries, route lanes, signal states, road markings,
+multiple agent classes, other-agent future traces, the ego footprint, goal and
+the fixed semantic legend. It is map-and-annotation only; no LiDAR is read.
+
+Regenerate it from the repository root:
 
 ```bash
 MPLCONFIGDIR=/tmp/mplconfig uv run python docs/examples/generate_bev_sample.py
 ```
 
-## Trajectory roles
+## Map and object layers
 
-`plot_bev_frame` accepts these built-in keys:
+The current frame uses ego coordinates (`x` forward, `y` left). The BEV renderer
+draws:
 
-| key | source | rendering |
-|---|---|---|
-| `history` | recorded ego history | dashed line |
-| `ground_truth` | recorded ego future | time-coloured points |
-| `prediction` | planned trajectory | solid line |
-
-Each role has a distinct style. A custom trajectory can be supplied as a
-`Trajectory` or an `[N, 2+]` array; arrays use the default plotting interval and
-cannot carry sampling metadata.
-
-## Map and objects
-
-The renderer uses the current frame's ego coordinates (`x` forward, `y` left).
-It draws:
-
-- lane centerlines and reconstructed left/right boundaries;
+- lane centerlines and boundaries reconstructed from the stored offsets;
 - route lanes and their traffic-light state;
-- polygons and line strings, including road borders;
-- the ego footprint with its scene-specific length and width;
-- tracked object boxes, class colours, heading ticks and optional future traces;
-- tracked-object velocity arrows in the same colour as their boxes;
+- polygons and line strings, including road borders and markings;
+- the ego footprint using the dimensions stored in the scene;
+- tracked boxes for cars, trucks, buses, bicycles and pedestrians;
+- heading ticks and velocity arrows for tracked objects;
+- recorded future traces for neighboring agents when available;
 - the destination marker and vehicle status text.
 
-When a legend is enabled, its semantic entries are fixed across frames: both
-trajectory roles and all five T4 agent classes remain present even when a class
-is temporarily outside the view. This keeps BEV videos from resizing or
-changing their legend as traffic changes.
-
 Missing map or annotation fields are not replaced with geometry at the origin.
-The reader raises for missing required fields, while a scene without optional
-future data simply omits that layer.
+Required fields raise a clear error; a scene without optional future data simply
+omits that layer.
+
+## Stable legends
+
+Enable `legend=True` or call `add_fixed_bev_legend` directly. The legend uses an
+explicit semantic vocabulary rather than the artists visible in one frame, so
+its content and layout stay fixed across a video:
+
+- ego history, ego ground truth and ego prediction;
+- the ego footprint;
+- all five T4 tracked classes, including classes absent from the current view;
+- the goal pose when the scene provides one.
+
+This prevents the lower-right label box from changing size or contents as
+traffic enters and leaves the frame.
 
 ## Camera projection
 
-Camera images must be decoded through the scene builder so their calibration and
-image resolution agree. The projection path applies camera-to-ego extrinsics,
-intrinsics and any stored distortion coefficients. A trajectory is projected
-from the same ego-frame coordinates as the BEV.
+Camera images must be decoded through the scene builder so calibration and
+image resolution agree. Projection applies camera-to-ego extrinsics,
+intrinsics and stored distortion coefficients. Trajectories use the same ego
+coordinates as the BEV.
 
-LiDAR is opt-in at construction time:
+The public camera input currently supports JPEG-backed wide channels. Select
+only the wide cameras required by the run; narrow and video-backed channels are
+rejected by the current contract.
+
+LiDAR is opt-in:
 
 ```python
+from t4_e2e_devkit.common.dataclasses import SensorConfig
+
 sensor_config = SensorConfig.build_current_frame(lidar=True)
 ```
 
-Leave it disabled for camera-only or map-only plots.
+Use `SensorConfig.build_no_sensors()` for map-only BEV plots, or set
+`lidar=False` for camera-only input. A no-LiDAR BEV still contains the complete
+map, ego, annotations, trajectory and legend layers.

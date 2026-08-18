@@ -350,7 +350,7 @@ def build_figure():
         config={
             "figure_size": (10.0, 8.0),
             "dpi": 100,
-                "view_range": 50.0,
+            "view_range": 50.0,
             "layers": [
                 "polygons",
                 "line_strings",
