@@ -52,11 +52,13 @@ class OfficialDevkitScoreCallback(pl.Callback):
         metric_names: tuple[str, ...] | None = None,
         interval_seconds: float = 0.1,
         batch_size: int = 128,
-        scene_cache_size: int = 8,
+        scene_cache_size: int | None = 0,
     ) -> None:
         super().__init__()
-        if batch_size < 1 or scene_cache_size < 1:
-            raise ValueError("official devkit score sizes must be positive")
+        if batch_size < 1:
+            raise ValueError("official devkit batch_size must be positive")
+        if scene_cache_size is not None and int(scene_cache_size) < 0:
+            raise ValueError("official devkit scene_cache_size must be non-negative or None")
         if not math.isfinite(float(interval_seconds)) or interval_seconds <= 0.0:
             raise ValueError("official devkit trajectory interval must be positive")
         self.data_list = Path(data_list).expanduser().resolve()
@@ -65,7 +67,7 @@ class OfficialDevkitScoreCallback(pl.Callback):
         self.metric_names = metric_names
         self.interval_seconds = float(interval_seconds)
         self.batch_size = int(batch_size)
-        self.scene_cache_size = int(scene_cache_size)
+        self.scene_cache_size = 0 if scene_cache_size is None else int(scene_cache_size)
         self._active = False
 
     @staticmethod

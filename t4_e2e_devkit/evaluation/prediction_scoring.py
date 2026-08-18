@@ -149,13 +149,15 @@ def score_prediction_manifest(
     max_scenes: int | None = None,
     shard_index: int | None = None,
     num_shards: int | None = None,
-    scene_cache_size: int = 4,
+    scene_cache_size: int | None = 0,
     write_per_window: bool = True,
 ) -> dict[str, Any]:
     """Score every selected manifest row and write ``aggregate.json``."""
 
-    if batch_size < 1 or scene_cache_size < 1:
-        raise ValueError("batch_size and scene_cache_size must be positive")
+    if batch_size < 1:
+        raise ValueError("batch_size must be positive")
+    if scene_cache_size is not None and int(scene_cache_size) < 0:
+        raise ValueError("scene_cache_size must be non-negative or None")
 
     devkit = _load_devkit(devkit_root)
     data_list_path = Path(data_list_path).expanduser().resolve()

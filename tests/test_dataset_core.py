@@ -23,9 +23,15 @@ def test_collate_rejects_empty_batches(tmp_path):
         collate_t4([])
 
 
-def test_dataset_cache_size_must_be_positive(tmp_path):
+def test_dataset_zero_cache_builds_windows_online(tmp_path):
+    dataset = T4Dataset(DataList(root=tmp_path, rows=[("prd_jt/a", 1)]), scene_cache_size=0)
+    assert dataset.scene_cache_size == 0
+    assert dataset._builders == {}
+
+
+def test_dataset_cache_size_rejects_negative(tmp_path):
     with pytest.raises(ValueError, match="scene_cache_size"):
-        T4Dataset(DataList(root=tmp_path, rows=[("prd_jt/a", 1)]), scene_cache_size=0)
+        T4Dataset(DataList(root=tmp_path, rows=[("prd_jt/a", 1)]), scene_cache_size=-1)
 
 
 def test_sampler_validates_rank(tmp_path):

@@ -35,7 +35,12 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
     parser.add_argument("--max-scenes", type=int, default=None)
     parser.add_argument("--shard-index", type=int, default=None)
     parser.add_argument("--num-shards", type=int, default=None)
-    parser.add_argument("--scene-cache-size", type=int, default=4)
+    parser.add_argument(
+        "--scene-cache-size",
+        type=int,
+        default=0,
+        help="open scene builders to retain; 0 disables the scene cache",
+    )
     parser.add_argument(
         "--no-per-window",
         action="store_true",

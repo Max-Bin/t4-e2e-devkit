@@ -34,10 +34,11 @@ from t4_e2e_devkit.common.dataclasses import SceneFilter, SensorConfig, T4Scene
 from t4_e2e_devkit.dataset.datalist import DataList, load_data_list
 from t4_e2e_devkit.dataset.window import T4WindowBuilder
 
-#: Open scene builders held per worker.  Each keeps file handles and a decoded
-#: frame cache, so this trades memory for the repeated open cost; four covers
-#: the boundary between scenes under a locality-preserving sampler without
-#: pinning a large fraction of a scene's decoded frames.
+#: Open scene builders held per worker. Each keeps file handles and a decoded
+#: frame cache, so this trades memory for the repeated open cost. A value of
+#: zero is also supported and means that evaluation builds every window online
+#: and closes its reader immediately; this is the no-cache path used by the
+#: official GPU scorer.
 DEFAULT_SCENE_CACHE_SIZE = 4
 
 
@@ -65,7 +66,8 @@ class T4Dataset(Dataset):
         :param feature_builders: agent feature builders; raw scenes when absent.
         :param target_builders: agent target builders.
         :param reader_config: extra reader settings (frame cache, image size).
-        :param scene_cache_size: open scene builders to keep per worker.
+        :param scene_cache_size: open scene builders to keep per worker; zero
+            disables the scene cache and builds each window online.
         :param return_scene: include the privileged scene as a third batch item;
             useful for explicit training-time metric evaluation.
         """
@@ -78,10 +80,10 @@ class T4Dataset(Dataset):
         self.target_builders = list(target_builders or [])
         self.reader_config = dict(reader_config or {})
         self.return_scene = bool(return_scene)
-        self.scene_cache_size = int(scene_cache_size)
-        if self.scene_cache_size < 1:
+        self.scene_cache_size = 0 if scene_cache_size is None else int(scene_cache_size)
+        if self.scene_cache_size < 0:
             raise ValueError(
-                f"scene_cache_size must be at least 1, got {scene_cache_size}"
+                f"scene_cache_size must be non-negative, got {scene_cache_size}"
             )
 
         if feature_cache is None:
@@ -129,6 +131,18 @@ class T4Dataset(Dataset):
         :param center: centre frame index.
         :return: the assembled scene.
         """
+        if self.scene_cache_size == 0:
+            builder = T4WindowBuilder(
+                self.data_list.absolute_scene_dir(scene_dir),
+                self.data_list.root,
+                sensor_config=self.sensor_config,
+                scene_filter=self.scene_filter,
+                reader_config=self.reader_config,
+            )
+            try:
+                return builder.build(int(center))
+            finally:
+                builder.close()
         return self._builder(scene_dir).build(int(center))
 
     def build_features(self, scene: T4Scene) -> Tuple[Dict[str, Any], Dict[str, Any]]:
