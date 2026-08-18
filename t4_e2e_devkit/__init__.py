@@ -2,7 +2,7 @@
 
 The three things almost every user needs::
 
-    from t4_e2e_devkit import AbstractT4Agent, T4Dataset, T4PDMScorer
+    from t4_e2e_devkit import AbstractT4Agent, T4Dataset, T4NavSimScorer
 
 Imports here are lazy.  A data-list build should not pay for CUDA
 initialization, and a config-only dry run should not import the scoring stack --
@@ -79,7 +79,6 @@ _LAZY: dict[str, tuple[str, str]] = {
     "T4AgentInput": ("t4_e2e_devkit.common.dataclasses", "T4AgentInput"),
     "T4Scene": ("t4_e2e_devkit.common.dataclasses", "T4Scene"),
     "Trajectory": ("t4_e2e_devkit.common.dataclasses", "Trajectory"),
-    "PDMResults": ("t4_e2e_devkit.common.dataclasses", "PDMResults"),
     # independent evaluation families
     "OpenLoopMetricConfig": (
         "t4_e2e_devkit.evaluation.open_loop",
@@ -399,10 +398,6 @@ _LAZY: dict[str, tuple[str, str]] = {
         "t4_e2e_devkit.planning.simulation.predictor.log_future_predictor",
         "LogFuturePredictor",
     ),
-    "TracksObservation": (
-        "t4_e2e_devkit.planning.simulation.observation.observation_type",
-        "TracksObservation",
-    ),
     "T4ReplayObservation": (
         "t4_e2e_devkit.planning.simulation.observation.replay",
         "T4ReplayObservation",
@@ -434,7 +429,6 @@ _LAZY: dict[str, tuple[str, str]] = {
     "MetricCallback": ("t4_e2e_devkit.evaluation.metric_api", "MetricCallback"),
     "MetricResult": ("t4_e2e_devkit.evaluation.metric_api", "MetricResult"),
     "MetricStatistic": ("t4_e2e_devkit.evaluation.metric_api", "MetricStatistic"),
-    "MetricStatistics": ("t4_e2e_devkit.evaluation.metric_api", "MetricStatistics"),
     "MetricTimeSeries": ("t4_e2e_devkit.evaluation.metric_api", "MetricTimeSeries"),
     "MetricStatisticsType": (
         "t4_e2e_devkit.evaluation.metrics.metric_result",
@@ -531,10 +525,6 @@ _LAZY: dict[str, tuple[str, str]] = {
         "t4_e2e_devkit.evaluation.metric_builders",
         "PDMMetricBuilder",
     ),
-    "T4SafetyMetricBuilder": (
-        "t4_e2e_devkit.evaluation.metric_builders",
-        "T4SafetyMetricBuilder",
-    ),
     "ComfortMetricBuilder": (
         "t4_e2e_devkit.evaluation.metric_builders",
         "ComfortMetricBuilder",
@@ -608,7 +598,6 @@ _LAZY: dict[str, tuple[str, str]] = {
         "t4_e2e_devkit.evaluation.submission",
         "SubmissionValidation",
     ),
-    "RewardConfig": ("t4_e2e_devkit.evaluation.tier4_metrics", "RewardConfig"),
     "FeatureCache": (
         "t4_e2e_devkit.planning.training.feature_cache",
         "FeatureCache",
@@ -618,20 +607,24 @@ _LAZY: dict[str, tuple[str, str]] = {
     "LocalExecutor": ("t4_e2e_devkit.evaluation.executor", "LocalExecutor"),
     "rank_indices": ("t4_e2e_devkit.evaluation.executor", "rank_indices"),
     # evaluation
-    "T4PDMScorer": ("t4_e2e_devkit.evaluation.pdm_score", "T4PDMScorer"),
-    "T4PDMReferenceProvider": (
-        "t4_e2e_devkit.evaluation.reference_provider",
-        "T4PDMReferenceProvider",
+    "T4NavSimResult": ("t4_e2e_devkit.evaluation.navsim_score", "T4NavSimResult"),
+    "T4NavSimProposalResult": (
+        "t4_e2e_devkit.evaluation.navsim_score",
+        "T4NavSimProposalResult",
+    ),
+    "T4NavSimScorer": ("t4_e2e_devkit.evaluation.navsim_score", "T4NavSimScorer"),
+    "T4NavSimScorerConfig": (
+        "t4_e2e_devkit.evaluation.navsim_score",
+        "T4NavSimScorerConfig",
+    ),
+    "resolve_navsim_metric_names": (
+        "t4_e2e_devkit.evaluation.navsim_score",
+        "resolve_navsim_metric_names",
     ),
     "aggregate_evaluation": (
         "t4_e2e_devkit.evaluation.report",
         "aggregate_evaluation",
     ),
-    "aggregate_pdm_results": (
-        "t4_e2e_devkit.common.dataclasses",
-        "aggregate_pdm_results",
-    ),
-    "aggregate_results": ("t4_e2e_devkit.common.dataclasses", "aggregate_results"),
     # visualization/training integration
     "render_prediction_bev": (
         "t4_e2e_devkit.visualization.plots",
@@ -668,14 +661,11 @@ if TYPE_CHECKING:  # let type checkers and IDEs see the real symbols
     from t4_e2e_devkit.common.dataclasses import (
         MapObjectIds,
         MapObjectMatch,
-        PDMResults,
         SceneFilter,
         SensorConfig,
         T4AgentInput,
         T4Scene,
         Trajectory,
-        aggregate_pdm_results,
-        aggregate_results,
     )
     from t4_e2e_devkit.common.maps.t4_map_adapter import T4MapAdapter
     from t4_e2e_devkit.common.t4_map import T4Lanelet, T4MapAPI, T4MapObject
@@ -717,7 +707,6 @@ if TYPE_CHECKING:  # let type checkers and IDEs see the real symbols
         MetricCallback,
         MetricResult,
         MetricStatistic,
-        MetricStatistics,
         MetricTimeSeries,
     )
     from t4_e2e_devkit.evaluation.metric_builders import (
@@ -730,7 +719,6 @@ if TYPE_CHECKING:  # let type checkers and IDEs see the real symbols
         PDMMetricBuilder,
         ProgressMetricBuilder,
         StopLineViolationMetricBuilder,
-        T4SafetyMetricBuilder,
         TrafficLightMetricBuilder,
         TTCMetricBuilder,
     )
@@ -742,15 +730,19 @@ if TYPE_CHECKING:  # let type checkers and IDEs see the real symbols
         MetricRecord,
         MetricReport,
     )
+    from t4_e2e_devkit.evaluation.navsim_score import (
+        T4NavSimProposalResult,
+        T4NavSimResult,
+        T4NavSimScorer,
+        T4NavSimScorerConfig,
+        resolve_navsim_metric_names,
+    )
     from t4_e2e_devkit.evaluation.open_loop import (
         OpenLoopMetricConfig,
         OpenLoopMetrics,
         compute_open_loop_metrics,
     )
-    from t4_e2e_devkit.evaluation.pdm_score import T4PDMScorer
-    from t4_e2e_devkit.evaluation.reference_provider import T4PDMReferenceProvider
     from t4_e2e_devkit.evaluation.report import aggregate_evaluation
-    from t4_e2e_devkit.evaluation.tier4_metrics import RewardConfig
     from t4_e2e_devkit.evaluation.worker_pool import (
         WorkerPool,
         WorkerResources,
@@ -790,7 +782,6 @@ if TYPE_CHECKING:  # let type checkers and IDEs see the real symbols
         TrafficPolicy,
     )
     from t4_e2e_devkit.planning.simulation.manager import SimulationRequest, T4SimulationManager
-    from t4_e2e_devkit.planning.simulation.observation.observation_type import TracksObservation
     from t4_e2e_devkit.planning.simulation.observation.replay import (
         T4ReplayObservation,
         T4ReplayObservationSource,

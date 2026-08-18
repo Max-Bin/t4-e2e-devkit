@@ -72,9 +72,8 @@ def readable_camera_names(scene_dir: str | Path) -> List[str]:
     """Supported cameras a scene calibrates and stores as JPEG frames.
 
     This function applies the current product boundary: only supported wide
-    channels backed by JPEG are returned. Video-backed and narrow channels remain
-    discoverable through :func:`available_cameras`, but are not usable as model
-    inputs.
+    channels backed by JPEG are returned. Narrow and compressed channels are not
+    part of the reader contract.
 
     Order follows the calibration register, since that order is the part of the
     contract a model learns.

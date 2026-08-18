@@ -1,10 +1,8 @@
 """Plotting entry points.
 
 The module also provides score overlays and multi-agent comparison plots:
-
-* :func:`plot_bev_with_score` puts a trajectory next to the six PDM components
-  that scored it, with the multiplicative gates marked. An aggregate of 0.42 says
-  nothing about whether a run is colliding or just crawling; this shows which.
+* :func:`plot_bev_with_score` puts a trajectory next to the PDM components
+  that scored it, with the multiplicative gates marked.
 * :func:`plot_agent_comparison` renders several plans on one window.
 
 Everything renders through Agg and returns a figure, so these work headless and
@@ -13,7 +11,7 @@ compose into GIFs, image logs or a report without a display.
 
 from __future__ import annotations
 
-from typing import Any, Dict, Optional, Sequence
+from typing import Any, Dict, Mapping, Optional, Sequence
 
 import numpy as np
 import numpy.typing as npt
@@ -23,14 +21,14 @@ from t4_e2e_devkit.common.constants import (
     NUM_POLYGONS,
     NUM_SEGMENTS_IN_LANE,
     NUM_SEGMENTS_IN_ROUTE,
-    PDM_COMPONENT_ORDER,
     POINTS_PER_LANELET,
     POINTS_PER_LINE_STRING,
     POINTS_PER_POLYGON,
     SEGMENT_POINT_DIM,
 )
-from t4_e2e_devkit.common.dataclasses import EgoShape, MapTensors, PDMResults, T4Scene, Trajectory
+from t4_e2e_devkit.common.dataclasses import EgoShape, MapTensors, T4Scene, Trajectory
 from t4_e2e_devkit.common.enums import T4TrackLabel
+from t4_e2e_devkit.evaluation.navsim_score import NAVSIM_METRICS
 from t4_e2e_devkit.visualization.bev import (
     add_annotations_to_bev_ax,
     add_bev_status_text,
@@ -98,7 +96,6 @@ def add_fixed_bev_legend(
         "history",
         "ground_truth",
         "prediction",
-        "pdm_reference",
     ),
     include_ego: bool = True,
     include_agents: bool = True,
@@ -374,7 +371,7 @@ def plot_bev_frame(
         add_map_to_bev_ax(ax, frame.map_tensors, layers=layers)
 
     if scene.goal_pose is not None:
-        add_goal_to_bev_ax(ax, scene.goal_pose, settings["view_range"])
+        add_goal_to_bev_ax(ax, scene.goal_pose)
 
     for kind, trajectory in supplied_trajectories.items():
         if kind in {"history", "ground_truth"}:
@@ -398,7 +395,7 @@ def plot_bev_frame(
     if settings["legend"]:
         legend_roles = [
             role
-            for role in ("history", "ground_truth", "prediction", "pdm_reference")
+            for role in ("history", "ground_truth", "prediction")
             if role in supplied_trajectories
         ]
         if settings.get("show_history", True) and "history" not in legend_roles:
@@ -421,17 +418,15 @@ def reference_trajectories(
     scene: T4Scene,
     include_human: bool = True,
     include_history: bool = True,
-    include_pdm: bool = True,
 ) -> Dict[str, Any]:
     """Every trajectory a window can supply on its own, ready to plot.
 
     Each is skipped when the window does not carry it, so this never fabricates a
-    line: no future means no human trace, no reference cache means no PDM path.
+    line.
 
     :param scene: the window.
     :param include_human: the recorded future.
     :param include_history: the recorded past.
-    :param include_pdm: the PDM-Closed reference path, the EP denominator's own route.
     :return: kind -> trajectory, keyed for
         :data:`~t4_e2e_devkit.visualization.config.TRAJECTORY_CONFIG`.
     """
@@ -440,10 +435,6 @@ def reference_trajectories(
         trajectories["history"] = scene.get_history_poses()
     if include_human and scene.future_ego_poses is not None:
         trajectories["ground_truth"] = scene.get_future_trajectory()
-    if include_pdm:
-        reference = scene.get_pdm_reference_trajectory()
-        if reference is not None:
-            trajectories["pdm_reference"] = reference
     return trajectories
 
 
@@ -469,14 +460,13 @@ def plot_bev_with_agent(
 def plot_bev_with_score(
     scene: T4Scene,
     trajectory: Trajectory,
-    results: PDMResults,
+    results: Mapping[str, Any] | Any,
     config: Optional[Dict[str, Any]] = None,
 ):
     """Bird's-eye view beside the score that trajectory earned.
 
-    The component panel marks NC and DAC as gates, because they multiply: a zero
-    there makes the aggregate zero no matter how the rest scored, and a bar chart
-    that showed all six as equal contributors would misrepresent that.
+    The component panel marks the multiplicative PDM gates separately from the
+    weighted terms.
 
     :param scene: the window.
     :param trajectory: the scored trajectory.
@@ -501,19 +491,31 @@ def plot_bev_with_score(
     return figure, (bev_ax, score_ax)
 
 
-def add_score_panel(ax, results: PDMResults, config: Optional[Dict[str, Any]] = None):
+def add_score_panel(
+    ax,
+    results: Mapping[str, Any] | Any,
+    config: Optional[Dict[str, Any]] = None,
+):
     """
-    Draw the six PDM components as a horizontal bar chart.
+    Draw the available PDM components as a horizontal bar chart.
     :param ax: target axes.
     :param results: the score to draw.
     :param config: overrides for :data:`SCORE_PANEL_CONFIG`.
     :return: the axes.
     """
     settings = {**SCORE_PANEL_CONFIG, **(config or {})}
-    components = results.components
-    names = list(PDM_COMPONENT_ORDER)
-    values = [components[name] for name in names]
-    gates = {"nc", "dac"}
+    components = results if isinstance(results, Mapping) else results.values
+    names = [
+        name for name in NAVSIM_METRICS
+        if name not in {"score", "extended_comfort_available"} and name in components
+    ]
+    values = [float(components[name]) for name in names]
+    gates = {
+        "no_at_fault_collisions",
+        "drivable_area_compliance",
+        "driving_direction_compliance",
+        "traffic_light_compliance",
+    }
 
     colors = [
         settings["zero_color"]
@@ -535,14 +537,9 @@ def add_score_panel(ax, results: PDMResults, config: Optional[Dict[str, Any]] = 
         ax.text(min(value + 0.03, 0.97), position, f"{value:.2f}",
                 va="center", fontsize=settings["text_size"] - 1)
 
-    ax.set_title(f"PDMS {results.score:.4f}", fontsize=settings["text_size"] + 2)
+    score = float(components.get("score", getattr(results, "score", float("nan"))))
+    ax.set_title(f"PDM {score:.4f}", fontsize=settings["text_size"] + 2)
     ax.set_xlabel("* multiplicative gate", fontsize=settings["text_size"] - 1)
-    if results.tier4_metrics:
-        lines = [f"{key}: {value:.2f}" for key, value in sorted(results.tier4_metrics.items())]
-        ax.text(
-            0.0, -0.16, "TIER IV metrics (reported alongside, not in the score)\n" + "  ".join(lines),
-            transform=ax.transAxes, fontsize=settings["text_size"] - 2, va="top", wrap=True,
-        )
     return ax
 
 
@@ -765,8 +762,6 @@ def describe_scene(scene: T4Scene) -> str:
     ]
     if scene.current_frame.annotations is not None:
         parts.append(f"{len(scene.current_frame.annotations)} agents")
-    if scene.pdm_progress is not None:
-        parts.append(f"pdm_progress {scene.pdm_progress:.1f} m")
     return "  |  ".join(parts)
 
 

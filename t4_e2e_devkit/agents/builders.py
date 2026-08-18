@@ -49,16 +49,6 @@ class AbstractFeatureBuilder(ABC):
     def get_unique_name(self) -> str:
         """:return: a name identifying this builder, used for caching."""
 
-    def get_feature_unique_name(self) -> str:
-        """Compatibility alias used by feature-cache orchestration."""
-
-        return self.get_unique_name()
-
-    def get_features_from_scenario(self, scenario: T4Scene) -> Dict[str, torch.Tensor]:
-        """Build features from a scenario exposing ``get_agent_input``."""
-
-        return self.compute_features(scenario.get_agent_input())
-
     @abstractmethod
     def compute_features(self, agent_input: T4AgentInput) -> Dict[str, torch.Tensor]:
         """
@@ -73,16 +63,6 @@ class AbstractTargetBuilder(ABC):
     @abstractmethod
     def get_unique_name(self) -> str:
         """:return: a name identifying this builder, used for caching."""
-
-    def get_target_unique_name(self) -> str:
-        """Compatibility alias used by target-cache orchestration."""
-
-        return self.get_unique_name()
-
-    def get_targets(self, scenario: T4Scene) -> Dict[str, torch.Tensor]:
-        """Compatibility alias for :meth:`compute_targets`."""
-
-        return self.compute_targets(scenario)
 
     @abstractmethod
     def compute_targets(self, scene: T4Scene) -> Dict[str, torch.Tensor]:
@@ -122,12 +102,6 @@ class FeatureBuilderRegistry:
             features.update(values)
         return features
 
-    def compute_features(self, agent_input: T4AgentInput) -> Dict[str, torch.Tensor]:
-        """Explicit alias for callers that distinguish features from targets."""
-
-        return self.compute(agent_input)
-
-
 class TargetBuilderRegistry:
     """Stable registry for composing independent target builders."""
 
@@ -157,12 +131,6 @@ class TargetBuilderRegistry:
                 raise ValueError(f"target builders emitted duplicate fields: {sorted(overlap)}")
             targets.update(values)
         return targets
-
-    def compute_targets(self, scene: T4Scene) -> Dict[str, torch.Tensor]:
-        """Explicit alias for callers that distinguish targets from features."""
-
-        return self.compute(scene)
-
 
 # --------------------------------------------------------------------------- #
 # Built-in feature builders
@@ -415,25 +383,14 @@ class TrajectoryTargetBuilder(AbstractTargetBuilder):
 
 
 class OracleTargetBuilder(AbstractTargetBuilder):
-    """Build the privileged fields needed by an oracle scoring run.
+    """Build privileged future-object targets for metric diagnostics.
 
     The future agent boxes stay ragged numpy arrays rather than tensors: they
     are consumed by the scorer, not by a network layer, and padding them to a
     fixed object count would either truncate crowded frames or inflate every
     batch to the worst case.
 
-    ``pdm_progress`` is the ego-progress denominator from PDM-Closed. It is
-    optional at the dataset boundary: GPU scorer supervision generates it
-    online from these arrays, while explicit CPU scoring still requires an
-    offline reference.
     """
-
-    def __init__(self, require_pdm_progress: bool = False) -> None:
-        """
-        :param require_pdm_progress: fail when the PDM-Closed reference is
-            missing. Set this to ``True`` for an explicit cache-audit run.
-        """
-        self.require_pdm_progress = require_pdm_progress
 
     def get_unique_name(self) -> str:
         """:return: builder name."""
@@ -442,7 +399,7 @@ class OracleTargetBuilder(AbstractTargetBuilder):
     def compute_targets(self, scene: T4Scene) -> Dict[str, object]:
         """
         :param scene: one window.
-        :return: future boxes, labels, and the PDM progress denominator.
+        :return: future boxes, labels and the recorded future ego trajectory.
         :raises ValueError: when the recorded future or reference progress is
             absent.
         """
@@ -488,14 +445,4 @@ class OracleTargetBuilder(AbstractTargetBuilder):
                 f"scene {scene.scene_metadata.token} has no future ego trajectory; "
                 "oracle supervision requires the recorded future"
             )
-        if scene.pdm_progress is None:
-            if self.require_pdm_progress:
-                raise ValueError(
-                    f"scene {scene.scene_metadata.token} has no pdm_progress. Build "
-                    "a PDM-Closed reference cache or online reference provider first; "
-                    "substituting the demonstrated "
-                    "endpoint silently changes what ego-progress measures."
-                )
-        else:
-            targets["pdm_progress"] = torch.tensor(scene.pdm_progress, dtype=torch.float32)
         return targets

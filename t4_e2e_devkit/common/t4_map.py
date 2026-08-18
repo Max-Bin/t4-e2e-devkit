@@ -609,12 +609,6 @@ class T4MapAPI:
             types.add("regulatory_element")
         return tuple(sorted(types))
 
-    @property
-    def available_object_ids(self) -> tuple[str, ...]:
-        """Backward-compatible lanelet IDs used by older T4 callers."""
-
-        return tuple(lane.id for lane in self._lanes)
-
     def available_ids(self, object_type: Optional[str] = None) -> tuple[str, ...]:
         """Return stable source IDs, optionally restricted to a semantic type."""
 

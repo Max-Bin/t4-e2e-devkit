@@ -22,9 +22,6 @@ from t4_e2e_devkit.evaluation.metrics.abstract_metric import (
 from t4_e2e_devkit.evaluation.metrics.metric_dataframe import MetricStatisticsDataFrame
 from t4_e2e_devkit.evaluation.metrics.metric_file import MetricFile, MetricFileKey
 from t4_e2e_devkit.evaluation.metrics.metric_result import (
-    MetricStatistics as NuPlanMetricStatistics,
-)
-from t4_e2e_devkit.evaluation.metrics.metric_result import (
     MetricStatisticsType,
     MetricViolation,
     Statistic,
@@ -115,11 +112,6 @@ class MetricResult:
             "statistics": [statistic.as_dict() for statistic in self.statistics],
             "metadata": dict(self.metadata),
         }
-
-
-# Compatibility name used by metric consumers that call one builder's output
-# ``MetricStatistics`` rather than ``MetricResult``.
-MetricStatistics = MetricResult
 
 
 class AbstractMetricBuilder(ABC):
@@ -328,7 +320,6 @@ __all__ = [
     "MetricBuilderRegistry",
     "MetricCallback",
     "MetricResult",
-    "MetricStatistics",
     "MetricStatistic",
     "MetricTimeSeries",
     "AbstractMetric",
@@ -342,6 +333,5 @@ __all__ = [
     "TimeSeries",
     "MetricFile",
     "MetricFileKey",
-    "NuPlanMetricStatistics",
     "WeightedAverageMetricAggregator",
 ]

@@ -46,7 +46,6 @@ PREDICTION_COLOR: str = "#007C91"
 GROUND_TRUTH_COLOR: str = "#C2185B"
 HISTORY_COLOR: str = "#6B7280"
 GOAL_COLOR: str = "blue"
-PDM_REFERENCE_COLOR: str = "#16A085"  # teal -- the PDM-Closed reference path
 
 # BEV groups road users by broad visual category, while camera overlays retain
 # the complete T4 class palette.
@@ -188,16 +187,6 @@ TRAJECTORY_CONFIG: Dict[str, Dict[str, Any]] = {
         # renderer's human-readable label is only visible when a legend is
         # explicitly enabled.
         "label": "history",
-    },
-    "pdm_reference": {
-        "color": PDM_REFERENCE_COLOR,
-        "alpha": 0.8,
-        "line_width": 2.0,
-        "line_style": "-.",
-        "marker": None,
-        "marker_size": 0,
-        "zorder": 4,
-        "label": "PDM-Closed",
     },
 }
 

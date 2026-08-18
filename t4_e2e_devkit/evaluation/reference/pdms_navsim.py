@@ -61,15 +61,15 @@ need a maps DB + an old Python and conflict with our torch/numpy — verified):
      lateral at-fault case and TTC's multi-lane/non-drivable/intersection
      widening run against polygons built from the T4 scene's own lane tensor
      (centerline +- boundary offsets) and intersection polygons — navsim's
-     corner-count semantics 1:1. Remaining representation deltas (Codex on
-     #99): navsim's drivable set also contains ROADBLOCK / DRIVABLE_AREA /
+     corner-count semantics 1:1. Remaining representation deltas: navsim's
+     drivable set also contains ROADBLOCK / DRIVABLE_AREA /
      CARPARK polygons which the current T4 bundle does not carry — our lanes+intersections
      set can flag non_drivable in legitimate drivable gaps (notably
      carparks), i.e. STRICTER than navsim there; the flags only widen
      penalties at actual collision / projected-collision events, bounding
      the impact. The polygon set is the generation window (140 lanes / 10
-     intersections), not a global map. Callers that pass no flags keep the historical lenient
-     else-branch.
+     intersections), not a global map. Callers that pass no flags keep the
+     lenient else branch.
   4. **LK / TLC default to 1.0** (lane-keeping / traffic-light terms;
      same-method ports from the T4 map tensors are tracked work). **DDC is
      implemented** (``ddc_from_route_lanes``): navsim's oncoming-traffic test
@@ -85,8 +85,8 @@ need a maps DB + an old Python and conflict with our torch/numpy — verified):
      ``aggregate_pdms``).
 
 Honest label: this is "navsim-formula-faithful open-loop PDMS", NOT bit-exact
-PDMS. A bit-exact PDMS requires standing up navsim+nuplan and is tracked as a
-separate (closed-loop) effort. See issue #58.
+PDMS. A bit-exact implementation requires the full navsim+nuplan runtime and
+map database.
 
 All arrays are numpy (navsim is numpy); the torch entry points live in
 ``pdms_proxy``. Poses are ``[T, 4] = (x, y, cos_yaw, sin_yaw)`` in metres in the
@@ -368,7 +368,7 @@ def comfort_score(
     the metric a noise detector instead: measured on real GT futures, 5 cm of
     iid waypoint jitter takes raw comfort 1.000 -> 0.000 while the simulated
     score stays 1.000, and only genuinely bad plans degrade it (0.908 at 20 cm,
-    0.605 at 50 cm). Pass ``simulate=False`` for the legacy raw behaviour.
+    0.605 at 50 cm). Pass ``simulate=False`` to use the raw pose path.
 
     ``initial_velocity`` (``[B]``, m/s) seeds the tracker; without it the ego
     is assumed to start at the plan's own initial speed.
@@ -715,8 +715,8 @@ def no_at_fault_collision(
             )
             # navsim's lateral at-fault branch: ACTIVE_LATERAL while ego is in
             # multiple lanes or a non-drivable area (ego_area_flags from the
-            # T4 scene's lane/intersection polygons; no-flags callers keep
-            # the lenient else — old deviation #3, now closed when flags given).
+            # T4 scene's lane/intersection polygons); callers without flags use
+            # the lenient else branch.
             if (
                 not at_fault
                 and area_flags is not None
@@ -1229,7 +1229,7 @@ def lane_keeping_score(
     if T > 1:
         # forward-difference speed at t0: step_d[0] is structurally 0, which
         # would mark the FIRST sample queued on every trajectory and the
-        # release grace would then mask early violations (Codex on #101)
+        # release grace would then mask early violations.
         speed[0] = speed[1]
     win = max(1, int(LK_QUEUE_WINDOW_S / dt))
     queue = np.zeros(T, dtype=bool)

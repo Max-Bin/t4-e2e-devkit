@@ -1,11 +1,7 @@
 """Shared config plumbing for the entry points.
 
-These exist so that ``run_training`` and ``run_pdm_score`` cannot disagree about
-how a config becomes a reader or a scorer.  The drivable-area buffer is the
-reason: it is one number that three components must agree on -- the cache stores
-it in its signature, the reader validates the cache against it, and the scorer
-scores with it -- and duplicating the plumbing per entry point is exactly how
-two of the three end up reading different fields.
+These helpers keep the Hydra entry points aligned on reader and metric
+configuration.
 """
 
 from __future__ import annotations
@@ -14,7 +10,7 @@ from typing import Any, Dict
 
 from omegaconf import DictConfig, OmegaConf
 
-from t4_e2e_devkit.evaluation.pdm_score import T4PDMScorerConfig
+from t4_e2e_devkit.evaluation.navsim_score import T4NavSimScorerConfig
 
 
 def _container(node: Any) -> Dict[str, Any]:
@@ -33,37 +29,24 @@ def _container(node: Any) -> Dict[str, Any]:
 
 def build_reader_config(
     cfg: DictConfig,
-    *,
-    load_oracle_targets: bool = False,
 ) -> Dict[str, Any]:
     """
     Assemble the reader settings from a resolved config.
     :param cfg: the resolved configuration.
     :return: keyword settings for :class:`~t4_e2e_devkit.dataset.scene.T4SceneReader`.
     """
-    reader: Dict[str, Any] = _container(cfg.get("reader"))
-    reader["t4_drivable_area_buffer_m"] = float(cfg.get("drivable_area_buffer_m") or 0.0)
-    if load_oracle_targets or cfg.get("pdm_cache_path"):
-        reader["t4_load_oracle_targets"] = True
-        reader.setdefault(
-            "t4_oracle_device",
-            "gpu" if str(cfg.get("backend") or "gpu").lower() == "gpu" else "cpu",
-        )
-    if cfg.get("pdm_cache_path"):
-        reader["t4_pdm_reference_cache_dir"] = str(cfg.pdm_cache_path)
-        # GPU oracle mode deliberately ignores this optional legacy artifact;
-        # CPU mode uses it as its explicit offline reference source.
-    return reader
+    return _container(cfg.get("reader"))
 
 
-def build_scorer_config(cfg: DictConfig) -> T4PDMScorerConfig:
+def build_scorer_config(cfg: DictConfig) -> T4NavSimScorerConfig:
     """
     Assemble the scorer settings from a resolved config.
     :param cfg: the resolved configuration.
-    :return: the scorer configuration.
+    :return: the PDM/NavSim scorer configuration.
     """
     overrides: Dict[str, Any] = _container(cfg.get("scorer"))
-    overrides.setdefault(
-        "t4_drivable_area_buffer_m", float(cfg.get("drivable_area_buffer_m") or 0.0)
-    )
-    return T4PDMScorerConfig(**overrides)
+    overrides.setdefault("version", str(cfg.get("pdm_version") or "navsim-v2").removeprefix("navsim-"))
+    overrides.setdefault("backend", str(cfg.get("backend") or "gpu"))
+    if cfg.get("device") is not None:
+        overrides.setdefault("device", str(cfg.device))
+    return T4NavSimScorerConfig(**overrides)

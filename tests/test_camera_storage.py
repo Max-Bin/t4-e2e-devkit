@@ -1,25 +1,15 @@
-"""Camera rig resolution and the public JPEG-wide input boundary.
-
-Video files remain discoverable for diagnostics, but they are not accepted as
-model inputs until the public camera contract is expanded.
-"""
+"""Camera rig resolution and the public JPEG-wide input boundary."""
 
 from __future__ import annotations
-
-from pathlib import Path
 
 import pytest
 
 from t4_e2e_devkit.common import constants as C
 from t4_e2e_devkit.dataset.camera_source import (
-    RESIZE_MODES,
-    VIDEO_BACKENDS,
     CameraSourceError,
     JpegDirectorySource,
     available_cameras,
     open_camera_source,
-    read_compression_manifest,
-    resolve_resize_mode,
 )
 from t4_e2e_devkit.dataset.rigs import (
     RigMismatch,
@@ -141,37 +131,12 @@ class TestRigDescription:
         assert matching_profiles(X2_DEV) == []
 
 
-class TestResizeModeSelection:
-    def test_modes_are_known(self):
-        assert RESIZE_MODES[0] == "auto"
-        assert set(VIDEO_BACKENDS) == {"cpu", "nvdec"}
-
-    def test_unknown_mode_is_refused(self, tmp_path):
-        with pytest.raises(ValueError, match="unknown resize mode"):
-            resolve_resize_mode(tmp_path, ["CAM_FRONT"], "bicubic")
-
-    def test_explicit_mode_passes_through(self, tmp_path):
-        assert resolve_resize_mode(tmp_path, ["CAM_FRONT"], "pil") == "pil"
-
-    def test_uniform_storage_chooses_speed(self, tmp_path):
-        (tmp_path / "data" / "CAM_FRONT").mkdir(parents=True)
-        (tmp_path / "data" / "CAM_BACK").mkdir(parents=True)
-        assert resolve_resize_mode(tmp_path, ["CAM_FRONT", "CAM_BACK"]) == "ffmpeg"
-
-    def test_mixed_storage_chooses_one_filter(self, tmp_path):
-        # x2_dev stores road views as JPEG and both signal views as video, so a
-        # red-light-aware register spans both and must resample them alike.
-        (tmp_path / "data" / "CAM_FRONT").mkdir(parents=True)
-        (tmp_path / "data" / "CAM_TRAFFIC_LIGHT_FAR.mp4").write_bytes(b"")
-        assert resolve_resize_mode(tmp_path, ["CAM_FRONT", "CAM_TRAFFIC_LIGHT_FAR"]) == "pil"
-
-
 class TestStorageDiscovery:
-    def test_directories_and_videos_are_both_found(self, tmp_path):
+    def test_jpeg_directories_are_found(self, tmp_path):
         (tmp_path / "data" / "CAM_FRONT_WIDE").mkdir(parents=True)
         (tmp_path / "data" / "CAM_FRONT.mp4").write_bytes(b"")
         found = available_cameras(tmp_path)
-        assert found == {"CAM_FRONT_WIDE": "jpeg_dir", "CAM_FRONT": "video"}
+        assert found == {"CAM_FRONT_WIDE": "jpeg_dir"}
 
     def test_encoder_scratch_files_are_ignored(self, tmp_path):
         # Real scenes contain .vmaf_scratch_.CAM_X.mp4 left by the quality check.
@@ -188,12 +153,6 @@ class TestStorageDiscovery:
         (tmp_path / "data" / "CAM_FRONT_WIDE").mkdir(parents=True)
         with pytest.raises(CameraSourceError, match="CAM_FRONT_WIDE"):
             open_camera_source(tmp_path, "CAM_BACK_WIDE", (672, 1148))
-
-    def test_video_camera_is_rejected(self, tmp_path):
-        (tmp_path / "data").mkdir(parents=True)
-        (tmp_path / "data" / "CAM_FRONT_WIDE.mp4").write_bytes(b"")
-        with pytest.raises(CameraSourceError, match="video-backed"):
-            open_camera_source(tmp_path, "CAM_FRONT_WIDE", (672, 1148))
 
     def test_jpeg_source_probes_filename_width(self, tmp_path):
         directory = tmp_path / "data" / "CAM_FRONT"
@@ -232,23 +191,7 @@ class TestRealSceneStorage:
         stored = available_cameras(t4_scene_dir)
         assert all(name in stored for name in resolved)
 
-    def test_manifest_pins_video_frame_indices(self, t4_scene_dir):
-        manifest = read_compression_manifest(t4_scene_dir)
-        if not manifest:
-            pytest.skip("scene has no compression manifest")
-        for entry in manifest.values():
-            frames = entry.get("frames")
-            if not frames:
-                continue
-            # Frame i of the video is the original frames[i]; the mapping is
-            # recorded rather than derived from the index.
-            assert frames[0].endswith(".jpg")
-            assert int(Path(frames[0]).stem) == 0
-            if entry.get("n_frames"):
-                assert len(frames) == entry["n_frames"]
-            break
-
-    def test_video_and_jpeg_sources_agree_on_shape(self, t4_scene_dir):
+    def test_jpeg_sources_emit_the_configured_shape(self, t4_scene_dir):
         stored = {
             name: kind
             for name, kind in available_cameras(t4_scene_dir).items()

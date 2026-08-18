@@ -102,16 +102,12 @@ def _transform_scene(scene: T4Scene, transform: np.ndarray) -> T4Scene:
         if scene.future_annotations is None
         else [_transform_annotations(item, transform) for item in scene.future_annotations]
     )
-    reference = None
-    if scene.pdm_reference_poses is not None:
-        reference = _transform_pose_array(scene.pdm_reference_poses, transform)
     return replace(
         scene,
         frames=frames,
         future_ego_poses=future_poses,
         future_annotations=future_annotations,
         goal_pose=_transform_goal(scene.goal_pose, transform),
-        pdm_reference_poses=reference,
     )
 
 

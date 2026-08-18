@@ -722,13 +722,6 @@ class T4ClosedLoopRunner:
             traffic_states=traffic_states,
         )
 
-    @property
-    def _tracker(self) -> PerfectTracker:
-        """Backward-compatible access to the configured ego controller."""
-
-        return self._controller  # type: ignore[return-value]
-
-
 def run_t4_closed_loop(
     agent,
     scene_dir: str | Path,

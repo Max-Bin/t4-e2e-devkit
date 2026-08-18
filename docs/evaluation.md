@@ -1,66 +1,70 @@
 # Evaluation
 
-The public entry point is `T4PDMScorer`:
+The devkit exposes three independent families: `open_loop`, `pdm` and
+`closed_loop`. Their records and aggregates remain separate.
+
+## PDM
+
+`T4NavSimScorer` evaluates the PDM family with either published metric
+version:
 
 ```python
-from t4_e2e_devkit.evaluation import T4PDMScorer
-from t4_e2e_devkit.planning.simulation.trajectory.trajectory_sampling import (
-    TrajectorySampling,
-)
+from t4_e2e_devkit.evaluation import T4NavSimScorer, T4NavSimScorerConfig
 
-scorer = T4PDMScorer(backend="cpu")
+scorer = T4NavSimScorer(
+    T4NavSimScorerConfig(
+        version="v2",
+        backend="gpu",
+        metric_names=("no_at_fault_collisions", "ego_progress", "score"),
+    )
+)
 result = scorer.score(trajectory, scene)
+print(result.values)
 ```
 
-`score_batch` accepts one `Trajectory` per scene. Each trajectory carries its
-own `TrajectorySampling`; the scorer converts it to the evaluation grid before
-calling the metric implementation.
+`v1` produces PDMS. `v2` produces EPDMS and adds lane keeping, history comfort
+and extended comfort. Extended comfort compares consecutive plans; the first
+window in a sequence has no extended-comfort value and is aggregated over the
+remaining terms. Pass `require_extended_comfort=True` when every v2 result
+must include it.
 
-## Sampling
+`metric_names` is optional. Omit it for the complete version-specific result;
+provide an ordered subset when a caller only needs selected components. The
+aggregate `score` is explicit: requesting it computes its formula dependencies,
+but those dependencies are not added to `result.values`. An unavailable
+extended-comfort value is omitted, never filled with zero. `result.metadata`
+contains diagnostics such as coverage and availability flags.
 
-The default evaluation grid is 40 poses at 0.1 s (4 s). This is independent of
-the producer's grid:
+Training-time detached diagnostics use the same field at
+`scorer.metric_names`.
 
-| producer trajectory | evaluation input | result |
-|---|---|---|
-| 80 poses at 0.1 s (8 s) | first 4 s | accepted and resampled |
-| 8 poses at 0.5 s (4 s) | same 4 s grid | accepted |
-| any grid covering at least 4 s | first 4 s | accepted and interpolated |
-| a grid shorter than 4 s | incomplete | rejected with `ScoringError` |
+The scorer accepts any trajectory grid that covers the four-second evaluation
+horizon. Sampling is carried by each `Trajectory`, not inferred from its point
+count:
 
-Interpolation is linear for position and angle-unwrapped for heading. The
-current pose at `t=0` is used as an implicit interpolation knot. Time is never
-inferred from the number of points.
+| input | evaluation |
+| --- | --- |
+| 80 poses at 0.1 s (8 s) | first 4 s, resampled |
+| 8 poses at 0.5 s (4 s) | direct |
+| another declared grid covering 4 s | interpolated |
+| a grid shorter than 4 s | rejected |
 
-For raw proposal tensors, pass their sampling explicitly when it differs from
-the scorer configuration:
+Headings are interpolated after unwrapping. The current pose at `t=0` is an
+implicit knot.
 
-```python
-components = scorer.score_proposals(
-    proposals, scenes,
-    trajectory_sampling=TrajectorySampling(num_poses=80, interval_length=0.1),
-)
-```
+For training-time diagnostics, `score_proposals` accepts `[B, N, T, 3]` and
+returns `T4NavSimProposalResult`. Its `.values` tensor has shape
+`[B, N, len(.metric_names)]`, so the column order is never implicit. The
+training module logs exactly those selected columns.
 
 ## Backends
 
-| backend | use |
-|---|---|
-| `auto` | use GPU when CUDA is available, otherwise CPU |
-| `gpu` | batched scoring for large runs or training |
-| `cpu` | audit implementation for environments without CUDA |
+`gpu` batches simulation and geometry on CUDA. `cpu` is the scalar reference
+path for audit runs and machines without CUDA. An explicit GPU request raises
+when CUDA is unavailable; it never silently falls back to CPU. The CLI's
+`auto` backend selects GPU when available and CPU otherwise.
 
-The batch command defaults to `auto`, which selects the GPU path when CUDA is
-available and the CPU audit path otherwise. An explicit GPU request never falls
-back silently. `compare_backends` scores the same windows on both paths and
-reports the largest per-component difference.
-
-## Metric families
-
-The devkit exposes four independent families. They are written to separate
-sections in `aggregate.yaml`; there is no cross-family total score.
-
-### Open-loop trajectory error
+## Open loop
 
 ```python
 from t4_e2e_devkit.evaluation import compute_open_loop_metrics
@@ -68,40 +72,34 @@ from t4_e2e_devkit.evaluation import compute_open_loop_metrics
 metrics = compute_open_loop_metrics(prediction, scene)
 ```
 
-The default comparison uses the recorded future's source interval and the
-overlap of the two declared horizons. An 80-point trajectory at 0.1 s and an
-8-point trajectory at 0.5 s are therefore both accepted. The result contains
-ADE, FDE, mean/final heading error and a configurable final-position miss
-indicator. Set `OpenLoopMetricConfig.target_sampling` to require a fixed
-benchmark horizon.
+The comparison uses the declared source intervals and their common horizon.
+ADE, FDE, heading errors, miss rate, horizon and pose count are reported.
 
-### PDM-Score
+## Prediction manifest
 
-The result contains `(nc, dac, ddc, ttc, ep, comfort)`:
+Model repositories exchange predictions through the model-neutral
+`t4-e2e.predictions` JSONL format. The header declares
+`num_poses`, `interval_seconds` and `pose_format`; each row is keyed by
+`scene` and `center` and contains local `(x, y, heading)` poses. The writer
+stores only the data-list content hash, never a local data-list or checkpoint
+path. The scorer validates an exact key match before reading any scene.
 
-- `nc` and `dac` are multiplicative gates;
-- `ddc`, `ttc`, `ep` and `comfort` form the weighted average;
-- the default aggregate is `(nc * dac) * (5*ep + 5*ttc + 2*comfort) / 12`.
+```python
+from t4_e2e_devkit.evaluation import PredictionManifestWriter
 
-The `ep` denominator is the progress of the configured reference trajectory.
-It must come from a PDM-Closed reference or the online GPU reference path; the
-recorded future endpoint is not a substitute.
+with PredictionManifestWriter(
+    "results/predictions.jsonl",
+    data_list="lists/val.json",
+    num_poses=8,
+    interval_seconds=0.5,
+) as writer:
+    writer.write("prd_jt/scene", 100, trajectory)
+```
 
-### T4 metrics
-
-`compute_tier4_metrics` covers red-light compliance, feasibility, lane
-departure and related terms. `aggregate_tier4_metrics` aggregates only this
-family. `PDMResults.tier4_metrics` remains as a compatibility field for
-per-window consumers, but these values are not part of the PDM aggregate.
-
-### Closed loop
-
-`compute_closed_loop_metrics` evaluates the realized states returned by
-`T4ClosedLoopRunner`: duration, path length, displacement, speed, acceleration,
-yaw rate and stuck detection. The T4 runner automatically derives goal status,
-replayed-agent collisions, geometry events and timeout from the scene and annotations. Custom
-rollout harnesses can still pass explicit event data; unavailable events are
-omitted instead of reported as false zeros.
+Sampling is per manifest, so dense and sparse model outputs use the same
+scoring entry point. Rank processes can score disjoint row ranges with
+`shard_index` and `num_shards`; reports retain only content hashes and
+sampling metadata.
 
 ## Batch evaluation
 
@@ -109,125 +107,75 @@ omitted instead of reported as false zeros.
 uv run t4e2e evaluate /path/to/val.json \
   --agent my_agent \
   --output-dir results/evaluation \
-  --families open_loop pdm tier4
+  --families open_loop pdm \
+  --pdm-version navsim-v2 \
+  --backend auto
 ```
 
-The command writes one JSON record per row under `records/`, one CSV per
-requested family, `aggregate.json`, `aggregate.yaml`, `run.json`, a worker
-manifest and `failures.csv`. Families remain separate under `pdm`, `open_loop`
-and `tier4`; there is no combined score. Failed rows are recorded and excluded
-from successful-family means rather than silently omitted.
+Each row produces a privacy-safe JSON record under `records/`. The run also
+writes family CSV files, `aggregate.json`, `aggregate.yaml`, `run.json`, a
+worker manifest and `failures.csv`. Result directories are ignored by Git.
 
-For an offline CPU run, provide the matching PDM reference cache explicitly:
+`--pdm-version` accepts `navsim-v1` or `navsim-v2`; these are versions of the
+PDM metric, not additional result families. Use `--pdm-metrics` to select a
+subset, for example `--pdm-metrics no_at_fault_collisions ego_progress`.
 
-```bash
-uv run t4e2e evaluate /path/to/val.json \
-  --agent my_agent \
-  --output-dir results/evaluation \
-  --backend cpu \
-  --pdm-reference-cache-dir /path/to/pdm-cache \
-  --maps-root /path/to/maps \
-  --scene-tags-root /path/to/scene-tags \
-  --attach-map-ids
-```
+## Sharding, workers and resume
 
-The cache is optional for GPU evaluation, which computes the reference online.
-Map and scene-tag roots are side metadata inputs; they are not copied into
-result artifacts.
-
-### Rank execution and resume
-
-Ranks are deterministic partitions of the data-list rows. A rank directory is
-finished only after its `run.json` and worker manifest are written:
+Ranks deterministically partition data-list rows:
 
 ```bash
 uv run t4e2e evaluate /path/to/val.json --agent my_agent \
   --output-dir results/evaluation/rank-0 \
-  --rank 0 --world-size 4 --workers 1 --worker-backend serial --resume
+  --rank 0 --world-size 4 --workers 1
 
 uv run t4e2e merge-evaluation \
   --input-dir results/evaluation/rank-0 results/evaluation/rank-1 \
-              results/evaluation/rank-2 results/evaluation/rank-3 \
+               results/evaluation/rank-2 results/evaluation/rank-3 \
   --output-dir results/evaluation/merged
 ```
 
-`--workers` selects serial, thread or local process execution within one rank;
-the optional Ray backend is loaded only when selected.
-`--rank/--world-size` are the only distributed coordination inputs; no
-scheduler or tracking service is required. `--resume` reuses successful rows
-only when their token and resolved configuration fingerprint match. The merge
-rejects missing or duplicate ranks, stale records, duplicate tokens and
-manifests whose task set differs from the records. Use `--allow-incomplete`
-only for an intentionally partial report. Row failures remain inspectable in
-`failures.csv`; a finished report with failed rows is marked `failed` and the
-CLI exits non-zero.
+`--workers` controls local serial, thread, process or Ray execution inside a
+rank. `--rank/--world-size` are the only partitioning inputs; no scheduler or
+tracking service is required. `--resume` reuses a row only when its token and
+resolved configuration fingerprint match. Merging rejects missing/duplicate
+ranks, duplicate tokens and stale records. Failed rows stay visible and make
+the run non-successful.
 
-The local dashboard has no external dependency:
+## Closed loop
 
-```bash
-uv run t4e2e dashboard results/evaluation/merged \
-  --out results/evaluation/merged/dashboard.html
-```
-
-The output directory is ignored by Git. An HTML output outside the results
-directory still links to its source CSV/JSON files with relative paths.
-
-## Closed-loop rollout
-
-For a sensor-replay closed loop, use `T4ClosedLoopRunner` from
-[`closed_loop.md`](closed_loop.md). The runner calls
-the agent at each simulation tick, converts its trajectory to the source 10 Hz
-grid, and advances the ego with `PerfectTracker`. It is distinct from PDM
-proposal simulation: PDM rolls out a fixed proposal for scoring, while this
-runner feeds the realized ego state into the next agent call.
-
-For a data-list run, use:
+`T4ClosedLoopRunner` performs sensor replay with a kinematic perfect tracker.
+At each source tick it calls the agent, converts the plan to the source grid,
+advances the ego state and feeds the realized state into the next tick. It
+does not re-render sensors. Recorded traffic is replayed by default; constant
+velocity and IDM policies are available for controlled experiments.
 
 ```bash
-uv run t4e2e evaluate-closed-loop \
-  /path/to/val.json \
+uv run t4e2e evaluate-closed-loop /path/to/val.json \
   --agent my_agent \
-  --output-dir reports/closed_loop
+  --output-dir results/closed-loop
 ```
 
-The command writes `closed_loop.csv`, `aggregate.json`, `aggregate.yaml`,
-`closed_loop_ticks.csv`, `run.json`, `report.html`, and one artifact per row under
-`rollouts/`, and a rank manifest. Rank outputs are merged with
-`uv run t4e2e merge-closed-loop`; the merge checks the common configuration and token
-uniqueness before recomputing the aggregate.
-`failures.csv` records rows that exhausted their retry budget. Closed-loop
-metrics remain in their own report section and are never folded into PDM or
-open-loop scores. Use `--rank`, `--world-size`, `--workers`,
-`--worker-backend`, `--max-retries`, and `--resume` for large or interrupted
-runs. Recorded traffic is the default; `--traffic-policy constant_velocity`
-or `--traffic-policy idm` changes annotation geometry only and never
-re-renders sensors.
+Closed-loop metrics and rollout artifacts remain in their own report section
+and are merged with `t4e2e merge-closed-loop`.
 
-## Metric engine and local execution
-
-For library users that need one interface across families:
+## Library engine
 
 ```python
 from t4_e2e_devkit.evaluation import MetricContext, MetricEngine
 
 engine = MetricEngine.t4_default()
 report = engine.evaluate(
-    MetricContext(token=token, prediction=prediction, ground_truth=scene),
-    families=("open_loop",),
+    MetricContext(
+        token=token,
+        prediction=prediction,
+        ground_truth=scene,
+        pdm_version="navsim-v2",
+        pdm_metric_names=("ego_progress", "score"),
+    ),
+    families=("pdm",),
 )
 ```
 
-`MetricEngine` keeps family records separate and supports custom registrations.
-`MetricCache("results/cache")` can be passed to `evaluate` for atomic,
-content-addressed reuse. The cache contains metric outputs only.
-
-`MetricEngine.t4_default()` registers four independent adapters: `open_loop`,
-`pdm`, `tier4` and `closed_loop`. PDM and T4 terms are never folded into the
-open-loop or closed-loop aggregates. A PDM scorer and T4 threshold config can be
-provided through `MetricContext`; the PDM CPU scorer is constructed lazily only
-when that family is selected. The cache signature includes the prediction,
-scene/GT arrays, closed-loop realization and metric configuration.
-
-`LocalExecutor` in `t4_e2e_devkit.evaluation.executor` runs an ordered map
-serially or with local processes. Its rank/world-size partitioning is deterministic
-and independent of Slurm, Ray and tracking services.
+`MetricCache` stores only metric outputs. The cache signature includes the
+prediction, scene arrays, consecutive-plan inputs and metric version.

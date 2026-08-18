@@ -32,7 +32,7 @@ from t4_e2e_devkit.common.constants import (
     DEFAULT_CENTER_STRIDE,
     FUTURE_FRAMES,
     PAST_FRAMES,
-    T4_DEFAULT_CAMERA_NAMES,
+    T4_WIDE5_CAMERA_NAMES,
 )
 from t4_e2e_devkit.common.dataclasses import SceneFilter
 from t4_e2e_devkit.dataset.datalist import DataList, is_e2e_scene_path
@@ -107,7 +107,7 @@ def parse_args(argv: Optional[Sequence[str]] = None) -> argparse.Namespace:
         help="source frames between consecutive centres (default: %(default)s = 0.5 s)",
     )
     parser.add_argument(
-        "--camera-names", nargs="+", default=list(T4_DEFAULT_CAMERA_NAMES),
+        "--camera-names", nargs="+", default=list(T4_WIDE5_CAMERA_NAMES),
         help="camera register a scene must expose (default: the five wide views)",
     )
     parser.add_argument(
@@ -119,14 +119,6 @@ def parse_args(argv: Optional[Sequence[str]] = None) -> argparse.Namespace:
         "--max-window-gap-frames", type=int, default=None,
         help="drop centres whose window misses more than N key frames; "
              "omit to accept any gap, 0 to require a strictly uniform window",
-    )
-    parser.add_argument(
-        "--require-pdm-progress", type=Path, default=None, metavar="CACHE",
-        help="drop centres with no valid PDM-Closed label in this cache",
-    )
-    parser.add_argument(
-        "--drivable-area-buffer-m", type=float, default=0.0,
-        help="PDM roadblock buffer the cache was built with (default: %(default)s)",
     )
     parser.add_argument("--max-scenes", type=int, default=None, help="stop after N scenes")
     parser.add_argument("--limit-per-scene", type=int, default=None, help="keep at most N rows per scene")
@@ -162,14 +154,6 @@ def build(args: argparse.Namespace) -> DataList:
     if args.scene_tags_root is not None:
         tag_index = T4SceneTagIndex.cached(args.scene_tags_root)
         reader_config["t4_scene_tags_root"] = str(args.scene_tags_root.resolve())
-    if args.require_pdm_progress is not None:
-        reader_config.update(
-            {
-                "t4_load_oracle_targets": True,
-                "t4_pdm_reference_cache_dir": str(args.require_pdm_progress.resolve()),
-                "t4_drivable_area_buffer_m": args.drivable_area_buffer_m,
-            }
-        )
 
     rows: List[tuple] = []
     scenes: List[str] = []
@@ -182,7 +166,6 @@ def build(args: argparse.Namespace) -> DataList:
         "rows_dropped_by_vehicle": 0,
         "rows_dropped_by_window_gap": 0,
         "rows_dropped_by_camera": 0,
-        "rows_dropped_by_pdm_progress": 0,
         "rows_dropped_by_window_error": 0,
         "scenes_dropped_by_scene_tags": 0,
         "scenes_without_scene_tags": 0,
@@ -260,8 +243,6 @@ def build(args: argparse.Namespace) -> DataList:
         "filter": {
             "require_cameras": sorted(require_cameras),
             "max_window_gap_frames": args.max_window_gap_frames,
-            "require_pdm_progress": args.require_pdm_progress is not None,
-            "drivable_area_buffer_m": args.drivable_area_buffer_m,
             "scene_tag_filters": {
                 "include_events": args.include_tag_event,
                 "exclude_events": args.exclude_tag_event,
@@ -337,11 +318,6 @@ def _scene_rows(
         if camera_slots and presence is not None:
             if not all(bool(presence[center, slot]) for slot in camera_slots):
                 dropped["rows_dropped_by_camera"] += 1
-                continue
-
-        if args.require_pdm_progress is not None:
-            if builder.read_pdm_progress(center) is None:
-                dropped["rows_dropped_by_pdm_progress"] += 1
                 continue
 
         rows.append((relative, int(center)))

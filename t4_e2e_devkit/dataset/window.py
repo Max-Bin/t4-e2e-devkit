@@ -171,49 +171,7 @@ class T4WindowBuilder:
                 strict=_as_bool(config.get("t4_map_required", False)),
                 route_lane_ids=route_lane_ids,
             )
-        # The vendored low-level reader still exposes its historical strict
-        # cache-only oracle option. GPU scoring owns online references, so keep
-        # oracle loading out of that legacy path and attach the CPU provider
-        # only when it is explicitly requested.
-        reader_config = dict(config)
-        reader_config["t4_load_oracle_targets"] = False
-        self.reader = T4SceneReader(self.scene_dir, self.root, reader_config)
-        self._pdm_reference_provider = None
-        pdm_cache_root = config.get("t4_pdm_reference_cache_dir")
-        reference_device = str(
-            config.get(
-                "t4_pdm_reference_device",
-                config.get("t4_oracle_device", "gpu"),
-            )
-            or "gpu"
-        ).lower()
-        # GPU scoring owns online reference generation.  Instantiating the
-        # legacy provider here would execute the CPU PDM-Closed implementation
-        # in the data-loader process before the scorer gets a chance to use
-        # CUDA, which is both slow and an easy silent fallback.
-        if reference_device == "cpu" and (
-            _as_bool(config.get("t4_load_oracle_targets", False))
-            or pdm_cache_root not in (
-                None,
-                "",
-                "null",
-                "None",
-            )
-        ):
-            from t4_e2e_devkit.evaluation.reference.pdm_closed import (
-                T4PDMReferenceConfig,
-            )
-            from t4_e2e_devkit.evaluation.reference_provider import (
-                T4PDMReferenceProvider,
-            )
-
-            self._pdm_reference_provider = T4PDMReferenceProvider(
-                self.reader,
-                self.root,
-                cache_root=pdm_cache_root,
-                config=T4PDMReferenceConfig.from_config(config),
-                verify_source=_as_bool(config.get("t4_pdm_reference_verify_source", True)),
-            )
+        self.reader = T4SceneReader(self.scene_dir, self.root, config)
         self._image_hw = tuple(int(value) for value in config["t4_image_size_hw"])
         # Camera decoders, opened as a register on first use; see camera_source.
         self._camera_sources: Dict[str, Any] = {}
@@ -337,8 +295,6 @@ class T4WindowBuilder:
             future_ego_poses=future_poses,
             future_annotations=future_annotations,
             goal_pose=self.read_goal(center_pose),
-            pdm_progress=self.read_pdm_progress(center),
-            pdm_reference_poses=self.read_pdm_reference(center),
         )
 
     # ------------------------------------------------------------------ #
@@ -469,12 +425,9 @@ class T4WindowBuilder:
     def camera_source(self, name: str):
         """The decoder for one camera, opened once and reused.
 
-        Every consumer goes through this -- the loader, the visualisation, an
+        Every consumer goes through this -- the loader, the visualisation and an
         audit script -- so a rendered frame is the pixels a model saw rather than
-        a second decode that happens to look similar. Sources are opened as a
-        register rather than individually, because ``resize="auto"`` has to see
-        whether the register mixes JPEG and video storage to choose one
-        resampling filter for all of them.
+        a second decode that happens to look similar.
 
         :param name: camera channel name.
         :return: the :class:`~t4_e2e_devkit.dataset.camera_source.CameraSource`.
@@ -484,8 +437,6 @@ class T4WindowBuilder:
                 self.scene_dir,
                 self.reader.camera_names,
                 self._image_hw,
-                backend=str(self.reader_config.get("t4_video_backend", "cpu")),
-                resize=str(self.reader_config.get("t4_image_resize", "auto")),
             )
         return self._camera_sources[name]
 
@@ -634,51 +585,6 @@ class T4WindowBuilder:
         x, y, heading = global_to_ego(goal_global[None], center_pose)[0]
         return np.array([x, y, np.cos(heading), np.sin(heading)], dtype=np.float32)
 
-    def read_pdm_reference(self, center: int) -> Optional[np.ndarray]:
-        """The PDM-Closed reference path for this window.
-
-        Already in the centre frame: PDM simulates from a rear axle at the origin
-        (``make_t4_vehicle_and_ego`` builds ``StateSE2(0, 0, 0)``), so the stored
-        state array needs no transform. Verified rather than assumed, because
-        plotting it in the wrong frame would draw a confidently wrong line.
-
-        :param center: centre frame index.
-        :return: ``[51, 3]`` of ``(x, y, heading)``, or ``None`` when reference
-            labels are not requested or the center has no valid label.
-        """
-        provider = self._pdm_reference_provider
-        if provider is None:
-            return None
-        try:
-            return np.asarray(provider.frame(int(center))["reference_trajectory"], dtype=np.float32)
-        except (IndexError, ValueError, KeyError):
-            return None
-
-    def read_pdm_progress(self, center: int) -> Optional[float]:
-        """The PDM-Closed reference progress for this window.
-
-        This is the ego-progress denominator, and it is scene-level data: it
-        cannot be reconstructed from the model's own trajectory, and
-        substituting the demonstrated future endpoint changes what EP measures.
-        The explicit CPU reference provider may compute a missing label lazily
-        when no cache is configured. GPU scoring leaves this field unset and
-        generates the reference online on CUDA. This method still returns
-        ``None`` when reference labels were not requested or the center cannot
-        be labeled.
-
-        :param center: centre frame index.
-        :return: the reference progress, or ``None`` when no label is available.
-        """
-        provider = self._pdm_reference_provider
-        if provider is None:
-            return None
-        try:
-            return float(provider.frame(int(center))["pdm_progress"])
-        except (IndexError, ValueError):
-            # This is a per-window labeling failure. The caller decides whether
-            # a missing label is fatal or whether a data-list builder drops it.
-            return None
-
     # ------------------------------------------------------------------ #
     # Internals
     # ------------------------------------------------------------------ #
@@ -704,10 +610,9 @@ class T4WindowBuilder:
         is wrong by the resize ratio.  Verified on a real scene: unscaled, the
         front camera's principal point read 1420 px on a 1148 px-wide image.
 
-        The native size comes from the camera source rather than from
-        ``scalars.npz``, which does not carry it -- a JPEG source reads an image
-        header, a video source asks ffprobe, and either is one cheap call per
-        camera per scene.
+        The native size comes from the JPEG camera source rather than from
+        ``scalars.npz``, which does not carry it. The source reads the image
+        header once per camera per scene.
 
         :param slot: index into the resolved camera register.
         :param source: the camera's
@@ -737,9 +642,6 @@ class T4WindowBuilder:
         for source in self._camera_sources.values():
             source.close()
         self._camera_sources.clear()
-        if self._pdm_reference_provider is not None:
-            self._pdm_reference_provider.close()
-            self._pdm_reference_provider = None
         self.reader.close()
 
     def __enter__(self) -> T4WindowBuilder:

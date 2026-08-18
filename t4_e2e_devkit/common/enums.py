@@ -161,10 +161,8 @@ class T4TrackLabel(IntEnum):
     """Classes in the T4 bundle's ``gt_labels`` field.
 
     Five classes, three of which collapse to ``VEHICLE`` for scoring.  The
-    label-to-scoring-type mapping is owned by the reference judge
-    (``evaluation.reference.pdm_closed._LABEL_TO_TYPE``) and re-exported by
-    :mod:`t4_e2e_devkit.dataset.tracks`; it lives there rather than here so the
-    judge and the devkit cannot disagree about which class is an agent.
+    label-to-scoring-type mapping is defined at the T4 annotation boundary in
+    :mod:`t4_e2e_devkit.dataset.tracks`.
     """
 
     CAR = 0

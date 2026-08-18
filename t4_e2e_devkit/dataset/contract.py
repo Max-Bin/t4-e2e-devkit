@@ -111,7 +111,6 @@ class T4Sample(TypedDict, total=False):
     future_agent_boxes: List["np.ndarray"]  # centre-frame boxes, one array per future frame
     future_agent_labels: List["np.ndarray"]
     agent_gt_available: bool
-    pdm_progress: float  # PDM-Closed reference progress; the EP denominator
 
     # -- identity ----------------------------------------------------------- #
     global_center_pose: "np.ndarray"  # [4] global x, y, cos, sin
@@ -157,7 +156,6 @@ class T4Batch(TypedDict, total=False):
     future_agent_boxes: List[List["np.ndarray"]]
     future_agent_labels: List[List["np.ndarray"]]
     agent_gt_available: List[bool]
-    pdm_progress: "torch.Tensor"
 
     global_center_pose: "torch.Tensor"
     scene_dir: List[str]

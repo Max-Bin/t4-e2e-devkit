@@ -94,7 +94,7 @@ dataset:
   future_frames: 80
   frame_interval: 5
 evaluation:
-  families: [open_loop, pdm, tier4]
+  families: [open_loop, pdm]
   backend: auto
 simulation:
   stop_on_collision: false

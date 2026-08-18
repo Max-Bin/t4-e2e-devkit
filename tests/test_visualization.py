@@ -304,10 +304,19 @@ class TestRenderingRealScenes:
         assert image.std() > 5.0
 
     def test_score_panel_renders(self, scene):
-        from t4_e2e_devkit.common.dataclasses import PDMResults
         from t4_e2e_devkit.visualization import plot_bev_with_score
 
-        results = PDMResults.from_components([1.0, 1.0, 1.0, 0.8, 0.6, 1.0], token="x")
+        results = {
+            "no_at_fault_collisions": 1.0,
+            "drivable_area_compliance": 1.0,
+            "driving_direction_compliance": 1.0,
+            "traffic_light_compliance": 1.0,
+            "ego_progress": 0.6,
+            "time_to_collision_within_bound": 0.8,
+            "lane_keeping": 1.0,
+            "history_comfort": 1.0,
+            "score": 0.8,
+        }
         figure, _ = plot_bev_with_score(scene, scene.get_future_trajectory(), results)
         assert figure_to_rgb(figure).std() > 5.0
 
@@ -343,11 +352,11 @@ class TestTrajectoryKinds:
     def test_config_kinds_are_all_reachable(self):
         from t4_e2e_devkit.visualization.config import TRAJECTORY_CONFIG
 
-        # `prediction` comes from an agent; the other three come from the window.
+        # `prediction` comes from an agent; the other two come from the window.
         # A declared kind nothing can produce is dead config -- it promises a
         # legend entry that never appears.
         assert set(TRAJECTORY_CONFIG) == {
-            "prediction", "ground_truth", "history", "pdm_reference",
+            "prediction", "ground_truth", "history",
         }
 
     def test_fixed_bev_legend_has_stable_t4_vocabulary(self):
@@ -389,20 +398,13 @@ class TestWindowSuppliedTrajectories:
         distances = np.linalg.norm(history[:, :2], axis=-1)
         assert distances[0] >= distances[-1]
 
-    def test_pdm_reference_is_none_without_a_cache(self, scene):
-        # The fixture scene is read without the reference cache attached, so this
-        # must be absent rather than fabricated.
-        assert scene.pdm_reference_poses is None
-        assert scene.get_pdm_reference_trajectory() is None
-
     def test_reference_trajectories_skips_what_is_missing(self, scene):
         from t4_e2e_devkit.visualization import reference_trajectories
 
         trajectories = reference_trajectories(scene)
         assert "history" in trajectories
         assert "ground_truth" in trajectories
-        # No cache attached, so no PDM path -- and no placeholder line either.
-        assert "pdm_reference" not in trajectories
+        assert set(trajectories) == {"history", "ground_truth"}
 
     def test_history_is_not_given_a_second_origin(self, scene):
         from t4_e2e_devkit.visualization import plot_bev_frame

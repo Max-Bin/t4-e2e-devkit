@@ -51,7 +51,7 @@ def main(argv: Optional[list[str]] = None) -> int:
     parser.add_argument("--checkpoint", default=None)
     parser.add_argument("--backend", choices=("auto", "cpu", "gpu"), default="auto")
     parser.add_argument("--device", default=None)
-    parser.add_argument("--families", nargs="+", choices=("open_loop", "pdm", "tier4"), default=None)
+    parser.add_argument("--families", nargs="+", choices=("open_loop", "pdm"), default=None)
     parser.add_argument("--history-frames", type=int, default=None)
     parser.add_argument("--future-frames", type=int, default=None)
     parser.add_argument("--frame-interval", type=int, default=None)

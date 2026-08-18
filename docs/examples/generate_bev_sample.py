@@ -323,7 +323,6 @@ def _make_scene() -> T4Scene:
         future_ego_poses=future_ego_poses,
         future_annotations=future_annotations,
         goal_pose=np.array([49.0, 7.0, 0.96, 0.28], dtype=np.float32),
-        pdm_progress=34.2,
     )
 
 

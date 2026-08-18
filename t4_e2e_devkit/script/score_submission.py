@@ -22,9 +22,10 @@ from t4_e2e_devkit.evaluation.batch import (
 )
 from t4_e2e_devkit.evaluation.distributed import WorkerManifest
 from t4_e2e_devkit.evaluation.executor import rank_indices
+from t4_e2e_devkit.evaluation.navsim_score import resolve_navsim_metric_names
 from t4_e2e_devkit.evaluation.submission import SubmissionPackage
 from t4_e2e_devkit.evaluation.worker_pool import WorkerPool, WorkerResult, WorkerTask
-from t4_e2e_devkit.script.evaluate import FAMILIES, _resolve_backend
+from t4_e2e_devkit.script.evaluate import FAMILIES, PDM_VERSIONS, _resolve_backend
 
 
 def score_submission(
@@ -46,6 +47,9 @@ def score_submission(
     max_retries: int = 0,
     reader_config: Optional[Mapping[str, Any]] = None,
     resume: bool = True,
+    pdm_version: str = "navsim-v2",
+    pdm_metric_names: Optional[Sequence[str]] = None,
+    pdm_previous_interval_frames: int | None = None,
 ) -> dict[str, dict[str, float]]:
     selected = data_list if isinstance(data_list, DataList) else load_data_list(data_list)
     if max_rows is not None:
@@ -57,6 +61,18 @@ def score_submission(
     unknown = sorted(set(family_names) - set(FAMILIES))
     if not family_names or unknown:
         raise ValueError(f"families must be a non-empty subset of {FAMILIES}; got {unknown or family_names}")
+    pdm_version = str(pdm_version).lower()
+    if pdm_version not in PDM_VERSIONS:
+        raise ValueError(f"pdm_version must be one of {PDM_VERSIONS}")
+    pdm_metric_names = (
+        None
+        if pdm_metric_names is None
+        else resolve_navsim_metric_names(
+            pdm_version.removeprefix("navsim-"), pdm_metric_names
+        )
+    )
+    if pdm_previous_interval_frames is not None and pdm_previous_interval_frames < 1:
+        raise ValueError("pdm_previous_interval_frames must be positive")
     backend = _resolve_backend(backend)
     if workers < 1 or max_retries < 0:
         raise ValueError("workers must be positive and max_retries must be non-negative")
@@ -86,6 +102,9 @@ def score_submission(
         "workers": workers,
         "worker_backend": worker_backend,
         "max_retries": max_retries,
+        "pdm_version": pdm_version,
+        "pdm_metric_names": None if pdm_metric_names is None else list(pdm_metric_names),
+        "pdm_previous_interval_frames": pdm_previous_interval_frames,
     }
     resolved_fingerprint = config_fingerprint(config)
     run_id = f"submission-score-{resolved_fingerprint[:16]}"
@@ -99,6 +118,17 @@ def score_submission(
             function=_score_one_with_retries,
             args=(
                 package.entry(f"{scene}@{int(center)}").trajectory,
+                (
+                    package.entry(
+                        f"{scene}@{int(center) - (pdm_previous_interval_frames or frame_interval)}"
+                    ).trajectory
+                    if (
+                        pdm_version == "navsim-v2"
+                        and f"{scene}@{int(center) - (pdm_previous_interval_frames or frame_interval)}"
+                        in package.tokens
+                    )
+                    else None
+                ),
                 selected.root,
                 scene,
                 int(center),
@@ -112,6 +142,9 @@ def score_submission(
                     has_route=True,
                 ),
                 dict(reader_config or {}),
+                pdm_version,
+                pdm_metric_names,
+                pdm_previous_interval_frames,
                 max_retries,
             ),
         )
@@ -219,6 +252,7 @@ def _score_one_with_retries(*args: Any) -> dict[str, Any]:
 
 def _score_one(
     trajectory,
+    previous_trajectory,
     root: str | Path,
     scene: str,
     center: int,
@@ -227,12 +261,17 @@ def _score_one(
     device: str | None,
     scene_filter: SceneFilter,
     reader_config: Mapping[str, Any],
+    pdm_version: str,
+    pdm_metric_names: Optional[Sequence[str]],
+    pdm_previous_interval_frames: int | None,
 ) -> dict[str, Mapping[str, float]]:
     from t4_e2e_devkit.common.dataclasses import SensorConfig
     from t4_e2e_devkit.dataset.window import T4WindowBuilder
+    from t4_e2e_devkit.evaluation.navsim_score import (
+        T4NavSimScorer,
+        T4NavSimScorerConfig,
+    )
     from t4_e2e_devkit.evaluation.open_loop import compute_open_loop_metrics
-    from t4_e2e_devkit.evaluation.pdm_score import T4PDMScorer
-    from t4_e2e_devkit.evaluation.tier4_metrics import compute_tier4_metrics
 
     builder = T4WindowBuilder(
         Path(root) / scene,
@@ -247,10 +286,29 @@ def _score_one(
         if "open_loop" in families:
             values["open_loop"] = compute_open_loop_metrics(trajectory, window).values
         if "pdm" in families:
-            result = T4PDMScorer(backend=backend, device=device).score(trajectory, window)
-            values["pdm"] = {**result.components, "score": float(result.score)}
-        if "tier4" in families:
-            values["tier4"] = compute_tier4_metrics(trajectory, window)
+            previous_window = None
+            previous_center = int(center) - (
+                pdm_previous_interval_frames or int(scene_filter.frame_interval)
+            )
+            if previous_trajectory is not None and pdm_version == "navsim-v2":
+                if previous_center >= scene_filter.num_history_frames - 1:
+                    previous_window = builder.build(previous_center)
+                else:
+                    previous_trajectory = None
+            result = T4NavSimScorer(
+                T4NavSimScorerConfig(
+                    version=pdm_version.removeprefix("navsim-"),
+                    backend=backend,
+                    device=device,
+                    metric_names=pdm_metric_names,
+                )
+            ).score(
+                trajectory,
+                window,
+                previous_trajectory=previous_trajectory,
+                previous_scene=previous_window,
+            )
+            values["pdm"] = {"pdm_version": pdm_version, **result.values}
         return values
     finally:
         builder.close()
@@ -267,6 +325,14 @@ def main(argv: Optional[list[str]] = None) -> int:
     parser.add_argument("--history-frames", type=int, default=31)
     parser.add_argument("--future-frames", type=int, default=80)
     parser.add_argument("--frame-interval", type=int, default=5)
+    parser.add_argument("--pdm-version", choices=PDM_VERSIONS, default="navsim-v2")
+    parser.add_argument(
+        "--pdm-metrics",
+        nargs="+",
+        default=None,
+        help="PDM metrics to compute and report; omit to use all metrics for the version",
+    )
+    parser.add_argument("--pdm-previous-interval-frames", type=int, default=None)
     parser.add_argument(
         "--reader-config-json",
         default=None,
@@ -307,6 +373,9 @@ def main(argv: Optional[list[str]] = None) -> int:
         max_retries=args.max_retries,
         reader_config=reader_config,
         resume=not args.no_resume,
+        pdm_version=args.pdm_version,
+        pdm_metric_names=args.pdm_metrics,
+        pdm_previous_interval_frames=args.pdm_previous_interval_frames,
     )
     print(json.dumps(report, indent=2, sort_keys=True))
     return 0 if report.get("run", {}).get("num_failed", 0.0) == 0.0 else 1

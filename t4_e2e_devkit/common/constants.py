@@ -133,7 +133,7 @@ EGO_SHAPE_IDX_WIDTH = 2
 #
 # So a fixed five-wide training profile resolves on 96% of prd_jt.  Other scenes
 # can still be inspected through the wide views they actually export; they do not
-# fall back to compressed or narrow channels.
+# fall back to unsupported channels.
 
 #: Five wide views: the reference camera profile for the main prd_jt rig.  The
 #: reference papers use front, front-left, front-right and a rear camera; this
@@ -148,39 +148,15 @@ T4_WIDE5_CAMERA_NAMES: tuple[str, ...] = (
 )
 
 # All wide channels observed in the T4 exports.  ``CAM_BACK_WIDE`` occurs only
-# in a small legacy subset; it is allowed when a scene actually has it, but it
+# in a small subset; it is allowed when a scene actually has it, but it
 # is not part of the fixed five-camera training register.
 T4_SUPPORTED_CAMERA_NAMES: tuple[str, ...] = (
     *T4_WIDE5_CAMERA_NAMES,
     "CAM_BACK_WIDE",
 )
 
-#: Six narrow views forming a full surround, with a centred rear camera.  This is
-#: the natural profile for x2_dev, which does carry CAM_BACK.
-T4_SURROUND6_CAMERA_NAMES: tuple[str, ...] = (
-    "CAM_FRONT",
-    "CAM_FRONT_LEFT",
-    "CAM_FRONT_RIGHT",
-    "CAM_BACK",
-    "CAM_BACK_LEFT",
-    "CAM_BACK_RIGHT",
-)
-
-#: Five narrow views: the surround profile minus the centred rear camera, for the
-#: prd_jt variant rig that has neither CAM_BACK nor rear wide views.
-T4_SURROUND5_CAMERA_NAMES: tuple[str, ...] = (
-    "CAM_FRONT",
-    "CAM_FRONT_LEFT",
-    "CAM_FRONT_RIGHT",
-    "CAM_BACK_LEFT",
-    "CAM_BACK_RIGHT",
-)
-
-#: Front-only, for ablations and for scenes with sparse rear coverage.
-T4_FRONT1_CAMERA_NAMES: tuple[str, ...] = ("CAM_FRONT",)
-
 #: Named profiles, resolvable by name from a config.  Narrow profiles are
-#: intentionally not exposed until their video-backed inputs are supported.
+#: intentionally not exposed until their storage format is supported.
 T4_CAMERA_PROFILES: dict[str, tuple[str, ...]] = {
     "wide5": T4_WIDE5_CAMERA_NAMES,
 }
@@ -188,10 +164,6 @@ T4_CAMERA_PROFILES: dict[str, tuple[str, ...]] = {
 #: Preference order used by ``resolve_camera_names`` when a run says ``"auto"``.
 #: There is deliberately no narrow/video fallback.
 T4_CAMERA_PROFILE_PREFERENCE: tuple[str, ...] = ("wide5",)
-
-#: Kept as the historical name so existing configs keep resolving.  Prefer naming
-#: a profile, or ``"auto"``, over relying on this.
-T4_DEFAULT_CAMERA_NAMES: tuple[str, ...] = T4_WIDE5_CAMERA_NAMES
 
 #: Every camera channel observed across prd_jt, prd_jt_val and x2_dev.  Not a
 #: profile -- no single scene carries all of these.
@@ -276,32 +248,3 @@ SCENE_RAW_SENSOR = "annotation/sensor.json"
 
 DATA_LIST_FORMAT = "t4-e2e.datalist"
 DATA_LIST_VERSION = 1
-
-# --------------------------------------------------------------------------- #
-# PDM scoring weights
-#
-# Default PDM profile. Multiplicative terms (NC, DAC) gate the weighted average.
-# --------------------------------------------------------------------------- #
-
-PDM_WEIGHT_NO_AT_FAULT_COLLISION = 1.0  # multiplicative gate
-PDM_WEIGHT_DRIVABLE_AREA_COMPLIANCE = 1.0  # multiplicative gate
-PDM_WEIGHT_DRIVING_DIRECTION_COMPLIANCE = 0.0
-PDM_WEIGHT_TIME_TO_COLLISION = 5.0
-PDM_WEIGHT_EGO_PROGRESS = 5.0
-PDM_WEIGHT_COMFORT = 2.0
-
-# Component order used by every scorer in the devkit.
-PDM_COMPONENT_ORDER: tuple[str, ...] = ("nc", "dac", "ddc", "ttc", "ep", "comfort")
-
-DEFAULT_PDM_WEIGHTS: tuple[float, ...] = (
-    PDM_WEIGHT_NO_AT_FAULT_COLLISION,
-    PDM_WEIGHT_DRIVABLE_AREA_COMPLIANCE,
-    PDM_WEIGHT_DRIVING_DIRECTION_COMPLIANCE,
-    PDM_WEIGHT_TIME_TO_COLLISION,
-    PDM_WEIGHT_EGO_PROGRESS,
-    PDM_WEIGHT_COMFORT,
-)
-
-# Ego progress below this distance is treated as "no meaningful progress" and
-# the normalization falls back to the raw value.
-PDM_PROGRESS_DISTANCE_THRESHOLD = 5.0

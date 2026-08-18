@@ -5,7 +5,7 @@ from __future__ import annotations
 import numpy as np
 import pytest
 
-from t4_e2e_devkit.common.dataclasses import PDMResults, Trajectory, aggregate_results
+from t4_e2e_devkit.common.dataclasses import Trajectory
 from t4_e2e_devkit.dataset.datalist import DataList
 from t4_e2e_devkit.evaluation.closed_loop import compute_closed_loop_metrics
 from t4_e2e_devkit.evaluation.open_loop import (
@@ -54,16 +54,22 @@ def test_open_loop_can_require_a_fixed_horizon():
 
 
 def test_families_are_not_folded_into_one_aggregate():
-    pdm = PDMResults.from_components([1.0] * 6, tier4_metrics={"red_light": 0.0})
+    pdm = {
+        "no_at_fault_collisions": 1.0,
+        "drivable_area_compliance": 1.0,
+        "driving_direction_compliance": 1.0,
+        "traffic_light_compliance": 1.0,
+        "ego_progress": 1.0,
+        "time_to_collision_within_bound": 1.0,
+        "lane_keeping": 1.0,
+        "history_comfort": 1.0,
+        "score": 1.0,
+    }
 
-    assert "tier4/red_light" not in aggregate_results([pdm])
     report = aggregate_evaluation(
         pdm=[pdm],
-        tier4=[{"red_light": 0.0}],
     )
     assert report["pdm"]["score"] == pytest.approx(1.0)
-    assert report["tier4"]["red_light"] == pytest.approx(0.0)
-    assert report["pdm"] != report["tier4"]
 
 
 def test_closed_loop_metrics_keep_unknown_events_unreported():

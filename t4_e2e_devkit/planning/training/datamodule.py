@@ -46,7 +46,7 @@ class T4DataModule(pl.LightningDataModule):
         :param train_data_list: the training data list.
         :param val_data_list: the validation data list; omit to skip validation.
         :param scene_filter: the window shape.
-        :param reader_config: extra reader settings (frame cache, optional PDM cache).
+        :param reader_config: extra reader settings such as the frame cache.
         :param batch_size: samples per rank.
         :param num_workers: DataLoader workers per rank.
         :param prefetch_factor: batches prefetched per worker.

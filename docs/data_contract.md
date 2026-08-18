@@ -182,5 +182,5 @@ A list is a reproducible JSON manifest:
 
 The manifest may also record window settings, camera requirements and filtering
 statistics. Its dataset root is local to the machine that built the list;
-keep generated lists outside version control. Older compatible format strings
-are accepted on read.
+keep generated lists outside version control. The reader accepts only the
+current `t4-e2e.datalist` format and version.

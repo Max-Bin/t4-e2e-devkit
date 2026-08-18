@@ -14,7 +14,6 @@ Dataset and CUDA tests are opt-in:
 
 ```bash
 T4E2E_TEST_ROOT=/path/to/t4_dataset \
-T4E2E_TEST_PDM_CACHE=/path/to/pdm-cache \
 uv run pytest -q
 ```
 

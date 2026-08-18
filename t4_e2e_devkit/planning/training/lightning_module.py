@@ -18,7 +18,6 @@ import pytorch_lightning as pl
 import torch
 
 from t4_e2e_devkit.agents.abstract_agent import AbstractT4Agent
-from t4_e2e_devkit.common.constants import PDM_COMPONENT_ORDER
 
 
 class T4LightningModule(pl.LightningModule):
@@ -32,9 +31,9 @@ class T4LightningModule(pl.LightningModule):
     ) -> None:
         """
         :param agent: the agent to train.
-        :param scorer: an optional :class:`~t4_e2e_devkit.evaluation.T4PDMScorer`
+        :param scorer: an optional PDM/NavSim scorer
             used for detached training-time reporting.
-        :param log_component_metrics: log the six PDM components separately.
+        :param log_component_metrics: log PDM components separately.
         """
         super().__init__()
         self.agent = agent
@@ -91,7 +90,11 @@ class T4LightningModule(pl.LightningModule):
                 scenes,
                 trajectory_sampling=self.agent.trajectory_sampling,
             )
-            self.log_pdm_components(components, prefix=prefix)
+            self.log_pdm_components(
+                components.values,
+                components.metric_names,
+                prefix=prefix,
+            )
         return loss
 
     def _proposal_tensor(self, predictions: Mapping[str, Any]) -> torch.Tensor:
@@ -169,19 +172,28 @@ class T4LightningModule(pl.LightningModule):
         if datamodule is not None and hasattr(datamodule, "set_epoch"):
             datamodule.set_epoch(self.current_epoch)
 
-    def log_pdm_components(self, components: torch.Tensor, prefix: str = "train") -> None:
-        """Log the six PDM components of a scored batch.
-
-        Worth logging separately rather than only the aggregate: the aggregate
-        can improve while the scorer's proposal ranking collapses, because the
-        trajectory generator is improving at the same time.  Which component
-        moved is what distinguishes the two.
-
-        :param components: ``[..., 6]`` in :data:`PDM_COMPONENT_ORDER`.
-        :param prefix: metric name prefix.
-        """
+    def log_pdm_components(
+        self,
+        components: torch.Tensor,
+        metric_names: tuple[str, ...],
+        prefix: str = "train",
+    ) -> None:
+        """Log only the metrics selected on the scorer."""
         if not self.log_component_metrics:
             return
+        if components.shape[-1] != len(metric_names):
+            raise ValueError(
+                "proposal metric tensor width does not match metric_names: "
+                f"{components.shape[-1]} != {len(metric_names)}"
+            )
         flat = components.reshape(-1, components.shape[-1]).float()
-        for index, name in enumerate(PDM_COMPONENT_ORDER):
-            self.log(f"{prefix}/pdm/{name}", flat[:, index].mean(), on_step=False, on_epoch=True)
+        for index, name in enumerate(metric_names):
+            values = flat[:, index]
+            values = values[torch.isfinite(values)]
+            if values.numel():
+                self.log(
+                    f"{prefix}/pdm/{name}",
+                    values.mean(),
+                    on_step=False,
+                    on_epoch=True,
+                )

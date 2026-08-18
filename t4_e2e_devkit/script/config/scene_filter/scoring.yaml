@@ -1,6 +1,5 @@
-# Scoring reads a 5 s observation window, while an uncached PDM-Closed
-# reference also bridges 8 s of recorded boxes. Keep the full source window so
-# cache-free scoring has the same valid-center boundary as cache generation.
+# Scoring uses the complete recorded future window so every metric has the same
+# valid-center boundary.
 num_history_frames: 31
 num_future_frames: 80
 frame_interval: 5

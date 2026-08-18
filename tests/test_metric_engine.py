@@ -64,13 +64,11 @@ def test_default_engine_registers_all_metric_families_without_mixing_them():
         "open_loop",
         "closed_loop",
         "pdm",
-        "tier4",
     }
     assert [definition.name for definition in engine.definitions] == [
         "open_loop",
         "closed_loop",
         "pdm",
-        "tier4",
     ]
 
 

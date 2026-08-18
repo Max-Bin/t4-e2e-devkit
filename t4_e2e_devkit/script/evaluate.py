@@ -27,10 +27,12 @@ from t4_e2e_devkit.evaluation.batch import (
 from t4_e2e_devkit.evaluation.batch import config_fingerprint as make_config_fingerprint
 from t4_e2e_devkit.evaluation.distributed import WorkerManifest
 from t4_e2e_devkit.evaluation.executor import rank_indices
+from t4_e2e_devkit.evaluation.navsim_score import resolve_navsim_metric_names
 from t4_e2e_devkit.evaluation.worker_pool import WorkerPool, WorkerResult, WorkerTask
 
 logger = logging.getLogger(__name__)
-FAMILIES = ("open_loop", "pdm", "tier4")
+FAMILIES = ("open_loop", "pdm")
+PDM_VERSIONS = ("navsim-v1", "navsim-v2")
 
 
 def evaluate_data_list(
@@ -55,7 +57,9 @@ def evaluate_data_list(
     resume: bool = True,
     run_id: str | None = None,
     reader_config: Optional[Mapping[str, Any]] = None,
-    pdm_reference_cache_dir: str | Path | None = None,
+    pdm_version: str = "navsim-v2",
+    pdm_metric_names: Optional[Sequence[str]] = None,
+    pdm_previous_interval_frames: int | None = None,
 ) -> dict[str, dict[str, float]]:
     """Evaluate one deterministic rank of a T4 data list.
 
@@ -72,6 +76,18 @@ def evaluate_data_list(
     unknown = sorted(set(family_names) - set(FAMILIES))
     if not family_names or unknown:
         raise ValueError(f"families must be a non-empty subset of {FAMILIES}; got {unknown or family_names}")
+    pdm_version = str(pdm_version).lower()
+    if pdm_version not in PDM_VERSIONS:
+        raise ValueError(f"pdm_version must be one of {PDM_VERSIONS}")
+    pdm_metric_names = (
+        None
+        if pdm_metric_names is None
+        else resolve_navsim_metric_names(
+            pdm_version.removeprefix("navsim-"), pdm_metric_names
+        )
+    )
+    if pdm_previous_interval_frames is not None and pdm_previous_interval_frames < 1:
+        raise ValueError("pdm_previous_interval_frames must be positive")
     backend = _resolve_backend(backend)
     if workers < 1 or max_retries < 0:
         raise ValueError("workers must be positive and max_retries must be non-negative")
@@ -84,10 +100,6 @@ def evaluate_data_list(
     rank_indices(len(selected), rank, world_size)
 
     resolved_reader_config = dict(reader_config or {})
-    if pdm_reference_cache_dir is not None:
-        resolved_reader_config["t4_pdm_reference_cache_dir"] = str(pdm_reference_cache_dir)
-    if backend == "cpu":
-        resolved_reader_config.setdefault("t4_pdm_reference_device", "cpu")
     checkpoint_digest = _file_digest(checkpoint_path)
     data_digest = fingerprint(list(selected.rows))
 
@@ -114,6 +126,9 @@ def evaluate_data_list(
         "workers": int(workers),
         "worker_backend": worker_backend,
         "max_retries": int(max_retries),
+        "pdm_version": pdm_version,
+        "pdm_metric_names": None if pdm_metric_names is None else list(pdm_metric_names),
+        "pdm_previous_interval_frames": pdm_previous_interval_frames,
     }
     base_config = dict(config)
     if run_id is None:
@@ -152,6 +167,9 @@ def evaluate_data_list(
         str(selected.root),
         family_names,
         resolved_reader_config,
+        pdm_version,
+        pdm_metric_names,
+        pdm_previous_interval_frames,
     )
     tasks = [
         WorkerTask(
@@ -270,15 +288,20 @@ def _evaluate_one(
     root: str,
     families: Sequence[str],
     reader_config: Mapping[str, Any],
+    pdm_version: str,
+    pdm_metric_names: Optional[Sequence[str]],
+    pdm_previous_interval_frames: int | None,
     scene: str,
     center: int,
 ) -> dict[str, Mapping[str, float]]:
     import torch
 
     from t4_e2e_devkit.dataset.window import T4WindowBuilder
+    from t4_e2e_devkit.evaluation.navsim_score import (
+        T4NavSimScorer,
+        T4NavSimScorerConfig,
+    )
     from t4_e2e_devkit.evaluation.open_loop import compute_open_loop_metrics
-    from t4_e2e_devkit.evaluation.pdm_score import T4PDMScorer
-    from t4_e2e_devkit.evaluation.tier4_metrics import compute_tier4_metrics
 
     agent = build_agent(agent_name, **dict(agent_params))
     agent.initialize()
@@ -295,23 +318,58 @@ def _evaluate_one(
     )
     try:
         window = builder.build(int(center))
-        with torch.inference_mode():
-            trajectory = (
-                agent.compute_trajectory_from_scene(window)
-                if getattr(agent, "requires_scene", False)
-                else agent.compute_trajectory(window.get_agent_input())
-            )
+        def predict(value):
+            with torch.inference_mode():
+                return (
+                    agent.compute_trajectory_from_scene(value)
+                    if getattr(agent, "requires_scene", False)
+                    else agent.compute_trajectory(value.get_agent_input())
+                )
+
+        trajectory = predict(window)
         values: dict[str, Mapping[str, float]] = {}
         if "open_loop" in families:
             values["open_loop"] = compute_open_loop_metrics(
                 trajectory, window, token=window.scene_metadata.token
             ).values
         if "pdm" in families:
-            scorer_device = active_device if backend == "gpu" else "cpu"
-            result = T4PDMScorer(backend=backend, device=scorer_device).score(trajectory, window)
-            values["pdm"] = {**result.components, "score": float(result.score)}
-        if "tier4" in families:
-            values["tier4"] = compute_tier4_metrics(trajectory, window)
+            previous_trajectory = None
+            previous_window = None
+            previous_builder = None
+            previous_interval = pdm_previous_interval_frames or int(
+                scene_filter_values["frame_interval"]
+            )
+            previous_center = int(center) - previous_interval
+            first_valid_center = int(scene_filter_values["num_history_frames"]) - 1
+            if pdm_version == "navsim-v2" and previous_center >= first_valid_center:
+                previous_builder = T4WindowBuilder(
+                    Path(root) / scene,
+                    root,
+                    sensor_config=agent.get_sensor_config(),
+                    scene_filter=SceneFilter(**dict(scene_filter_values)),
+                    reader_config=dict(reader_config),
+                )
+                previous_window = previous_builder.build(previous_center)
+                previous_trajectory = predict(previous_window)
+            try:
+                scorer = T4NavSimScorer(
+                    T4NavSimScorerConfig(
+                        version=pdm_version.removeprefix("navsim-"),
+                        backend=backend,
+                        device=active_device,
+                        metric_names=pdm_metric_names,
+                    )
+                )
+                result = scorer.score(
+                    trajectory,
+                    window,
+                    previous_trajectory=previous_trajectory,
+                    previous_scene=previous_window,
+                )
+                values["pdm"] = {"pdm_version": pdm_version, **result.values}
+            finally:
+                if previous_builder is not None:
+                    previous_builder.close()
         return values
     finally:
         builder.close()
@@ -373,7 +431,14 @@ def main(argv: Optional[list[str]] = None) -> int:
     parser.add_argument("--output-dir", required=True)
     parser.add_argument("--families", nargs="+", default=list(FAMILIES), choices=FAMILIES)
     parser.add_argument("--checkpoint", default=None)
-    parser.add_argument("--pdm-reference-cache-dir", default=None)
+    parser.add_argument("--pdm-version", choices=PDM_VERSIONS, default="navsim-v2")
+    parser.add_argument(
+        "--pdm-metrics",
+        nargs="+",
+        default=None,
+        help="PDM metrics to compute and report; omit to use all metrics for the version",
+    )
+    parser.add_argument("--pdm-previous-interval-frames", type=int, default=None)
     parser.add_argument("--maps-root", default=None)
     parser.add_argument("--scene-tags-root", default=None)
     parser.add_argument("--attach-map-ids", action="store_true")
@@ -432,7 +497,6 @@ def main(argv: Optional[list[str]] = None) -> int:
         families=args.families,
         checkpoint_path=args.checkpoint,
         reader_config=reader_config,
-        pdm_reference_cache_dir=args.pdm_reference_cache_dir,
         backend=args.backend,
         device=args.device,
         history_frames=args.history_frames,
@@ -446,6 +510,9 @@ def main(argv: Optional[list[str]] = None) -> int:
         max_retries=args.max_retries,
         resume=not args.no_resume,
         run_id=args.run_id,
+        pdm_version=args.pdm_version,
+        pdm_metric_names=args.pdm_metrics,
+        pdm_previous_interval_frames=args.pdm_previous_interval_frames,
     )
     print(json.dumps(report, indent=2, sort_keys=True))
     return 0 if report.get("run", {}).get("num_failed", 0.0) == 0.0 else 1

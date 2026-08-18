@@ -31,7 +31,7 @@ the ignored `results/` or `reports/` directories.
 | `common` | arrays, enums, geometry, shared constants and the optional T4 map facade |
 | `dataset` | scene reading, window assembly and data lists |
 | `agents` | sensor declarations, builders and agent registry |
-| `evaluation` | independent open-loop, PDM, T4 and closed-loop metric families |
+| `evaluation` | independent open-loop, PDM and closed-loop metric families |
 | `planning` | simulation and training integration |
 | `visualization` | BEV, camera overlays and reports |
 | `script` | CLI and configuration entry points |
@@ -106,9 +106,8 @@ sampling and aggregation. No layer should duplicate another layer's constants.
 
 ## Vendored code
 
-Several geometry and scoring modules are maintained from validated upstream
-implementations. Headers identify a source and commit only when that source is
-public; private inputs use a generic generated header. Run:
+Several geometry modules are maintained from validated public upstream
+implementations. Generated headers record their source and revision. Run:
 
 ```bash
 uv run python tools/vendor.py status
@@ -120,9 +119,9 @@ adapter or wrapper; re-run the vendor tool when the upstream source changes.
 
 ## Shared constants
 
-`common/constants.py` defines the source rate, window sizes, tensor dimensions,
-camera profiles and default PDM weights. The default trajectory is 8 poses at
-0.5 s for compatibility, not a requirement on every agent.
+`common/constants.py` defines the source rate, window sizes, tensor dimensions
+and camera profiles. The default trajectory is 8 poses at
+0.5 s, but trajectory sampling remains explicit per agent.
 
 The raw future window (80 frames at 10 Hz), the PDM observation window (50
 future frames) and the 4-second scoring horizon are separate contracts. A

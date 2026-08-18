@@ -54,12 +54,7 @@ def run_training(cfg: DictConfig) -> str:
 
     visualize = cfg.get("visualize")
     score_training_batches = bool(cfg.get("score_training_batches"))
-    needs_pdm_reference = score_training_batches or bool(
-        visualize
-        and visualize.get("enabled")
-        and cfg.get("val_data_list")
-    )
-    reader_config = build_reader_config(cfg, load_oracle_targets=needs_pdm_reference)
+    reader_config = build_reader_config(cfg)
 
     datamodule = T4DataModule(
         agent=agent,
@@ -73,12 +68,9 @@ def run_training(cfg: DictConfig) -> str:
 
     scorer = None
     if score_training_batches:
-        from t4_e2e_devkit.evaluation.pdm_score import T4PDMScorer
+        from t4_e2e_devkit.evaluation.navsim_score import T4NavSimScorer
 
-        scorer = T4PDMScorer(
-            backend=cfg.get("backend") or "gpu",
-            config=build_scorer_config(cfg),
-        )
+        scorer = T4NavSimScorer(build_scorer_config(cfg))
 
     module = T4LightningModule(agent=agent, scorer=scorer)
 

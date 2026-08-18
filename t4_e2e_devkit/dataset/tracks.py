@@ -5,8 +5,7 @@ each object's polygon, its track token for the already-collided dedup, and its
 type for the at-fault classification.  T4 stores the same information as two
 arrays.  This module is the seam.
 
-The label mapping is deliberately NOT defined here.  It is imported from the
-reference judge, which is the single source of truth::
+The label mapping is defined here at the T4 annotation boundary::
 
     0 car, 1 truck, 2 bus  ->  VEHICLE
     3 bicycle              ->  BICYCLE
@@ -39,11 +38,16 @@ from t4_e2e_devkit.common.actor_state.tracked_objects_types import (
     TrackedObjectType,
 )
 from t4_e2e_devkit.common.enums import T4BoxIndex
-from t4_e2e_devkit.evaluation.reference.pdm_closed import _LABEL_TO_TYPE
 from t4_e2e_devkit.planning.simulation.observation.observation_type import DetectionsTracks
 
-#: T4 class id -> tracked object type, re-exported from the reference judge.
-T4_LABEL_TO_TRACKED_OBJECT_TYPE: Dict[int, TrackedObjectType] = dict(_LABEL_TO_TYPE)
+#: T4 class id -> tracked object type.
+T4_LABEL_TO_TRACKED_OBJECT_TYPE: Dict[int, TrackedObjectType] = {
+    0: TrackedObjectType.VEHICLE,
+    1: TrackedObjectType.VEHICLE,
+    2: TrackedObjectType.VEHICLE,
+    3: TrackedObjectType.BICYCLE,
+    4: TrackedObjectType.PEDESTRIAN,
+}
 
 #: Types that get an ``Agent`` (with velocity) rather than a ``StaticObject``.
 AGENT_TRACK_TYPES = frozenset(AGENT_TYPES)
@@ -66,8 +70,8 @@ def tracked_object_type_for_label(label: int) -> TrackedObjectType:
         raise ValueError(
             f"unmapped T4 track label {label}; known labels are "
             f"{sorted(T4_LABEL_TO_TRACKED_OBJECT_TYPE)}. If the converter's class "
-            "vocabulary changed, update _LABEL_TO_TYPE in "
-            "evaluation/reference/pdm_closed.py with a deliberate agent/static choice."
+            "vocabulary changed, update T4_LABEL_TO_TRACKED_OBJECT_TYPE with "
+            "a deliberate agent/static choice."
         ) from None
 
 

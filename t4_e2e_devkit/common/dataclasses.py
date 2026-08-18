@@ -15,16 +15,14 @@ import numpy as np
 import numpy.typing as npt
 
 from t4_e2e_devkit.common.constants import (
-    DEFAULT_PDM_WEIGHTS,
     EGO_SHAPE_IDX_LENGTH,
     EGO_SHAPE_IDX_WHEEL_BASE,
     EGO_SHAPE_IDX_WIDTH,
     FUTURE_STRIDE,
-    PDM_COMPONENT_ORDER,
-    T4_DEFAULT_CAMERA_NAMES,
     T4_INTERVAL_LENGTH,
     T4_LIDAR_POINT_DIM,
     T4_SUPPORTED_CAMERA_NAMES,
+    T4_WIDE5_CAMERA_NAMES,
     TRAJECTORY_INTERVAL,
     TRAJECTORY_POSES,
 )
@@ -190,7 +188,7 @@ class Cameras:
         return np.stack(images, axis=0)
 
     @classmethod
-    def empty(cls, names: Sequence[str] = T4_DEFAULT_CAMERA_NAMES) -> Cameras:
+    def empty(cls, names: Sequence[str] = T4_WIDE5_CAMERA_NAMES) -> Cameras:
         """:return: a register with every named slot present but unfilled."""
         return cls({name: Camera(name=name) for name in names})
 
@@ -627,10 +625,10 @@ class Trajectory:
 def validate_trajectory_sampling(sampling: TrajectorySampling) -> TrajectorySampling:
     """Validate and return one complete, positive trajectory grid.
 
-    ``TrajectorySampling`` is a vendored compatibility type with optional
-    constructor fields.  The devkit's public trajectory boundary is stricter:
-    every field must be resolved, finite and positive, and the three values
-    must describe the same horizon.
+    The vendored ``TrajectorySampling`` accepts optional constructor fields;
+    the devkit's public trajectory boundary is stricter: every field must be
+    resolved, finite and positive, and the three values must describe the same
+    horizon.
     """
 
     if not isinstance(sampling, TrajectorySampling):
@@ -717,11 +715,6 @@ class T4Scene:
     # Includes the current frame at index 0, followed by recorded future frames.
     future_annotations: Optional[List[Annotations]] = None
     goal_pose: Optional[npt.NDArray[np.float32]] = None  # [4] x, y, cos, sin
-    pdm_progress: Optional[float] = None  # PDM-Closed reference progress
-    # The PDM-Closed path that earned that progress, [51, 3] (x, y, heading) in
-    # the centre frame -- PDM simulates from a rear axle at the origin, so it
-    # needs no transform. Present when reference loading is requested.
-    pdm_reference_poses: Optional[npt.NDArray[np.float32]] = None
 
     @property
     def current_frame_index(self) -> int:
@@ -748,28 +741,6 @@ class T4Scene:
                 np.asarray(frame.ego_status.ego_pose, dtype=np.float32)
                 for frame in self.frames[: self.current_frame_index + 1]
             ]
-        )
-
-    def get_pdm_reference_trajectory(self) -> Optional[Trajectory]:
-        """The PDM-Closed reference path, as a trajectory.
-
-        This is the ego-progress denominator's own path -- what the rule-based
-        planner did on this window. Drawing it beside a model's plan is how an EP
-        of 0.5 becomes legible: it says the model travelled half as far as
-        PDM-Closed managed, and shows where the two diverged.
-
-        :return: the reference trajectory, or ``None`` when reference loading is disabled.
-        """
-        if self.pdm_reference_poses is None:
-            return None
-        poses = np.asarray(self.pdm_reference_poses, dtype=np.float32)
-        # The cached path includes its origin; a Trajectory does not.
-        poses = poses[1:] if len(poses) > 1 else poses
-        return Trajectory(
-            poses=poses,
-            trajectory_sampling=TrajectorySampling(
-                num_poses=len(poses), interval_length=T4_INTERVAL_LENGTH
-            ),
         )
 
     def get_agent_input(self) -> T4AgentInput:
@@ -961,7 +932,7 @@ class SensorConfig:
         :param lidar: whether to decode the current LiDAR sweep.
         :return: sensor configuration dataclass.
         """
-        names = T4_DEFAULT_CAMERA_NAMES if camera_names is None else camera_names
+        names = T4_WIDE5_CAMERA_NAMES if camera_names is None else camera_names
         return cls(
             cameras={name: [-1] for name in names},
             lidar=[-1] if lidar else False,
@@ -975,7 +946,7 @@ class SensorConfig:
         :param camera_names: cameras to decode; the wide-five profile by default.
         :return: every named camera and LiDAR at every history step.
         """
-        names = T4_DEFAULT_CAMERA_NAMES if camera_names is None else camera_names
+        names = T4_WIDE5_CAMERA_NAMES if camera_names is None else camera_names
         return cls(cameras={name: True for name in names}, lidar=True)
 
 
@@ -1010,143 +981,3 @@ class SceneFilter:
     def num_frames(self) -> int:
         """:return: total frames spanned by one window."""
         return self.num_history_frames + self.num_future_frames
-
-
-# --------------------------------------------------------------------------- #
-# Results
-# --------------------------------------------------------------------------- #
-
-
-@dataclass
-class PDMResults:
-    """One window's PDM score and its components.
-
-    The multiplicative terms gate a weighted average of the rest, so a collision
-    or drivable-area violation zeroes the score regardless of the other terms::
-
-        PDMS = NC * DAC * (5*EP + 5*TTC + 2*Comfort + 0*DDC) / 12
-
-    ``tier4_metrics`` is retained as an optional per-window compatibility
-    field.  The canonical family-separated report aggregates it through
-    :func:`t4_e2e_devkit.evaluation.tier4_metrics.aggregate_tier4_metrics`;
-    T4 terms never alter this PDM result or its aggregate.
-    """
-
-    no_at_fault_collisions: float
-    drivable_area_compliance: float
-    driving_direction_compliance: float
-    time_to_collision_within_bound: float
-    ego_progress: float
-    comfort: float
-    score: float
-
-    token: Optional[str] = None
-    tier4_metrics: Dict[str, float] = field(default_factory=dict)
-
-    @property
-    def components(self) -> Dict[str, float]:
-        """:return: the six PDM components keyed by their short names."""
-        return dict(
-            zip(
-                PDM_COMPONENT_ORDER,
-                (
-                    self.no_at_fault_collisions,
-                    self.drivable_area_compliance,
-                    self.driving_direction_compliance,
-                    self.time_to_collision_within_bound,
-                    self.ego_progress,
-                    self.comfort,
-                ),
-                strict=True,
-            )
-        )
-
-    @classmethod
-    def from_components(
-        cls,
-        components: Sequence[float],
-        score: Optional[float] = None,
-        token: Optional[str] = None,
-        weights: Sequence[float] = DEFAULT_PDM_WEIGHTS,
-        tier4_metrics: Optional[Dict[str, float]] = None,
-    ) -> PDMResults:
-        """Build from a ``[nc, dac, ddc, ttc, ep, comfort]`` vector.
-
-        :param components: the six components, in :data:`PDM_COMPONENT_ORDER`.
-        :param score: aggregate; recomputed from ``weights`` when omitted.
-        :param token: identifier of the scored window.
-        :param weights: scoring profile; defaults to :data:`DEFAULT_PDM_WEIGHTS`.
-        :param tier4_metrics: optional compatibility copy of T4 metrics.
-        :return: results dataclass.
-        """
-        if len(components) != len(PDM_COMPONENT_ORDER):
-            raise ValueError(
-                f"expected {len(PDM_COMPONENT_ORDER)} components {PDM_COMPONENT_ORDER}; "
-                f"got {len(components)}"
-            )
-        nc, dac, ddc, ttc, ep, comfort = (float(value) for value in components)
-        if score is None:
-            score = aggregate_pdm_score((nc, dac, ddc, ttc, ep, comfort), weights)
-        return cls(
-            no_at_fault_collisions=nc,
-            drivable_area_compliance=dac,
-            driving_direction_compliance=ddc,
-            time_to_collision_within_bound=ttc,
-            ego_progress=ep,
-            comfort=comfort,
-            score=float(score),
-            token=token,
-            tier4_metrics=dict(tier4_metrics or {}),
-        )
-
-
-def aggregate_pdm_score(
-    components: Sequence[float],
-    weights: Sequence[float] = DEFAULT_PDM_WEIGHTS,
-) -> float:
-    """Aggregate six PDM components into one score.
-
-    NC and DAC are multiplicative gates; DDC, TTC, EP and Comfort enter a
-    weighted average normalised by the sum of their weights.  Keeping the
-    aggregation here prevents the GPU scorer, CPU judge and reports from drifting.
-
-    :param components: ``[nc, dac, ddc, ttc, ep, comfort]``.
-    :param weights: the same six positions; the NC and DAC entries are ignored
-        because those terms multiply rather than average.
-    :return: the aggregate score.
-    """
-    nc, dac, ddc, ttc, ep, comfort = (float(value) for value in components)
-    _, _, w_ddc, w_ttc, w_ep, w_comfort = (float(value) for value in weights)
-
-    multiplicative = nc * dac
-    weight_sum = w_ddc + w_ttc + w_ep + w_comfort
-    if weight_sum <= 0.0:
-        return multiplicative
-    weighted = (w_ddc * ddc + w_ttc * ttc + w_ep * ep + w_comfort * comfort) / weight_sum
-    return multiplicative * weighted
-
-
-def aggregate_pdm_results(results: Sequence[PDMResults]) -> Dict[str, float]:
-    """Average only the PDM family over per-window results.
-
-    :param results: per-window scores.
-    :return: mean of every PDM component and aggregate, plus the count.
-    """
-    if not results:
-        return {"num_scenes": 0.0}
-    report: Dict[str, float] = {"num_scenes": float(len(results))}
-    for name in PDM_COMPONENT_ORDER:
-        report[name] = float(np.mean([result.components[name] for result in results]))
-    report["score"] = float(np.mean([result.score for result in results]))
-    return report
-
-
-def aggregate_results(results: Sequence[PDMResults]) -> Dict[str, float]:
-    """Backward-compatible name for :func:`aggregate_pdm_results`.
-
-    This function intentionally returns PDM fields only.  Use
-    :func:`t4_e2e_devkit.evaluation.report.aggregate_evaluation` when more than
-    one metric family is needed.
-    """
-
-    return aggregate_pdm_results(results)

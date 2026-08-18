@@ -6,8 +6,6 @@ import json
 import pytest
 import torch
 
-from t4_e2e_devkit.common.constants import PDM_COMPONENT_ORDER
-from t4_e2e_devkit.common.dataclasses import aggregate_pdm_score
 from t4_e2e_devkit.evaluation.batch import (
     RUN_FORMAT,
     RUN_VERSION,
@@ -25,7 +23,18 @@ from t4_e2e_devkit.visualization.dashboard import write_results_dashboard
 
 
 def _pdm_values(*, score: float | None = None) -> dict[str, float]:
-    values = dict.fromkeys(PDM_COMPONENT_ORDER, 0.8)
+    values = {
+        "pdm_version": "navsim-v2",
+        "no_at_fault_collisions": 0.8,
+        "drivable_area_compliance": 0.8,
+        "driving_direction_compliance": 0.8,
+        "traffic_light_compliance": 0.8,
+        "ego_progress": 0.8,
+        "time_to_collision_within_bound": 0.8,
+        "lane_keeping": 0.8,
+        "history_comfort": 0.8,
+        "score": 0.8,
+    }
     if score is not None:
         values["score"] = score
     return values
@@ -40,12 +49,12 @@ def test_auto_backend_uses_cuda_when_available_and_cpu_explicitly():
             _resolve_backend("gpu")
 
 
-def test_batch_aggregation_recomputes_missing_score_and_removes_stale_csv(tmp_path):
+def test_batch_aggregation_keeps_pdm_version_and_removes_stale_csv(tmp_path):
     record = {"token": "scene@10", "families": {"pdm": _pdm_values()}}
 
     report = aggregate_records([record])
 
-    assert report["pdm"]["score"] == pytest.approx(aggregate_pdm_score([0.8] * 6))
+    assert report["pdm"]["score"] == pytest.approx(0.8)
 
     (tmp_path / "open_loop.csv").write_text("stale\n", encoding="utf-8")
     write_family_csv(tmp_path, [record])

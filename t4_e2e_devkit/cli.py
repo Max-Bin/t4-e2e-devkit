@@ -4,7 +4,6 @@ One place to discover everything the devkit can do::
 
     t4e2e agents                 # what agents are registered
     t4e2e datalist ...           # build a data list
-    t4e2e pdm-cache ...          # build the PDM-Closed reference cache
     t4e2e train ...              # train an agent (hydra)
     t4e2e score ...              # score an agent (hydra)
     t4e2e evaluate-closed-loop ... # evaluate sensor-replay closed loop
@@ -228,10 +227,8 @@ def _cmd_check(argv: Sequence[str]) -> int:
         "t4_e2e_devkit.dataset.window",
         "t4_e2e_devkit.dataset.dataset",
         "t4_e2e_devkit.agents",
-        "t4_e2e_devkit.evaluation.pdm_score",
+        "t4_e2e_devkit.evaluation.navsim_score",
         "t4_e2e_devkit.evaluation.gpu.oracle",
-        "t4_e2e_devkit.evaluation.reference.pdm_closed",
-        "t4_e2e_devkit.evaluation.tier4_metrics",
         "t4_e2e_devkit.planning.simulation.closed_loop",
         "t4_e2e_devkit.planning.simulation.planner.pdm_planner.scoring.pdm_scorer",
         "t4_e2e_devkit.visualization",
@@ -296,12 +293,6 @@ def _cmd_datalist(argv: Sequence[str]) -> int:
     from t4_e2e_devkit.script.build_datalist import main as build_main
 
     return build_main(list(argv))
-
-
-def _cmd_pdm_cache(argv: Sequence[str]) -> int:
-    from t4_e2e_devkit.script.build_pdm_cache import main as cache_main
-
-    return cache_main(list(argv))
 
 
 def _cmd_evaluate_closed_loop(argv: Sequence[str]) -> int:
@@ -407,7 +398,6 @@ def _cmd_report_closed_loop(argv: Sequence[str]) -> int:
 COMMANDS = {
     "agents": (_cmd_agents, "list registered agents"),
     "datalist": (_cmd_datalist, "build a data list from a T4 root"),
-    "pdm-cache": (_cmd_pdm_cache, "build the PDM-Closed reference cache"),
     "evaluate": (_cmd_evaluate, "evaluate independent metric families"),
     "merge-evaluation": (_cmd_merge_evaluation, "merge evaluation rank reports"),
     "evaluate-closed-loop": (

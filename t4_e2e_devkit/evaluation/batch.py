@@ -10,14 +10,11 @@ from __future__ import annotations
 import csv
 import hashlib
 import json
-import math
 import os
 import tempfile
 from pathlib import Path
 from typing import Any, Iterable, Mapping, Sequence
 
-from t4_e2e_devkit.common.constants import PDM_COMPONENT_ORDER
-from t4_e2e_devkit.common.dataclasses import PDMResults
 from t4_e2e_devkit.evaluation.open_loop import OpenLoopMetrics
 from t4_e2e_devkit.evaluation.report import aggregate_evaluation
 
@@ -108,26 +105,26 @@ def aggregate_records(
 ) -> dict[str, dict[str, float]]:
     """Aggregate records while keeping metric families independent."""
 
-    pdm: list[PDMResults] = []
+    pdm: list[Mapping[str, float]] = []
+    pdm_version: str | None = None
     open_loop: list[OpenLoopMetrics] = []
-    tier4: list[Mapping[str, float]] = []
     for record in records:
         families = record.get("families", {})
         if not isinstance(families, Mapping):
             continue
         values = families.get("pdm")
-        if isinstance(values, Mapping) and all(name in values for name in PDM_COMPONENT_ORDER):
-            score = None
-            if values.get("score") is not None:
-                candidate = float(values["score"])
-                if math.isfinite(candidate):
-                    score = candidate
-            pdm.append(
-                PDMResults.from_components(
-                    [float(values[name]) for name in PDM_COMPONENT_ORDER],
-                    score=score,
-                    token=str(record["token"]),
+        if isinstance(values, Mapping) and "pdm_version" in values:
+            version = str(values["pdm_version"]).lower()
+            if version not in {"navsim-v1", "navsim-v2"}:
+                raise ValueError(f"unknown PDM version {version!r}")
+            if pdm_version is not None and version != pdm_version:
+                raise ValueError(
+                    "cannot aggregate different PDM versions in one report: "
+                    f"{pdm_version!r} and {version!r}"
                 )
+            pdm_version = version
+            pdm.append(
+                {str(key): value for key, value in values.items() if key != "pdm_version"}
             )
         values = families.get("open_loop")
         if isinstance(values, Mapping):
@@ -147,13 +144,9 @@ def aggregate_records(
                         token=str(record["token"]),
                     )
                 )
-        values = families.get("tier4")
-        if isinstance(values, Mapping):
-            tier4.append({str(key): float(value) for key, value in values.items()})
     return aggregate_evaluation(
         pdm=pdm,
         open_loop=open_loop,
-        tier4=tier4,
         num_failed=int(num_failed),
     )
 
@@ -179,7 +172,7 @@ def write_family_csv(directory: str | Path, records: Iterable[Mapping[str, Any]]
             writer.writerow(["token", *names])
             for token, values in rows:
                 writer.writerow([token, *[values.get(name, "") for name in names]])
-    for family in {"open_loop", "pdm", "tier4", "closed_loop"} - set(grouped):
+    for family in {"open_loop", "pdm", "closed_loop"} - set(grouped):
         stale = output / f"{family}.csv"
         if stale.is_file():
             stale.unlink()

@@ -8,7 +8,6 @@ scenario index.
 
 from __future__ import annotations
 
-import inspect
 from abc import ABC, abstractmethod
 from collections import deque
 from dataclasses import dataclass, field
@@ -481,10 +480,20 @@ class SimulationCallback(Protocol):
     def on_simulation_step(self, sample: SimulationHistorySample) -> None:
         ...
 
-    def on_simulation_end(self, history: SimulationHistory) -> None:
+    def on_simulation_end(
+        self,
+        setup: "SimulationSetup",
+        planner: Any,
+        history: SimulationHistory,
+    ) -> None:
         ...
 
-    def on_simulation_error(self, error: BaseException) -> None:
+    def on_simulation_error(
+        self,
+        setup: "SimulationSetup",
+        planner: Any,
+        error: BaseException,
+    ) -> None:
         ...
 
 
@@ -671,11 +680,11 @@ class SimulationRunner:
                 )
                 history_buffer.append(next_state, next_observation)
             for callback in callbacks:
-                _call_hook(callback, "on_simulation_end", (setup, planner, history), (history,))
+                _call_hook(callback, "on_simulation_end", (setup, planner, history))
             return history
         except BaseException as error:
             for callback in callbacks:
-                _call_hook(callback, "on_simulation_error", (setup, planner, error), (error,))
+                _call_hook(callback, "on_simulation_error", (setup, planner, error))
             raise
 
 
@@ -747,31 +756,15 @@ def _current_controller_state(controller: Any) -> Any:
     raise RuntimeError("ego controller did not expose a state after update_state")
 
 
-def _call_optional(callback: Any, name: str, *args: Any) -> None:
-    function = getattr(callback, name, None)
-    if function is not None:
-        function(*args)
-
-
 def _call_hook(
     callback: Any,
     name: str,
     args: tuple[Any, ...],
-    legacy_args: tuple[Any, ...] = (),
 ) -> None:
-    """Call a rich lifecycle hook while accepting the old one-argument form."""
+    """Call an optional lifecycle hook with its declared arguments."""
 
     function = getattr(callback, name, None)
     if function is None:
-        return
-    for candidate in (args, legacy_args):
-        if not candidate:
-            continue
-        try:
-            inspect.signature(function).bind(*candidate)
-        except (TypeError, ValueError):
-            continue
-        function(*candidate)
         return
     function(*args)
 

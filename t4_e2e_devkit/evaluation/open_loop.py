@@ -1,9 +1,9 @@
 """Open-loop trajectory metrics.
 
 Open-loop metrics compare a planned ego trajectory with the recorded future.
-They are intentionally independent from PDM-Score and the T4 safety family:
-trajectory fidelity answers whether the plan follows the driver, while the
-other families answer whether it is safe or physically usable.
+They are intentionally independent from PDM metrics and closed-loop metrics:
+trajectory fidelity answers whether the plan follows the recorded future,
+while the other families answer whether it is safe or physically usable.
 """
 
 from __future__ import annotations

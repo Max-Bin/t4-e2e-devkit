@@ -10,8 +10,8 @@ inside a simulation loop.  It can also wrap a learned T4 model through
 :class:`t4_e2e_devkit.agents.AbstractT4Agent`, which consumes a
 :class:`~t4_e2e_devkit.common.dataclasses.T4AgentInput` and returns a
 :class:`~t4_e2e_devkit.common.dataclasses.Trajectory`.  The two meet in the
-evaluation stack: PDM-Closed produces the ego-progress denominator that the
-agent's trajectory is scored against.
+evaluation stack scores the agent trajectory against the recorded scene
+future and the configured metric family.
 """
 
 from __future__ import annotations

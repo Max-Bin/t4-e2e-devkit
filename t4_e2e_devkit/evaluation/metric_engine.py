@@ -15,8 +15,7 @@ from t4_e2e_devkit.evaluation.metric_cache import MetricCache
 from t4_e2e_devkit.planning.simulation.closed_loop import T4ClosedLoopResult
 
 if TYPE_CHECKING:
-    from t4_e2e_devkit.evaluation.pdm_score import T4PDMScorer
-    from t4_e2e_devkit.evaluation.tier4_metrics import RewardConfig
+    from t4_e2e_devkit.evaluation.navsim_score import T4NavSimScorer
 
 
 @dataclass(frozen=True)
@@ -25,12 +24,14 @@ class MetricContext:
 
     token: str
     prediction: Optional[Trajectory] = None
+    previous_prediction: Optional[Trajectory] = None
+    pdm_version: Optional[str] = None
+    pdm_metric_names: Optional[Sequence[str]] = None
     ground_truth: Optional[Trajectory | T4Scene] = None
+    previous_scene: Optional[T4Scene] = None
     scene: Optional[T4Scene] = None
     closed_loop: Optional[T4ClosedLoopResult] = None
     metadata: Mapping[str, Any] = field(default_factory=dict)
-    pdm_scorer: Optional["T4PDMScorer"] = None
-    tier4_config: Optional["RewardConfig"] = None
 
     @property
     def signature(self) -> str:
@@ -45,11 +46,13 @@ class MetricContext:
         payload = {
             "metadata": _jsonable(dict(self.metadata)),
             "prediction": _trajectory_signature(self.prediction),
+            "previous_prediction": _trajectory_signature(self.previous_prediction),
+            "pdm_version": self.pdm_version,
+            "pdm_metric_names": self.pdm_metric_names,
             "ground_truth": _ground_truth_signature(self.ground_truth),
             "scene": _scene_signature(self.scene),
+            "previous_scene": _scene_signature(self.previous_scene),
             "closed_loop": _closed_loop_signature(self.closed_loop),
-            "pdm_scorer": _scorer_signature(self.pdm_scorer),
-            "tier4_config": _jsonable(self.tier4_config),
         }
         encoded = json.dumps(payload, sort_keys=True, default=str).encode("utf-8")
         return hashlib.sha256(encoded).hexdigest()
@@ -293,10 +296,10 @@ class MetricEngine:
     def t4_default(cls) -> "MetricEngine":
         """Create an engine with all built-in, independent metric families.
 
-        PDM and T4 metrics are registered as adapters rather than folded into
+        PDM metrics are registered as one adapter rather than folded into
         open-loop or closed-loop records.  Callers can select one family with
-        ``families=...`` and can inject a configured scorer through
-        :class:`MetricContext` when the default CPU scorer is not appropriate.
+        ``families=...`` and can inject a configured NavSim scorer when the
+        default CPU scorer is not appropriate.
         """
         return cls.with_t4_metrics()
 
@@ -304,22 +307,22 @@ class MetricEngine:
     def with_t4_metrics(
         cls,
         *,
-        pdm_scorer: Optional["T4PDMScorer"] = None,
-        tier4_config: Optional["RewardConfig"] = None,
+        navsim_scorer: Optional["T4NavSimScorer"] = None,
+        pdm_version: str = "navsim-v2",
+        pdm_metric_names: Optional[Sequence[str]] = None,
         include_pdm: bool = True,
-        include_tier4: bool = True,
     ) -> "MetricEngine":
         """Build the standard engine with explicit family registration.
 
-        ``pdm_scorer`` is optional to keep construction cheap.  When the PDM
-        family is evaluated without a scorer, one CPU scorer is created lazily.
-        This means an open-loop-only run never initializes the PDM stack.
+        The NavSim scorer is optional to keep construction cheap. When the PDM
+        family is evaluated without one, it is created lazily. This means an
+        open-loop-only run never initializes the PDM stack.
         """
         from t4_e2e_devkit.evaluation.closed_loop import compute_closed_loop_metrics
         from t4_e2e_devkit.evaluation.open_loop import compute_open_loop_metrics
 
         engine = cls()
-        scorer = pdm_scorer
+        navsim_metric_scorer = navsim_scorer
 
         def open_loop(context: MetricContext) -> Mapping[str, float]:
             if context.prediction is None or context.ground_truth is None:
@@ -339,7 +342,7 @@ class MetricEngine:
             ).values
 
         def pdm(context: MetricContext) -> Mapping[str, float]:
-            nonlocal scorer
+            nonlocal navsim_metric_scorer
             if context.prediction is None:
                 raise ValueError("pdm requires prediction")
             scene = context.scene
@@ -347,31 +350,34 @@ class MetricEngine:
                 scene = context.ground_truth
             if scene is None:
                 raise ValueError("pdm requires scene or a T4Scene ground_truth")
-            active_scorer = context.pdm_scorer
-            if active_scorer is None:
-                if scorer is None:
-                    from t4_e2e_devkit.evaluation.pdm_score import T4PDMScorer
+            version = str(context.pdm_version or pdm_version).lower()
+            if version not in {"navsim-v1", "navsim-v2"}:
+                raise ValueError("pdm_version must be navsim-v1 or navsim-v2")
+            if navsim_metric_scorer is None:
+                from t4_e2e_devkit.evaluation.navsim_score import (
+                    T4NavSimScorer,
+                    T4NavSimScorerConfig,
+                )
 
-                    scorer = T4PDMScorer(backend="cpu")
-                active_scorer = scorer
-            result = active_scorer.score(context.prediction, scene)
-            return {**result.components, "score": float(result.score)}
-
-        def tier4(context: MetricContext) -> Mapping[str, float]:
-            if context.prediction is None:
-                raise ValueError("tier4 requires prediction")
-            scene = context.scene
-            if scene is None and isinstance(context.ground_truth, T4Scene):
-                scene = context.ground_truth
-            if scene is None:
-                raise ValueError("tier4 requires scene or a T4Scene ground_truth")
-            from t4_e2e_devkit.evaluation.tier4_metrics import compute_tier4_metrics
-
-            return compute_tier4_metrics(
-                context.prediction,
-                scene,
-                config=context.tier4_config or tier4_config,
+                navsim_metric_scorer = T4NavSimScorer(
+                    T4NavSimScorerConfig(
+                        version=version.removeprefix("navsim-"),
+                        metric_names=pdm_metric_names,
+                    )
+                )
+            selected_metric_names = (
+                context.pdm_metric_names
+                if context.pdm_metric_names is not None
+                else pdm_metric_names
             )
+            score_kwargs = {
+                "previous_trajectory": context.previous_prediction,
+                "previous_scene": context.previous_scene,
+            }
+            if selected_metric_names is not None:
+                score_kwargs["metric_names"] = selected_metric_names
+            result = navsim_metric_scorer.score(context.prediction, scene, **score_kwargs)
+            return result.values
 
         engine.register(
             MetricDefinition(
@@ -396,19 +402,6 @@ class MetricEngine:
                     "pdm",
                     pdm,
                     family="pdm",
-                    supports=lambda context: context.prediction is not None
-                    and (
-                        context.scene is not None
-                        or isinstance(context.ground_truth, T4Scene)
-                    ),
-                )
-            )
-        if include_tier4:
-            engine.register(
-                MetricDefinition(
-                    "tier4",
-                    tier4,
-                    family="tier4",
                     supports=lambda context: context.prediction is not None
                     and (
                         context.scene is not None
@@ -501,7 +494,6 @@ def _scene_signature(scene: Optional[T4Scene]) -> Any:
         "map": map_signature,
         "annotations": annotation_signature,
         "goal_pose": _array_signature(scene.goal_pose),
-        "pdm_progress": scene.pdm_progress,
     }
 
 
@@ -516,17 +508,6 @@ def _closed_loop_signature(result: Optional[T4ClosedLoopResult]) -> Any:
         "collision_steps": _jsonable(result.collision_steps),
         "timeout": result.timeout,
         "termination_reason": result.termination_reason,
-    }
-
-
-def _scorer_signature(scorer: Any) -> Any:
-    if scorer is None:
-        return None
-    return {
-        "type": f"{type(scorer).__module__}.{type(scorer).__qualname__}",
-        "backend": getattr(scorer, "backend", None),
-        "device": str(getattr(scorer, "device", "")),
-        "config": _jsonable(getattr(scorer, "config", None)),
     }
 
 

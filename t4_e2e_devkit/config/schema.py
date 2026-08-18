@@ -26,7 +26,7 @@ class DatasetConfig:
 
 @dataclass(frozen=True)
 class EvaluationConfig:
-    families: tuple[str, ...] = ("open_loop", "pdm", "tier4")
+    families: tuple[str, ...] = ("open_loop", "pdm")
     backend: str = "auto"
     device: Optional[str] = None
     checkpoint: Optional[str] = None
@@ -34,7 +34,7 @@ class EvaluationConfig:
     max_retries: int = 0
 
     def __post_init__(self) -> None:
-        allowed = {"open_loop", "pdm", "tier4"}
+        allowed = {"open_loop", "pdm"}
         families = tuple(dict.fromkeys(str(item) for item in self.families))
         if not families or not set(families).issubset(allowed):
             raise ValueError(f"evaluation.families must be a non-empty subset of {sorted(allowed)}")

@@ -84,7 +84,6 @@ class MetricCatalog:
             PDMMetricBuilder,
             ProgressMetricBuilder,
             StopLineViolationMetricBuilder,
-            T4SafetyMetricBuilder,
             TrafficLightMetricBuilder,
             TTCMetricBuilder,
         )
@@ -94,7 +93,6 @@ class MetricCatalog:
                 MetricSpec("open_loop", "tracking", "trajectory", OpenLoopMetricBuilder),
                 MetricSpec("closed_loop", "simulation", "rollout", ClosedLoopMetricBuilder),
                 MetricSpec("pdm", "pdm", "planning", PDMMetricBuilder),
-                MetricSpec("t4_safety", "safety", "safety", T4SafetyMetricBuilder),
                 MetricSpec("comfort", "comfort", "comfort", ComfortMetricBuilder),
                 MetricSpec("progress", "progress", "progress", ProgressMetricBuilder),
                 MetricSpec("collision", "safety", "safety", CollisionMetricBuilder),

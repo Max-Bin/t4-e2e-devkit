@@ -1,11 +1,5 @@
-"""Independent PDM, open-loop, T4 and closed-loop evaluation families."""
+"""Independent PDM, open-loop and closed-loop evaluation families."""
 
-from t4_e2e_devkit.common.dataclasses import (
-    PDMResults,
-    aggregate_pdm_results,
-    aggregate_pdm_score,
-    aggregate_results,
-)
 from t4_e2e_devkit.evaluation.batch import (
     aggregate_records,
     fingerprint,
@@ -49,7 +43,6 @@ from t4_e2e_devkit.evaluation.metric_api import (
     MetricCallback,
     MetricResult,
     MetricStatistic,
-    MetricStatistics,
     MetricTimeSeries,
 )
 from t4_e2e_devkit.evaluation.metric_builders import (
@@ -58,11 +51,11 @@ from t4_e2e_devkit.evaluation.metric_builders import (
     ComfortMetricBuilder,
     DrivableAreaMetricBuilder,
     MappingMetricBuilder,
+    NavSimMetricBuilder,
     OpenLoopMetricBuilder,
     PDMMetricBuilder,
     ProgressMetricBuilder,
     StopLineViolationMetricBuilder,
-    T4SafetyMetricBuilder,
     TrafficLightMetricBuilder,
     TTCMetricBuilder,
 )
@@ -103,6 +96,23 @@ from t4_e2e_devkit.evaluation.metrics import (
     WithinBoundMetricBase,
     YawRateMetric,
 )
+from t4_e2e_devkit.evaluation.navsim_score import (
+    NAVSIM_COMPONENT_METRICS,
+    NAVSIM_METRICS,
+    NAVSIM_V1_METRICS,
+    NAVSIM_V2_METRICS,
+    NAVSIM_VERSIONS,
+    NavSimFollowup,
+    NavSimScoringError,
+    T4NavSimProposalResult,
+    T4NavSimResult,
+    T4NavSimScorer,
+    T4NavSimScorerConfig,
+    aggregate_navsim_results,
+    aggregate_pseudo_closed_loop,
+    required_navsim_metric_names,
+    resolve_navsim_metric_names,
+)
 from t4_e2e_devkit.evaluation.open_loop import (
     OpenLoopMetricConfig,
     OpenLoopMetrics,
@@ -114,12 +124,17 @@ from t4_e2e_devkit.evaluation.orchestration import (
     LocalDistributedLauncher,
     RankLaunch,
 )
-from t4_e2e_devkit.evaluation.pdm_score import (
-    BACKENDS,
-    ScoringError,
-    T4PDMScorer,
-    T4PDMScorerConfig,
-    compare_backends,
+from t4_e2e_devkit.evaluation.prediction_manifest import (
+    PREDICTION_MANIFEST_FORMAT,
+    PREDICTION_MANIFEST_VERSION,
+    PredictionManifest,
+    PredictionManifestWriter,
+    PredictionRecord,
+    data_list_sha256,
+    file_sha256,
+    load_prediction_manifest,
+    trajectory_to_poses,
+    validate_prediction_keys,
 )
 from t4_e2e_devkit.evaluation.report import aggregate_evaluation
 from t4_e2e_devkit.evaluation.submission import (
@@ -127,7 +142,6 @@ from t4_e2e_devkit.evaluation.submission import (
     SubmissionValidation,
     TrajectorySubmission,
 )
-from t4_e2e_devkit.evaluation.tier4_metrics import RewardConfig, aggregate_tier4_metrics
 from t4_e2e_devkit.evaluation.worker_pool import (
     WorkerPool,
     WorkerResources,
@@ -137,7 +151,6 @@ from t4_e2e_devkit.evaluation.worker_pool import (
 )
 
 __all__ = [
-    "BACKENDS",
     "AbstractMetricBuilder",
     "CallableMetricBuilder",
     "ClosedLoopMetricBuilder",
@@ -152,19 +165,29 @@ __all__ = [
     "FileBackedBarrier",
     "DrivableAreaMetricBuilder",
     "MappingMetricBuilder",
+    "NavSimMetricBuilder",
+    "NAVSIM_COMPONENT_METRICS",
+    "NAVSIM_METRICS",
+    "NAVSIM_V1_METRICS",
+    "NAVSIM_V2_METRICS",
+    "NAVSIM_VERSIONS",
+    "NavSimFollowup",
+    "NavSimScoringError",
+    "T4NavSimResult",
+    "T4NavSimProposalResult",
+    "T4NavSimScorer",
+    "T4NavSimScorerConfig",
+    "aggregate_navsim_results",
+    "aggregate_pseudo_closed_loop",
+    "required_navsim_metric_names",
+    "resolve_navsim_metric_names",
     "OpenLoopMetricConfig",
     "OpenLoopMetrics",
     "OpenLoopMetricBuilder",
     "PDMMetricBuilder",
-    "PDMResults",
     "ProgressMetricBuilder",
-    "RewardConfig",
-    "ScoringError",
     "SubmissionPackage",
     "SubmissionValidation",
-    "T4PDMScorer",
-    "T4PDMScorerConfig",
-    "T4SafetyMetricBuilder",
     "TTCMetricBuilder",
     "TrajectorySubmission",
     "TrafficLightMetricBuilder",
@@ -172,13 +195,18 @@ __all__ = [
     "aggregate_closed_loop_metrics",
     "aggregate_evaluation",
     "aggregate_open_loop_metrics",
-    "aggregate_pdm_results",
-    "aggregate_pdm_score",
-    "aggregate_results",
-    "aggregate_tier4_metrics",
-    "compare_backends",
     "compute_closed_loop_metrics",
     "compute_open_loop_metrics",
+    "PREDICTION_MANIFEST_FORMAT",
+    "PREDICTION_MANIFEST_VERSION",
+    "PredictionManifest",
+    "PredictionManifestWriter",
+    "PredictionRecord",
+    "data_list_sha256",
+    "file_sha256",
+    "load_prediction_manifest",
+    "trajectory_to_poses",
+    "validate_prediction_keys",
     "load_rollout_artifact",
     "load_rollout_metrics",
     "MetricCache",
@@ -194,7 +222,6 @@ __all__ = [
     "MetricReport",
     "MetricResult",
     "MetricStatistic",
-    "MetricStatistics",
     "MetricTimeSeries",
     "LocalExecutor",
     "LocalDistributedLauncher",

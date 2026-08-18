@@ -5,7 +5,7 @@ planning on T4 scenes.
 
 ```text
 scene files -> T4Scene -> T4AgentInput -> agent -> Trajectory -> scorer
-                 \-> target builders                         \-> PDMResults
+                 \-> target builders                         \-> PDM metrics
 ```
 
 The reader, contract and scorer are shared. An agent contributes only its
@@ -48,8 +48,16 @@ uv run t4e2e datalist \
 uv run t4e2e evaluate lists/val.json \
   --agent my_agent \
   --output-dir results/evaluation \
-  --families open_loop pdm tier4 \
+  --families open_loop pdm \
+  --pdm-version navsim-v2 \
   --backend auto
+
+# Report only the fields needed by a run.
+uv run t4e2e evaluate lists/val.json \
+  --agent my_agent \
+  --output-dir results/evaluation/selected \
+  --families pdm \
+  --pdm-metrics ego_progress score
 
 # Launch and merge all ranks on one machine.
 uv run t4e2e distribute evaluate lists/val.json \
@@ -57,11 +65,10 @@ uv run t4e2e distribute evaluate lists/val.json \
   --output-dir results/evaluation \
   --world-size 4 --workers 1 --worker-backend serial
 
-# Optional offline PDM reference cache and metadata sources
+# Optional map and scene-tag metadata sources
 uv run t4e2e evaluate lists/val.json \
   --agent my_agent \
   --output-dir results/evaluation \
-  --pdm-reference-cache-dir /path/to/pdm-cache \
   --maps-root /path/to/maps \
   --scene-tags-root /path/to/scene-tags \
   --attach-map-ids
@@ -96,7 +103,7 @@ uv run t4e2e submit lists/val.json \
 uv run t4e2e score-submission lists/val.json \
   --submission-dir results/submission \
   --output-dir results/submission-score \
-  --families open_loop pdm tier4
+  --families open_loop pdm
 
 uv run t4e2e distribute score-submission lists/val.json \
   --submission-dir results/submission \
@@ -126,9 +133,9 @@ completed rank directories, and invokes the merger only after the declared
 rank set succeeds. The optional `ray` worker backend is loaded lazily when the
 internal environment provides it. Constructor options can be passed through
 `--agent-params-json` or the typed configuration's `agent_params` mapping.
-
-Build a reference cache only when an offline CPU run needs one. GPU evaluation
-can generate the reference online.
+PDM outputs accept an ordered metric subset through `--pdm-metrics` or
+`scorer.metric_names`; `score` computes its dependencies without adding them to
+the output fields.
 
 ## Trajectory contract
 

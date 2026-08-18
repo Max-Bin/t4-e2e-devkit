@@ -18,7 +18,14 @@ def test_subtree_check_matches_path_components(tmp_path):
 
     path = tmp_path / "bad.json"
     path.write_text(
-        json.dumps({"root": str(tmp_path), "rows": [["prd_jt_backup/x", 1]]}),
+        json.dumps(
+            {
+                "format": "t4-e2e.datalist",
+                "version": 1,
+                "root": str(tmp_path),
+                "rows": [["prd_jt_backup/x", 1]],
+            }
+        ),
         encoding="utf-8",
     )
     with pytest.raises(ValueError, match="annotation-free"):
@@ -29,7 +36,14 @@ def test_absolute_and_traversal_rows_are_rejected(tmp_path):
     for scene in ("/tmp/prd_jt/scene", "prd_jt/../../outside"):
         path = tmp_path / "bad.json"
         path.write_text(
-            json.dumps({"root": str(tmp_path), "rows": [[scene, 1]]}),
+            json.dumps(
+                {
+                    "format": "t4-e2e.datalist",
+                    "version": 1,
+                    "root": str(tmp_path),
+                    "rows": [[scene, 1]],
+                }
+            ),
             encoding="utf-8",
         )
         with pytest.raises(ValueError, match="relative"):

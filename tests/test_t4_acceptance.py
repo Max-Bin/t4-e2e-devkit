@@ -66,9 +66,9 @@ def test_real_t4_window_satisfies_scenario_sensor_and_metric_contracts():
                 ground_truth=scene,
                 scene=scene,
             ),
-            families=("open_loop", "tier4"),
+            families=("open_loop",),
         )
         assert open_loop.num_poses == 8
-        assert {record.family for record in report.records} == {"open_loop", "tier4"}
+        assert {record.family for record in report.records} == {"open_loop"}
     finally:
         builder.close()

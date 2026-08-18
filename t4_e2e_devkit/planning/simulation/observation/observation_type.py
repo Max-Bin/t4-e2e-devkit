@@ -99,11 +99,6 @@ class DetectionsTracks(AbstractObservation):
     tracked_objects: TrackedObjects
 
 
-@dataclass
-class TracksObservation(DetectionsTracks):
-    """NuPlan-compatible alias for a tracked-object observation."""
-
-
 __all__ = [
     "AbstractObservation",
     "CameraChannel",
@@ -112,5 +107,4 @@ __all__ = [
     "Observation",
     "SensorChannel",
     "Sensors",
-    "TracksObservation",
 ]

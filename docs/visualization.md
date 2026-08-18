@@ -28,6 +28,22 @@ builder.close()
 `prediction` may be a `Trajectory` on any valid time grid. Visualization keeps
 that grid; it does not convert every trajectory to a common point count.
 
+## Training callback
+
+All model adapters can use the same logger-neutral callback:
+
+```python
+from t4_e2e_devkit.planning.training import PredictionVizCallback
+
+callback = PredictionVizCallback(n_samples=4, every_n_epochs=1)
+```
+
+During validation, append dictionaries with `gt_xy` and `pred_xy` to
+`pl_module._viz_samples`; `lanes` and `route` are optional. The callback calls
+the trainer logger's generic `log_image` method and never imports a specific
+tracking service. The adapter owns only the logger wiring; the BEV renderer,
+colors and map interpretation stay shared.
+
 ## Available views
 
 | function | purpose |
@@ -37,7 +53,7 @@ that grid; it does not convert every trajectory to a common point count.
 | `plot_cameras_frame` | camera images with optional boxes, LiDAR and trajectory projection |
 | `plot_bev_with_score` | BEV beside PDM components |
 | `plot_agent_comparison` | several trajectories on one scene |
-| `reference_trajectories` | recorded history, GT and available reference paths |
+| `reference_trajectories` | recorded history and GT |
 
 The rich synthetic sample is [bev_sample.png](assets/bev_sample.png). It
 contains lane boundaries, route lanes, signal states, road markings, agents of
@@ -59,7 +75,6 @@ MPLCONFIGDIR=/tmp/mplconfig uv run python docs/examples/generate_bev_sample.py
 | `history` | recorded ego history | dashed line |
 | `ground_truth` | recorded ego future | time-coloured points |
 | `prediction` | planned trajectory | solid line |
-| `pdm_reference` | optional reference path | dash-dot line |
 
 Each role has a distinct style. A custom trajectory can be supplied as a
 `Trajectory` or an `[N, 2+]` array; arrays use the default plotting interval and

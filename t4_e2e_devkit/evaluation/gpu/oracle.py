@@ -13,26 +13,15 @@
 # that wraps this one.
 # =============================================================================
 
-"""Full GPU scorer: simulate -> six components -> PDMS aggregate.
+"""GPU geometry and core PDM components shared by the metric implementations.
 
-One call scores every proposal of one window on the device; the caller may
-batch the simulation across windows (it only needs initial states) and loop
-the window-specific metric stage.  Mirrors ``PDMScorer.score_proposals`` and
-``_aggregate_scores`` exactly:
-
-* multiplicative gate  = NC x DAC
-* weighted average     = (5*EP + 5*TTC + 2*Comfort + 0*DDC) / 12
-* EP normalization     = raw progress gated by the multiplicative score and
-  normalised against max(raw, cached PDM-Closed reference progress), the
-  reference's exact three-branch rule
-* component order      = [NC, DAC, DDC, TTC, EP, Comfort]
+The metric stage is batched on the selected device; version-specific terms are
+combined by the public scorer.
 """
 
 from __future__ import annotations
 
 from dataclasses import dataclass
-
-import os
 
 import torch
 
@@ -71,7 +60,6 @@ class WindowScene:
     tracks: TrackTensors
     map_tensors: MapTensors
     centerline: TorchPolyline
-    pdm_progress: torch.Tensor  # scalar tensor
     route_present: bool = True
 
 
@@ -82,7 +70,7 @@ def score_simulated_window(
     interval_length: float,
     progress_distance_threshold: float = 5.0,
     normalize_progress_across_proposals: bool = False,
-) -> tuple[torch.Tensor, torch.Tensor]:  # total [P], components [P, 6]
+) -> tuple[torch.Tensor, torch.Tensor]:  # total [P], core components [P, 6]
     n_proposals, n_time = simulated.shape[:2]
     dtype, device = simulated.dtype, simulated.device
 
@@ -183,13 +171,14 @@ def score_simulated_window(
 
     raw_progress = raw_progress_torch(centers, scene.centerline)
 
-    # _aggregate_scores, verbatim.
+    # Core gates and weighted terms; version-specific aggregation is owned by
+    # the public scorer.
     multiplicative = nc.to(dtype) * dac
     raw = raw_progress * multiplicative
     if normalize_progress_across_proposals:
         max_raw = raw.max()
     else:
-        max_raw = torch.maximum(raw, scene.pdm_progress.to(dtype))
+        max_raw = raw.max()
     fast = max_raw > progress_distance_threshold
     ep = torch.ones_like(raw)
     ep = torch.where(fast, raw / torch.where(fast, max_raw, torch.ones_like(max_raw)), ep)
@@ -200,231 +189,3 @@ def score_simulated_window(
 
     components = torch.stack([nc.to(dtype), dac, ddc, ttc, ep, comfort], dim=-1)
     return total, components
-
-
-def score_payloads_gpu(
-    payloads: list[tuple],
-    device: torch.device,
-    dtype: torch.dtype = torch.float32,
-    scene_arrays: list | None = None,
-) -> tuple:
-    """Score a batch of whole-window payloads on the device.
-
-    Payload layout is ``T4OracleEvaluator.score_submit``'s ``_payload``.  The
-    simulation is batched across every window (initial states broadcast per
-    window); the metric stage runs per window because map/track sizes differ.
-    Returns numpy ``(scores [B, P], components [B, P, 6], dense [B, P, 40, 4])``
-    with the same dense-proposal definition as the CPU path.
-    """
-
-    import numpy as np
-
-    from t4_e2e_devkit.evaluation.gpu.scene import (
-        extract_map_tensors,
-        extract_track_tensors,
-    )
-    from t4_e2e_devkit.evaluation.gpu.simulate import (
-        TorchSimulatorConfig,
-        simulate_proposals_torch,
-    )
-    import t4_e2e_devkit.evaluation.oracle_evaluator as EV
-    from t4_e2e_devkit.evaluation.reference.pdm_closed import (
-        _build_drivable_map,
-        _route_path,
-        make_t4_vehicle_and_ego,
-    )
-    from t4_e2e_devkit.planning.simulation.planner.pdm_planner.utils.pdm_array_representation import (
-        ego_state_to_state_array,
-    )
-    from t4_e2e_devkit.planning.simulation.trajectory.trajectory_sampling import (
-        TrajectorySampling,
-    )
-
-    model_sampling = TrajectorySampling(
-        num_poses=EV.MODEL_NUM_POSES, interval_length=EV.MODEL_DT
-    )
-    proposal_sampling = TrajectorySampling(
-        num_poses=EV.PDM_PROPOSAL_NUM_POSES, interval_length=EV.PDM_INTERVAL_S
-    )
-    n_time = proposal_sampling.num_poses + 1
-
-    # Oracle labels were judged at strict fp32; a trainer that enables TF32
-    # for the model must not silently degrade them (~1e-3 relative on
-    # matmuls).  Save/restore around the whole scoring pass.
-    tf32_matmul = torch.backends.cuda.matmul.allow_tf32
-    tf32_cudnn = torch.backends.cudnn.allow_tf32
-    torch.backends.cuda.matmul.allow_tf32 = False
-    torch.backends.cudnn.allow_tf32 = False
-    try:
-        return _score_payloads_gpu_inner(
-            payloads, device, dtype, scene_arrays,
-            model_sampling, proposal_sampling, n_time,
-        )
-    finally:
-        torch.backends.cuda.matmul.allow_tf32 = tf32_matmul
-        torch.backends.cudnn.allow_tf32 = tf32_cudnn
-
-
-def _score_payloads_gpu_inner(
-    payloads, device, dtype, scene_arrays, model_sampling, proposal_sampling, n_time
-):
-    import numpy as np
-
-    import t4_e2e_devkit.evaluation.oracle_evaluator as EV
-    from t4_e2e_devkit.evaluation.gpu.proposals import proposal_states_fast
-    from t4_e2e_devkit.evaluation.gpu.scene import (
-        extract_map_tensors,
-        extract_track_tensors,
-        window_scene_from_arrays,
-    )
-    from t4_e2e_devkit.evaluation.gpu.simulate import (
-        TorchSimulatorConfig,
-        simulate_proposals_torch,
-    )
-    from t4_e2e_devkit.evaluation.reference.pdm_closed import (
-        _build_drivable_map,
-        _route_path,
-        make_t4_vehicle_and_ego,
-    )
-    from t4_e2e_devkit.planning.simulation.planner.pdm_planner.utils.pdm_array_representation import (
-        ego_state_to_state_array,
-    )
-
-    states_list, initial_list, scenes, vehicles = [], [], [], []
-    wheel_bases = set()
-    for window_index, payload in enumerate(payloads):
-        (proposals, ego_shape, control, lanes, route, polygons,
-         current_boxes, current_labels, future_boxes, future_labels,
-         pdm_progress, roadblock_buffer_m) = payload
-        vehicle, ego = make_t4_vehicle_and_ego(
-            ego_shape, control[:2], control[2:4],
-            steering=float(control[4]), yaw_rate=float(control[5]),
-        )
-        states = proposal_states_fast(
-            proposals,
-            ego,
-            EV.MODEL_DT,
-            EV.PDM_PROPOSAL_NUM_POSES,
-            EV.PDM_INTERVAL_S,
-        )
-        states_list.append(states)
-        initial_list.append(ego_state_to_state_array(ego))
-        wheel_bases.add(round(float(vehicle.wheel_base), 9))
-        vehicles.append(vehicle)
-
-        if scene_arrays is not None:
-            # The dataloader already ran the proposal-independent scene prep,
-            # overlapped with the previous training step.
-            tracks, map_tensors, centerline_polyline = window_scene_from_arrays(
-                scene_arrays[window_index], device, dtype
-            )
-            progress_value = (
-                pdm_progress.reshape(()).to(device=device, dtype=dtype)
-                if torch.is_tensor(pdm_progress)
-                else torch.tensor(float(pdm_progress), device=device, dtype=dtype)
-            )
-            scenes.append(
-                WindowScene(
-                    tracks=tracks,
-                    map_tensors=map_tensors,
-                    centerline=centerline_polyline,
-                    pdm_progress=progress_value,
-                )
-            )
-            continue
-
-        centerline, _ = _route_path(route)
-        drivable_map, route_lane_ids, _ = _build_drivable_map(
-            {"lanes": lanes, "route": route, "polygons": polygons},
-            roadblock_buffer_m=roadblock_buffer_m,
-        )
-        progress_value = (
-            pdm_progress.reshape(()).to(device=device, dtype=dtype)
-            if torch.is_tensor(pdm_progress)
-            else torch.tensor(float(pdm_progress), device=device, dtype=dtype)
-        )
-        scenes.append(
-            WindowScene(
-                tracks=extract_track_tensors(
-                    [current_boxes, *future_boxes],
-                    [current_labels, *future_labels],
-                    device, dtype,
-                ),
-                map_tensors=extract_map_tensors(
-                    drivable_map, route_lane_ids, device, dtype
-                ),
-                centerline=TorchPolyline(
-                    torch.from_numpy(
-                        np.ascontiguousarray(centerline._states_se2_array[:, :2])
-                    ).to(device=device, dtype=dtype)
-                ),
-                pdm_progress=progress_value,
-            )
-        )
-    if len(wheel_bases) != 1:
-        raise ValueError(f"mixed wheel bases in one batch: {wheel_bases}")
-
-    batch = len(payloads)
-    proposal_count = states_list[0].shape[0]
-    stacked_states = np.stack(states_list)[:, :, :n_time]  # [B, P, T, 11]
-    dense = np.stack(
-        (
-            np.stack(states_list)[:, :, 1:, 0],
-            np.stack(states_list)[:, :, 1:, 1],
-            np.cos(np.stack(states_list)[:, :, 1:, 2]),
-            np.sin(np.stack(states_list)[:, :, 1:, 2]),
-        ),
-        axis=-1,
-    )
-
-    proposal_states = torch.from_numpy(
-        np.ascontiguousarray(stacked_states.reshape(batch * proposal_count, n_time, 11))
-    ).to(device=device, dtype=dtype)
-    initial_states = (
-        torch.from_numpy(np.stack(initial_list))
-        .to(device=device, dtype=dtype)[:, None]
-        .expand(-1, proposal_count, -1)
-        .reshape(batch * proposal_count, -1)
-        .contiguous()
-    )
-    simulated_all = simulate_proposals_torch(
-        proposal_states,
-        initial_states,
-        TorchSimulatorConfig(
-            wheel_base=vehicles[0].wheel_base,
-            discretization_time=proposal_sampling.interval_length,
-        ),
-        # CUDA-graph replay of the rollout is 16 ms vs ~65 ms eager, but
-        # capture inside a DDP training process trips cuBLAS's lazy workspace
-        # allocation (cudaMalloc is illegal during capture).  Opt-in only;
-        # enabling it also requires CUBLAS_WORKSPACE_CONFIG=:4096:8 so the
-        # workspace is preallocated at handle init.
-        compile_rollout=device.type == "cuda"
-        and os.environ.get("T4E2E_ORACLE_ROLLOUT_GRAPH", "0").lower()
-        in ("1", "true", "yes"),
-    ).reshape(batch, proposal_count, n_time, 11)
-
-    # Per-window metric stages enqueue asynchronously; the single stack/cpu at
-    # the end is the only synchronization (the per-window .cpu() of the first
-    # version cost one round-trip per window).
-    totals, components_list = [], []
-    for index in range(batch):
-        total, components = score_simulated_window(
-            simulated_all[index],
-            scenes[index],
-            VehicleTensors(
-                half_length=vehicles[index].half_length,
-                half_width=vehicles[index].half_width,
-                rear_axle_to_center=vehicles[index].rear_axle_to_center,
-            ),
-            interval_length=proposal_sampling.interval_length,
-        )
-        totals.append(total)
-        components_list.append(components)
-    # Stay on the device: the consumer (score_wait) targets the proposals'
-    # device anyway, so a .cpu()/numpy round trip here would add a hard sync
-    # plus two copies of every score per step.
-    all_scores = torch.stack(totals).detach()
-    all_components = torch.stack(components_list).detach()
-
-    return all_scores, all_components, dense

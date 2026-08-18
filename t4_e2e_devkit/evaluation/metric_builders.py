@@ -171,11 +171,52 @@ class PDMMetricBuilder(MappingMetricBuilder):
         super().__init__("pdm", fields, **kwargs)
 
 
-class T4SafetyMetricBuilder(MappingMetricBuilder):
-    """Adapter for the independent T4 safety metric family."""
+class NavSimMetricBuilder(AbstractMetricBuilder):
+    """Compute PDM metrics from a scene-like history."""
 
-    def __init__(self, fields: Sequence[str] = ("safety_score",), **kwargs: Any) -> None:
-        super().__init__("t4_safety", fields, **kwargs)
+    def __init__(
+        self,
+        *,
+        version: str = "v2",
+        metric_names: Optional[Sequence[str]] = None,
+        scorer: Any = None,
+        name: str = "pdm",
+    ) -> None:
+        self._name = str(name)
+        self.version = str(version)
+        self.metric_names = None if metric_names is None else tuple(str(name) for name in metric_names)
+        self.scorer = scorer
+
+    @property
+    def name(self) -> str:
+        return self._name
+
+    def compute(self, history: Any, *, scenario_token: Optional[str] = None) -> MetricResult:
+        prediction = _resolve(history, "prediction")
+        scene = _resolve(history, "scene")
+        previous_prediction = _optional_resolve(history, "previous_prediction")
+        previous_scene = _optional_resolve(history, "previous_scene")
+        scorer = self.scorer
+        if scorer is None:
+            from t4_e2e_devkit.evaluation.navsim_score import (
+                T4NavSimScorer,
+                T4NavSimScorerConfig,
+            )
+
+            scorer = T4NavSimScorer(
+                T4NavSimScorerConfig(
+                    version=self.version,
+                    metric_names=self.metric_names,
+                )
+            )
+        score_kwargs = {
+            "previous_trajectory": previous_prediction,
+            "previous_scene": previous_scene,
+        }
+        if self.metric_names is not None:
+            score_kwargs["metric_names"] = self.metric_names
+        result = scorer.score(prediction, scene, **score_kwargs)
+        return _statistic_result(self.name, result.values, scenario_token=scenario_token)
 
 
 class ComfortMetricBuilder(MappingMetricBuilder):
@@ -229,17 +270,23 @@ def _resolve(value: Any, selector: Callable[[Any], Any] | str) -> Any:
     return getattr(value, selector)
 
 
+def _optional_resolve(value: Any, selector: str) -> Any:
+    if isinstance(value, Mapping):
+        return value.get(selector)
+    return getattr(value, selector, None)
+
+
 __all__ = [
     "ClosedLoopMetricBuilder",
     "CollisionMetricBuilder",
     "ComfortMetricBuilder",
     "DrivableAreaMetricBuilder",
     "MappingMetricBuilder",
+    "NavSimMetricBuilder",
     "OpenLoopMetricBuilder",
     "PDMMetricBuilder",
     "ProgressMetricBuilder",
     "StopLineViolationMetricBuilder",
-    "T4SafetyMetricBuilder",
     "TTCMetricBuilder",
     "TrafficLightMetricBuilder",
 ]

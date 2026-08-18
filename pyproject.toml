@@ -48,8 +48,8 @@ dev = [
 
 # uv-native development environment. The optional ``dev`` extra above stays
 # for pip users; this group is what ``uv sync``/``uv run`` consume. Matplotlib
-# and OpenCV are test dependencies because visualization and video-backed
-# camera paths are part of the public reader interface.
+# and OpenCV are test dependencies because visualization and video export are
+# part of the public interface.
 [dependency-groups]
 dev = [
     "pytest>=8.2,<9",
@@ -90,11 +90,8 @@ extend-exclude = [
     "t4_e2e_devkit/planning/simulation/planner/pdm_planner",
     "t4_e2e_devkit/evaluation/gpu",
     "t4_e2e_devkit/evaluation/reference",
-    "t4_e2e_devkit/evaluation/tier4_metrics",
     # Individually vendored files.
     "t4_e2e_devkit/dataset/scene.py",
-    "t4_e2e_devkit/evaluation/oracle_evaluator.py",
-    "t4_e2e_devkit/evaluation/ego_progress.py",
     "t4_e2e_devkit/planning/simulation/observation/idm_utils.py",
     "t4_e2e_devkit/planning/simulation/planner/transform_utils.py",
     "t4_e2e_devkit/planning/simulation/simulation_iteration.py",

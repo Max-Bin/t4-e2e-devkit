@@ -873,13 +873,11 @@ def add_lidar_to_bev_ax(ax, lidar: Lidar, config: Optional[Dict[str, Any]] = Non
     return ax
 
 
-def add_goal_to_bev_ax(ax, goal_pose: npt.NDArray[np.floating], view_range: float):
+def add_goal_to_bev_ax(ax, goal_pose: npt.NDArray[np.floating]):
     """Draw the blue goal-pose arrow used by the reference renderer.
 
     :param ax: target axes.
     :param goal_pose: ``[4]`` of ``(x, y, cos, sin)``.
-    :param view_range: retained for API compatibility; the source renderer does
-        not clip the goal arrow.
     :return: the axes.
     """
     if goal_pose is None:
@@ -887,7 +885,6 @@ def add_goal_to_bev_ax(ax, goal_pose: npt.NDArray[np.floating], view_range: floa
     goal = np.asarray(goal_pose, dtype=np.float64).reshape(-1)
     if goal.shape[0] < 4:
         return ax
-    del view_range
     goal_x, goal_y, goal_cos, goal_sin = goal[:4]
     ax.arrow(
         goal_x,

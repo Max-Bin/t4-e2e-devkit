@@ -110,15 +110,16 @@ can use `SensorConfig.build_no_sensors()`.
 components = scorer.score_proposals(
     proposals,                         # [B, N, P, 3]
     scenes,
+    metric_names=("ego_progress", "score"),
     trajectory_sampling=agent.trajectory_sampling,
 )
 ```
 
 The scorer adapts every proposal to its configured evaluation grid before
-scoring. A trajectory shorter than that grid is rejected. The result is a
-detached metric label for logging; it is not part of the differentiable agent
-loss. `score_batch` gets sampling directly from each `Trajectory`, so it does
-not need producer-specific configuration.
+scoring. A trajectory shorter than that grid is rejected. The result has a
+detached `.values` tensor and an explicit `.metric_names` column order; it is
+not part of the differentiable agent loss. `score_batch` gets sampling directly
+from each `Trajectory`, so it does not need producer-specific configuration.
 
 ## Oracles and deployment
 

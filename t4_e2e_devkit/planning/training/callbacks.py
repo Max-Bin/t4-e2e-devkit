@@ -47,8 +47,7 @@ class TrajectoryVizCallback(pl.Callback):
         :param every_n_epochs: render cadence.
         :param output_dir: also write PNGs here.
         :param mode: ``"bev"``, ``"cameras"`` or ``"summary"``.
-        :param reader_config: extra reader settings, e.g. an optional PDM cache,
-            so the reference path can be drawn.
+        :param reader_config: extra reader settings for scene decoding.
         :param max_failures: disable the callback after this many failed epochs.
         """
         super().__init__()

@@ -229,10 +229,16 @@ def load_data_list(path: str | Path, *, check_subtree: bool = True) -> DataList:
         raise ValueError(f"T4 data list must be a JSON object: {path}")
 
     declared = spec.get("format")
-    if declared is not None and declared != DATA_LIST_FORMAT:
+    if declared != DATA_LIST_FORMAT:
         raise ValueError(
             f"{path}: unknown data-list format {declared!r}; expected "
             f"{DATA_LIST_FORMAT!r}"
+        )
+    version = spec.get("version")
+    if version != DATA_LIST_VERSION:
+        raise ValueError(
+            f"{path}: unsupported data-list version {version!r}; expected "
+            f"{DATA_LIST_VERSION}"
         )
 
     root = Path(spec.get("root", "."))
@@ -241,10 +247,7 @@ def load_data_list(path: str | Path, *, check_subtree: bool = True) -> DataList:
 
     rows: List[Row] = []
     for row in spec.get("rows", []):
-        if isinstance(row, Mapping):
-            scene = row.get("scene", row.get("scene_dir", row.get("path")))
-            center = row.get("center", row.get("center_frame"))
-        elif isinstance(row, (list, tuple)) and len(row) == 2:
+        if isinstance(row, (list, tuple)) and len(row) == 2:
             scene, center = row
         else:
             raise ValueError(f"{path}: invalid data-list row: {row!r}")
