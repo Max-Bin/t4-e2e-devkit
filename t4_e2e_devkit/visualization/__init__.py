@@ -48,6 +48,14 @@ from t4_e2e_devkit.visualization.lidar import (
     prepare_lidar_pc,
     subsample_lidar_pc,
 )
+from t4_e2e_devkit.visualization.planning_video import (
+    FFmpegVideoWriter,
+    final_displacement_error,
+    front_camera_name,
+    manifest_trajectory,
+    render_planning_frame,
+    render_planning_video,
+)
 from t4_e2e_devkit.visualization.plots import (
     add_fixed_bev_legend,
     add_score_panel,
@@ -101,6 +109,13 @@ __all__ = [
     "get_lidar_pc_color",
     "prepare_lidar_pc",
     "subsample_lidar_pc",
+    # planning video
+    "FFmpegVideoWriter",
+    "final_displacement_error",
+    "front_camera_name",
+    "manifest_trajectory",
+    "render_planning_frame",
+    "render_planning_video",
     # plots
     "add_score_panel",
     "configure_bev_ax",

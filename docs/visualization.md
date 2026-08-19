@@ -87,6 +87,35 @@ Regenerate it from the repository root:
 MPLCONFIGDIR=/tmp/mplconfig uv run python docs/examples/generate_bev_sample.py
 ```
 
+## Planning videos
+
+`t4e2e visualize-video` renders one mp4 per scene: the BEV on the left and one
+camera view on the right, with the recorded future and any number of labelled
+prediction manifests overlaid in both panels. Frames are the data list's
+windows -- the same key space a prediction manifest covers -- so a video shows
+exactly what was scored:
+
+```bash
+uv run t4e2e visualize-video \
+  --data-list results/val.datalist.json \
+  --scene prd_jt/scene/date/time \
+  --manifest baseline=results/baseline/predictions.jsonl \
+  --manifest experiment=results/experiment/predictions.jsonl \
+  --out results/visualization/videos
+```
+
+Omit `--scene` to render every scene in the list, and omit `--manifest` for a
+ground-truth-only replay. Each model keeps one categorical colour in both
+panels, and the caption carries its full label with its 4 s displacement error.
+LiDAR follows the usual opt-in rule (`--no-lidar` skips it); a window without a
+sweep holds the previous one rather than strobing. Encoding streams through the
+`ffmpeg` binary, which must be on `PATH`.
+
+The Python API is `render_planning_video` over an iterable of windows; see
+[`examples/render_planning_video.py`](../examples/render_planning_video.py).
+Single frames come from `render_planning_frame`, which returns an RGB array
+like `render_prediction_bev`.
+
 ## Map and object layers
 
 The current frame uses ego coordinates (`x` forward, `y` left). The BEV renderer
