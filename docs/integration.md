@@ -196,6 +196,8 @@ callbacks.append(
         version="v2",
         metric_names=None,
         interval_seconds=0.5,
+        # Optional logger namespace; the default is "devkit".
+        log_prefix="devkit",
     )
 )
 ```
@@ -206,7 +208,8 @@ Lightning logger that implements `log_metrics`. It does not import a tracking
 client. The default logged keys are `devkit/pdms`,
 `devkit/nc`, `devkit/dac`, `devkit/ddc`, `devkit/tlc`, `devkit/ttc`,
 `devkit/ep`, `devkit/lk`, `devkit/comfort` and `devkit/ec` when those fields are
-available.
+available. A training repository can set `log_prefix="val"` to place the
+official score and all components alongside its ordinary `val/*` metrics.
 
 For validation images, use `PredictionVizCallback` and expose up to the
 configured number of samples in `module._viz_samples`. Each sample contains

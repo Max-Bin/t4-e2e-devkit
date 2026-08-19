@@ -54,6 +54,7 @@ class OfficialDevkitScoreCallback(pl.Callback):
         batch_size: int = 128,
         scene_cache_size: int | None = 0,
         compile_rollout: bool = False,
+        log_prefix: str = "devkit",
     ) -> None:
         super().__init__()
         if batch_size < 1:
@@ -70,6 +71,9 @@ class OfficialDevkitScoreCallback(pl.Callback):
         self.batch_size = int(batch_size)
         self.scene_cache_size = 0 if scene_cache_size is None else int(scene_cache_size)
         self.compile_rollout = bool(compile_rollout)
+        self.log_prefix = str(log_prefix).strip("/")
+        if not self.log_prefix:
+            raise ValueError("official devkit log_prefix must not be empty")
         self._active = False
 
     @staticmethod
@@ -310,9 +314,15 @@ class OfficialDevkitScoreCallback(pl.Callback):
         return merged
 
     @staticmethod
-    def _log_report(trainer, epoch: int, report: dict[str, Any]) -> None:
+    def _log_report(
+        trainer,
+        epoch: int,
+        report: dict[str, Any],
+        *,
+        log_prefix: str = "devkit",
+    ) -> None:
         payload = {
-            f"devkit/{REPORT_TO_LOG[key]}": float(report[key])
+            f"{log_prefix}/{REPORT_TO_LOG[key]}": float(report[key])
             for key in REPORT_TO_LOG
             if key in report and isinstance(report[key], (int, float)) and not isinstance(report[key], bool)
         }
@@ -379,7 +389,12 @@ class OfficialDevkitScoreCallback(pl.Callback):
                     else:
                         try:
                             report = self._merge_reports(epoch, world_size)
-                            self._log_report(trainer, epoch, report)
+                            self._log_report(
+                                trainer,
+                                epoch,
+                                report,
+                                log_prefix=self.log_prefix,
+                            )
                             self._write_status(complete, "ok")
                         except Exception as error:  # noqa: BLE001
                             LOG.exception("official report merge failed at epoch %d", epoch)
