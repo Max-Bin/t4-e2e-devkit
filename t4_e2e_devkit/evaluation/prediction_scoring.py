@@ -150,6 +150,7 @@ def score_prediction_manifest(
     shard_index: int | None = None,
     num_shards: int | None = None,
     scene_cache_size: int | None = 0,
+    compile_rollout: bool = False,
     write_per_window: bool = True,
 ) -> dict[str, Any]:
     """Score every selected manifest row and write ``aggregate.json``."""
@@ -208,6 +209,7 @@ def score_prediction_manifest(
             metric_names=metric_names,
             backend=backend,
             device=device,
+            compile_rollout=bool(compile_rollout),
         )
     )
 

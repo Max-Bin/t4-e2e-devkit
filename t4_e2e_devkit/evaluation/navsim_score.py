@@ -130,6 +130,9 @@ class T4NavSimScorerConfig:
     lane_keeping_deviation_m: float = 0.5
     lane_keeping_horizon_s: float = 2.0
     use_simulator: bool = True
+    # CUDA Graph capture is opt-in until a deployment validates numerical
+    # parity against eager simulation on its target driver and GPU.
+    compile_rollout: bool = False
     progress_distance_threshold: float = formulas.PROGRESS_DISTANCE_THRESHOLD
 
     def __post_init__(self) -> None:

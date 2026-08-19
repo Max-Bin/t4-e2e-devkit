@@ -42,6 +42,11 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
         help="open scene builders to retain; 0 disables the scene cache",
     )
     parser.add_argument(
+        "--compile-rollout",
+        action="store_true",
+        help="use CUDA Graph capture for the simulator rollout on the GPU backend",
+    )
+    parser.add_argument(
         "--no-per-window",
         action="store_true",
         help="write only aggregate.json, not per_window.csv",
@@ -63,6 +68,7 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
         shard_index=args.shard_index,
         num_shards=args.num_shards,
         scene_cache_size=args.scene_cache_size,
+        compile_rollout=args.compile_rollout,
         write_per_window=not args.no_per_window,
     )
     print(json.dumps(report, indent=2, sort_keys=True))

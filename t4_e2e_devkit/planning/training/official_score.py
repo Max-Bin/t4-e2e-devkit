@@ -53,6 +53,7 @@ class OfficialDevkitScoreCallback(pl.Callback):
         interval_seconds: float = 0.1,
         batch_size: int = 128,
         scene_cache_size: int | None = 0,
+        compile_rollout: bool = False,
     ) -> None:
         super().__init__()
         if batch_size < 1:
@@ -68,6 +69,7 @@ class OfficialDevkitScoreCallback(pl.Callback):
         self.interval_seconds = float(interval_seconds)
         self.batch_size = int(batch_size)
         self.scene_cache_size = 0 if scene_cache_size is None else int(scene_cache_size)
+        self.compile_rollout = bool(compile_rollout)
         self._active = False
 
     @staticmethod
@@ -255,6 +257,7 @@ class OfficialDevkitScoreCallback(pl.Callback):
             shard_index=rank,
             num_shards=world_size,
             scene_cache_size=self.scene_cache_size,
+            compile_rollout=self.compile_rollout,
             write_per_window=False,
         )
 

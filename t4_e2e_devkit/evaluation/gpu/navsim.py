@@ -474,7 +474,7 @@ def _simulate(
                     wheel_base=wheel_base,
                     discretization_time=float(config.interval_s),
                 ),
-                compile_rollout=False,
+                compile_rollout=bool(getattr(config, "compile_rollout", False)),
             ),
         )
     return simulated
