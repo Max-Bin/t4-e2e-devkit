@@ -7,6 +7,8 @@ is one frame short.  Every test in this file therefore reads the dataset.
 
 from __future__ import annotations
 
+import json
+
 import numpy as np
 import pytest
 
@@ -82,7 +84,15 @@ class TestTrajectoryHorizon:
         try:
             centers = builder.valid_centers()
             scene = builder.build(centers[len(centers) // 2])
-            with pytest.raises(ValueError, match="too few"):
+            # 10 frames is 1.0 s; the default contract asks for 8 poses at 0.5 s.
+            # Assert on the counts rather than on a wording: the refusal must say
+            # what was asked for and what the scene has, because a short window
+            # must never be padded or extrapolated into a full one, and "too few"
+            # alone does not tell the caller which end to fix.
+            with pytest.raises(
+                ValueError,
+                match=rf"cannot provide {C.TRAJECTORY_POSES} poses .*from 10 future frames",
+            ):
                 scene.get_future_trajectory()
         finally:
             builder.close()
@@ -246,7 +256,19 @@ class TestDataList:
             load_data_list(tmp_path / "bad.json")
 
     def test_empty_list_is_refused(self, tmp_path, t4_root):
-        (tmp_path / "empty.json").write_text('{"root": "/x", "rows": []}')
+        # Stamped from the constants, not spelled out: a hand-written header goes
+        # stale the moment the format or version moves, and then the header guard
+        # fires first and this test silently stops covering the empty-rows guard.
+        (tmp_path / "empty.json").write_text(
+            json.dumps(
+                {
+                    "format": C.DATA_LIST_FORMAT,
+                    "version": C.DATA_LIST_VERSION,
+                    "root": "/x",
+                    "rows": [],
+                }
+            )
+        )
         with pytest.raises(ValueError, match="no rows"):
             load_data_list(tmp_path / "empty.json")
 
