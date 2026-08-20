@@ -26,6 +26,7 @@ import os
 import struct
 import shutil
 import tempfile
+import threading
 from pathlib import Path
 from typing import Any, Dict, List, Mapping, Optional, Sequence, Tuple
 
@@ -728,8 +729,25 @@ def build_t4_frame_cache(
         raise
 
 
+#: Per-thread zstd decompressor cache for LiDAR frame decoding.
+_LIDAR_TLS = threading.local()
+
+
 class T4LidarPackReader:
-    """Random-access reader for T4 ``LIDAR_CONCAT.pack`` files."""
+    """Random-access reader for T4 ``LIDAR_CONCAT.pack`` files.
+
+    Two operational knobs come from the training loader this reader also
+    serves:
+
+    * Frame decompression reuses one ``ZstdDecompressor`` per reader thread
+      (``_thread_dctx``) instead of constructing one per frame — the reader
+      sits on the DataLoader hot path.
+    * ``T4E2E_PACK_READ_TIMEOUT`` (seconds, off by default) wraps each frame
+      read in a watchdog thread.  A filesystem that blocks inside ``pread``
+      otherwise hangs the worker with no diagnostic; the watchdog is opt-in
+      because creating and joining a thread per read is an avoidable cost on
+      a healthy filesystem.
+    """
 
     MAGIC = b"T4PACK\x00\x01"
 
@@ -755,8 +773,56 @@ class T4LidarPackReader:
                 f"{self.path}: unsupported LiDAR pack "
                 f"{index.get('format')}/{index.get('version')}"
             )
+        frames = index.get("frames")
+        if not isinstance(frames, list) or not isinstance(index.get("n_frames"), int):
+            self.close()
+            raise ValueError(f"{self.path}: LiDAR pack index has invalid frame metadata")
         self.n_frames = int(index["n_frames"])
-        self.frames = index["frames"]
+        if self.n_frames < 0 or self.n_frames != len(frames):
+            self.close()
+            raise ValueError(f"{self.path}: n_frames does not match the frame index")
+        data_end = index_offset
+        try:
+            for frame_index, frame in enumerate(frames):
+                self._validate_frame_entry(frame, frame_index, data_end)
+        except ValueError:
+            self.close()
+            raise
+        self.frames = frames
+
+    @staticmethod
+    def _validate_frame_entry(frame: object, index: int, data_end: int) -> None:
+        """Reject a corrupt index entry at open time, not at first read."""
+
+        if not isinstance(frame, dict):
+            raise ValueError(f"T4 LiDAR pack frame {index} is not an object")
+        required = {"offset", "size", "n_points", "dtypes"}
+        if not required <= frame.keys():
+            raise ValueError(
+                f"T4 LiDAR pack frame {index} is missing {sorted(required - frame.keys())}"
+            )
+        offset, size, n_points = frame["offset"], frame["size"], frame["n_points"]
+        if any(
+            isinstance(value, bool) or not isinstance(value, int)
+            for value in (offset, size, n_points)
+        ):
+            raise ValueError(
+                f"T4 LiDAR pack frame {index} has non-integer bounds or point count"
+            )
+        if (
+            offset < len(T4LidarPackReader.MAGIC)
+            or size <= 0
+            or n_points < 0
+            or offset + size > data_end
+        ):
+            raise ValueError(
+                f"T4 LiDAR pack frame {index} has invalid bounds or point count"
+            )
+        dtypes = frame["dtypes"]
+        if not isinstance(dtypes, list) or len(dtypes) != 5:
+            raise ValueError(f"T4 LiDAR pack frame {index} must describe 5 columns")
+        if any(dtype not in {"u1", "i1", "f4s"} for dtype in dtypes):
+            raise ValueError(f"T4 LiDAR pack frame {index} has an unknown column dtype")
 
     @staticmethod
     def _make_dctx():
@@ -770,12 +836,25 @@ class T4LidarPackReader:
         return zstd.ZstdDecompressor()
 
     @staticmethod
-    def _decode_frame(compressed: bytes, dtypes: Sequence[str], n: int) -> np.ndarray:
+    def _thread_dctx():
+        """One reusable decompressor per reader thread.
+
+        ``ZstdDecompressor`` is not documented thread-safe, and constructing
+        one per frame costs measurably on the DataLoader hot path — hence one
+        instance per thread, reused across frames.
+        """
         try:
             import zstandard as zstd
         except ImportError as exc:  # pragma: no cover - checked in __init__
             raise ImportError("zstandard is required for T4 LiDAR") from exc
-        raw = zstd.ZstdDecompressor().decompress(compressed)
+        decoder = getattr(_LIDAR_TLS, "dctx", None)
+        if decoder is None:
+            decoder = _LIDAR_TLS.dctx = zstd.ZstdDecompressor()
+        return decoder
+
+    @staticmethod
+    def _decode_frame(compressed: bytes, dtypes: Sequence[str], n: int) -> np.ndarray:
+        raw = T4LidarPackReader._thread_dctx().decompress(compressed)
         out = np.empty((n, 5), dtype=np.float32)
         prefix = 0
         while prefix < len(dtypes) and dtypes[prefix] == "f4s":
@@ -815,6 +894,39 @@ class T4LidarPackReader:
         index = int(index)
         if not 0 <= index < self.n_frames:
             raise IndexError(f"{self.path}: frame {index} outside pack")
+        timeout = float(os.environ.get("T4E2E_PACK_READ_TIMEOUT", "0"))
+        if timeout <= 0:
+            return self._read_frame_direct(index)
+
+        # Watchdog escape hatch for diagnosing a filesystem that blocks inside
+        # pread(); see the class docstring for why this is opt-in.
+        result: Dict[str, object] = {}
+
+        def read() -> None:
+            try:
+                result["array"] = self._read_frame_direct(index)
+            except Exception as exc:  # noqa: BLE001 - re-raised in the caller
+                result["error"] = exc
+
+        thread = threading.Thread(target=read, daemon=True)
+        thread.start()
+        thread.join(timeout)
+        if thread.is_alive():
+            raise TimeoutError(
+                f"LiDAR pack read exceeded {timeout:g}s (possible filesystem "
+                f"hang): {self.path} frame {index}"
+            )
+        if "error" in result:
+            error = result["error"]
+            if isinstance(error, BaseException):
+                raise error
+            raise RuntimeError(f"LiDAR pack read failed with non-exception: {error!r}")
+        array = result.get("array")
+        if not isinstance(array, np.ndarray):
+            raise RuntimeError("LiDAR pack read completed without an array")
+        return array
+
+    def _read_frame_direct(self, index: int) -> np.ndarray:
         frame = self.frames[index]
         compressed = os.pread(self._fd, int(frame["size"]), int(frame["offset"]))
         return self._decode_frame(compressed, frame["dtypes"], int(frame["n_points"]))
