@@ -50,11 +50,14 @@ from t4_e2e_devkit.visualization.lidar import (
 )
 from t4_e2e_devkit.visualization.planning_video import (
     FFmpegVideoWriter,
+    SceneCameraReader,
     final_displacement_error,
+    front_camera_for_scene,
     front_camera_name,
     manifest_trajectory,
     render_planning_frame,
     render_planning_video,
+    render_scene_video,
 )
 from t4_e2e_devkit.visualization.plots import (
     add_fixed_bev_legend,
@@ -111,11 +114,14 @@ __all__ = [
     "subsample_lidar_pc",
     # planning video
     "FFmpegVideoWriter",
+    "SceneCameraReader",
     "final_displacement_error",
+    "front_camera_for_scene",
     "front_camera_name",
     "manifest_trajectory",
     "render_planning_frame",
     "render_planning_video",
+    "render_scene_video",
     # plots
     "add_score_panel",
     "configure_bev_ax",

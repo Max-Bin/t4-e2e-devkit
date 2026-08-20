@@ -2,12 +2,14 @@
 
 Every scene here is synthetic with known geometry -- the same rig convention as
 ``test_visualization``'s camera tests -- so the numeric checks (FDE, manifest
-lookup, even-dimension cropping) verify values rather than "it produced an
-image".  The encoder tests need the ``ffmpeg`` binary and skip without it.
+lookup, BEV pixel positions, even-dimension cropping) verify values rather than
+"it produced an image".  The encoder tests need the ``ffmpeg`` binary and skip
+without it.
 """
 
 from __future__ import annotations
 
+import json
 import shutil
 
 import numpy as np
@@ -29,12 +31,15 @@ from t4_e2e_devkit.evaluation.prediction_manifest import (
 )
 from t4_e2e_devkit.visualization import (
     FFmpegVideoWriter,
+    SceneCameraReader,
     final_displacement_error,
+    front_camera_for_scene,
     front_camera_name,
     manifest_trajectory,
     render_planning_frame,
     render_planning_video,
 )
+from t4_e2e_devkit.visualization.planning_video import BEV_POINT_COLOR
 
 needs_ffmpeg = pytest.mark.skipif(
     shutil.which("ffmpeg") is None, reason="ffmpeg is not on PATH"
@@ -60,10 +65,12 @@ def _camera() -> Camera:
 
 
 def _lidar() -> Lidar:
+    # Points 5 m to the ego's left, so they never share a BEV pixel column with
+    # the straight-ahead ground truth and their grey stays checkable.
     points = np.column_stack(
         [
             np.linspace(2.0, 30.0, 50),
-            np.zeros(50),
+            np.full(50, 5.0),
             np.zeros(50),
             np.ones(50),
             np.zeros(50),
@@ -122,14 +129,16 @@ def _manifest(tmp_path, lateral_offset: float = 0.0, centers=(10,)):
 
 
 class TestFrontCameraName:
-    """The front view is rig-dependent, so it is chosen rather than assumed."""
+    """The name-based fallback for scenes whose calibration cannot be read."""
 
-    def test_prefers_the_centred_wide_front(self):
+    def test_prefers_the_centred_narrow_front(self):
+        # On the one rig storing both, the narrow CAM_FRONT is the level view;
+        # CAM_FRONT_WIDE points at the asphalt there.
+        assert front_camera_name(["CAM_FRONT_WIDE", "CAM_FRONT"]) == "CAM_FRONT"
+
+    def test_uses_the_centred_wide_front_otherwise(self):
         names = ["CAM_FRONT_LEFT_WIDE", "CAM_FRONT_WIDE", "CAM_FRONT_RIGHT_WIDE"]
         assert front_camera_name(names) == "CAM_FRONT_WIDE"
-
-    def test_x2_dev_rig_uses_cam_front(self):
-        assert front_camera_name(["CAM_BACK", "CAM_FRONT"]) == "CAM_FRONT"
 
     def test_falls_back_to_any_front_then_first(self):
         assert front_camera_name(["CAM_BACK", "CAM_FRONT_LEFT"]) == "CAM_FRONT_LEFT"
@@ -138,6 +147,88 @@ class TestFrontCameraName:
     def test_empty_register_is_an_error(self):
         with pytest.raises(ValueError, match="empty register"):
             front_camera_name([])
+
+
+def _display_scene_dir(tmp_path, tilt_front_down: bool = False):
+    """A scene directory with just enough calibration for camera selection.
+
+    Camera-to-ego rotation follows the measured T4 convention (camera z is the
+    optical axis).  CAM_FRONT looks down the road, CAM_FRONT_WIDE is pitched
+    about 48 degrees at the asphalt, and the traffic-light camera also points
+    forward -- exactly the x2_dev situation that name preferences get wrong.
+    """
+    from PIL import Image
+
+    scene = tmp_path / "scene"
+    names = ["CAM_FRONT", "CAM_FRONT_WIDE", "CAM_TRAFFIC_LIGHT_FAR"]
+    level = np.array([[0.0, 0.0, 1.0], [-1.0, 0.0, 0.0], [0.0, -1.0, 0.0]])
+    tilted = level.copy()
+    tilted[:, 2] = [0.669, 0.0, -0.743]  # optical axis 48 degrees down
+
+    extrinsics = np.stack([np.eye(4)] * 3)
+    extrinsics[0, :3, :3] = tilted if tilt_front_down else level
+    extrinsics[1, :3, :3] = level if tilt_front_down else tilted
+    extrinsics[2, :3, :3] = level
+    extrinsics[:, :3, 3] = [1.3, 0.0, 1.9]
+    intrinsics = np.stack([np.array([[50.0, 0, 32.0], [0, 50.0, 24.0], [0, 0, 1]])] * 3)
+
+    derived = scene / "derived"
+    derived.mkdir(parents=True)
+    (derived / "cam_names.json").write_text(json.dumps(names))
+    np.savez(derived / "scalars.npz", cam_intrinsics=intrinsics, cam_extrinsics=extrinsics)
+
+    gradient = np.linspace(0, 255, 64, dtype=np.uint8)
+    image = np.broadcast_to(gradient[None, :, None], (48, 64, 3))
+    for name in names:
+        (scene / "data" / name).mkdir(parents=True)
+        Image.fromarray(image).save(scene / "data" / name / "00007.jpg")
+    return scene
+
+
+class TestFrontCameraForScene:
+    """The front view is measured from the calibration, not guessed by name."""
+
+    def test_picks_the_level_camera_over_the_tilted_one(self, tmp_path):
+        assert front_camera_for_scene(_display_scene_dir(tmp_path)) == "CAM_FRONT"
+        assert (
+            front_camera_for_scene(_display_scene_dir(tmp_path / "b", tilt_front_down=True))
+            == "CAM_FRONT_WIDE"
+        )
+
+    def test_signal_cameras_never_win(self, tmp_path):
+        # The traffic-light camera points forward too; geometry alone would
+        # tie it with CAM_FRONT, so it is excluded by role.
+        scene = _display_scene_dir(tmp_path)
+        shutil.rmtree(scene / "data" / "CAM_FRONT")
+        assert front_camera_for_scene(scene) == "CAM_FRONT_WIDE"
+
+    def test_falls_back_to_names_without_calibration(self, tmp_path):
+        (tmp_path / "data" / "CAM_FRONT_WIDE").mkdir(parents=True)
+        assert front_camera_for_scene(tmp_path) == "CAM_FRONT_WIDE"
+
+    def test_no_stored_camera_is_an_error(self, tmp_path):
+        with pytest.raises(ValueError, match="no camera"):
+            front_camera_for_scene(tmp_path)
+
+
+class TestSceneCameraReader:
+    def test_reads_a_calibrated_native_resolution_view(self, tmp_path):
+        reader = SceneCameraReader(_display_scene_dir(tmp_path), "CAM_FRONT")
+        view = reader.read(7)
+        assert view.name == "CAM_FRONT"
+        assert view.image is not None and view.image.shape == (48, 64, 3)
+        assert view.is_calibrated
+        # The optical axis must be ego-forward, as written by the fixture.
+        assert view.camera2ego_rotation[:, 2] == pytest.approx([1.0, 0.0, 0.0])
+
+    def test_missing_frame_keeps_the_calibration(self, tmp_path):
+        reader = SceneCameraReader(_display_scene_dir(tmp_path), "CAM_FRONT")
+        view = reader.read(999)
+        assert view.image is None and view.is_calibrated
+
+    def test_uncalibrated_camera_is_an_error(self, tmp_path):
+        with pytest.raises(ValueError, match="not calibrated"):
+            SceneCameraReader(_display_scene_dir(tmp_path), "CAM_BACK")
 
 
 class TestManifestTrajectory:
@@ -180,6 +271,18 @@ class TestRenderPlanningFrame:
         assert image.ndim == 3 and image.shape[2] == 3
         assert image.dtype == np.uint8
         assert image.std() > 5.0
+
+    def test_lidar_points_land_on_the_dark_bev(self):
+        image = render_planning_frame(_scene(with_lidar=True), panel_height=700)
+        # The BEV is the left 700 px square on black; a sweep point at
+        # (x=10, y=5) maps to column (35-5)/70*699 and row (55-10)/70*699.
+        assert tuple(image[-1, 0]) == (0, 0, 0)
+        assert tuple(image[449, 299]) == BEV_POINT_COLOR
+
+    def test_without_lidar_the_bev_stays_dark_but_renders(self):
+        # Graceful degradation: no sweep means no points, not a crash.
+        image = render_planning_frame(_scene(with_lidar=False), panel_height=700)
+        assert tuple(image[449, 299]) == (0, 0, 0)
 
     def test_predictions_change_the_frame(self, tmp_path):
         scene = _scene()

@@ -15,10 +15,8 @@ import argparse
 from pathlib import Path
 
 from t4_e2e_devkit.dataset.datalist import load_data_list
-from t4_e2e_devkit.dataset.rigs import readable_camera_names, sensor_config_for_scene
-from t4_e2e_devkit.dataset.window import T4WindowBuilder
 from t4_e2e_devkit.evaluation.prediction_manifest import load_prediction_manifest
-from t4_e2e_devkit.visualization import front_camera_name, render_planning_video
+from t4_e2e_devkit.visualization import render_scene_video
 
 
 def main() -> None:
@@ -34,11 +32,6 @@ def main() -> None:
     parser.add_argument("--no-lidar", action="store_true")
     args = parser.parse_args()
 
-    data_list = load_data_list(args.data_list)
-    centers = sorted({center for scene, center in data_list.rows if scene == args.scene})
-    if not centers:
-        raise SystemExit(f"scene {args.scene!r} is not in {args.data_list}")
-
     manifests = {}
     for entry in args.manifest:
         label, separator, path = entry.partition("=")
@@ -46,20 +39,13 @@ def main() -> None:
             raise SystemExit(f"--manifest expects LABEL=PATH, got {entry!r}")
         manifests[label] = load_prediction_manifest(path)
 
-    scene_dir = data_list.absolute_scene_dir(args.scene)
-    camera = front_camera_name(readable_camera_names(scene_dir))
-    builder = T4WindowBuilder(
-        scene_dir,
-        data_list.root,
-        sensor_config=sensor_config_for_scene(
-            scene_dir, cameras=[camera], lidar=not args.no_lidar
-        ),
+    data_list = load_data_list(args.data_list)
+    print(
+        render_scene_video(
+            data_list, args.scene, args.out, manifests,
+            fps=args.fps, lidar=not args.no_lidar,
+        )
     )
-    try:
-        windows = (builder.build(center) for center in centers)
-        print(render_planning_video(windows, args.out, manifests, camera=camera, fps=args.fps))
-    finally:
-        builder.close()
 
 
 if __name__ == "__main__":

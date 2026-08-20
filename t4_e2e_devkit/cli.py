@@ -234,22 +234,20 @@ def _cmd_visualize_video(argv: Sequence[str]) -> int:
         help="prediction manifest to overlay, repeatable; the label names the model",
     )
     parser.add_argument("--out", required=True, help="output directory for the mp4 files")
-    parser.add_argument("--camera", default=None, help="camera to show; front-most by default")
+    parser.add_argument(
+        "--camera", default=None,
+        help="camera to show; by default the geometrically front-facing one",
+    )
     parser.add_argument("--fps", type=float, default=10.0, help="frames per second")
-    parser.add_argument("--no-lidar", action="store_true", help="skip the LiDAR overlay")
+    parser.add_argument("--no-lidar", action="store_true", help="skip the LiDAR points")
     parser.add_argument("--view-range", type=float, default=None, help="BEV half-extent, metres")
     args = parser.parse_args(argv)
 
     from pathlib import Path
 
     from t4_e2e_devkit.dataset.datalist import load_data_list
-    from t4_e2e_devkit.dataset.rigs import readable_camera_names, sensor_config_for_scene
-    from t4_e2e_devkit.dataset.window import T4WindowBuilder
     from t4_e2e_devkit.evaluation.prediction_manifest import load_prediction_manifest
-    from t4_e2e_devkit.visualization.planning_video import (
-        front_camera_name,
-        render_planning_video,
-    )
+    from t4_e2e_devkit.visualization.planning_video import render_scene_video
 
     data_list = load_data_list(args.data_list)
 
@@ -273,38 +271,18 @@ def _cmd_visualize_video(argv: Sequence[str]) -> int:
 
     out_dir = Path(args.out)
     for scene_rel in scene_dirs:
-        centers = sorted({center for scene, center in data_list.rows if scene == scene_rel})
-        scene_dir = data_list.absolute_scene_dir(scene_rel)
-        camera = args.camera or front_camera_name(readable_camera_names(scene_dir))
-        # LiDAR is opt-in and a scene may simply not ship a pack (trimmed
-        # sample copies, camera-only exports); render without the overlay
-        # instead of failing the whole video.
-        with_lidar = not args.no_lidar
-        if with_lidar and not (scene_dir / "data" / "LIDAR_CONCAT.pack").is_file():
-            print(f"note: {scene_rel} has no LiDAR pack; rendering without the overlay")
-            with_lidar = False
-        builder = T4WindowBuilder(
-            scene_dir,
-            data_list.root,
-            sensor_config=sensor_config_for_scene(
-                scene_dir, cameras=[camera], lidar=with_lidar
-            ),
-        )
-        try:
-            windows = (builder.build(center) for center in centers)
-            out_path = out_dir / (scene_rel.replace("/", "_") + ".mp4")
-            print(
-                render_planning_video(
-                    windows,
-                    out_path,
-                    manifests,
-                    camera=camera,
-                    fps=args.fps,
-                    view_range=args.view_range,
-                )
+        print(
+            render_scene_video(
+                data_list,
+                scene_rel,
+                out_dir / (scene_rel.replace("/", "_") + ".mp4"),
+                manifests,
+                camera=args.camera,
+                fps=args.fps,
+                view_range=args.view_range,
+                lidar=not args.no_lidar,
             )
-        finally:
-            builder.close()
+        )
     return 0
 
 
