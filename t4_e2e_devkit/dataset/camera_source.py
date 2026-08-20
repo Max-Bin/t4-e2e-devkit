@@ -46,6 +46,31 @@ class CameraSource(ABC):
         :return: ``[H, W, 3]`` uint8 RGB, or ``None`` when the frame is absent.
         """
 
+    def read_encoded(self, frame_index: int) -> Optional[bytes]:
+        """One frame's *undecoded* bytes, for a caller that decodes elsewhere.
+
+        Decoding a 2880x1860 wide frame costs ~137 ms in a Python worker and
+        ~3.7 ms on an nvjpeg engine, but CUDA cannot be used from a forked
+        DataLoader worker -- so a training loop that wants the fast path has to
+        move the bytes across the worker boundary still compressed and decode them
+        on the device.  This exists so that caller does not have to re-derive the
+        filename convention :meth:`path_for` already resolves.
+
+        Not abstract, and refusing rather than returning ``None``, because not
+        every storage backend *can* produce a self-contained single-frame blob: an
+        inter-frame-compressed video has no such thing, and that is a different
+        condition from "this frame is absent".
+
+        :param frame_index: scene frame index.
+        :return: the stored bytes, or ``None`` when the frame is absent.
+        :raises CameraSourceError: when this storage cannot express one frame as
+            an independently decodable blob.
+        """
+        raise CameraSourceError(
+            f"{type(self).__name__} cannot hand out undecoded frames for "
+            f"camera {self.name!r}; decode through read() instead"
+        )
+
     @abstractmethod
     def native_size(self) -> Optional[Tuple[int, int]]:
         """
@@ -124,6 +149,14 @@ class JpegDirectorySource(CameraSource):
         # Raw exports mix five- and four-digit names, sometimes in one directory.
         alternate = self.directory / f"{frame_index:0{4 if self._digits == 5 else 5}d}.jpg"
         return alternate if alternate.is_file() else None
+
+    def read_encoded(self, frame_index: int) -> Optional[bytes]:
+        """
+        :param frame_index: scene frame index.
+        :return: the stored JPEG bytes, or ``None`` when absent.
+        """
+        path = self.path_for(frame_index)
+        return None if path is None else path.read_bytes()
 
     def read(self, frame_index: int) -> Optional[npt.NDArray[np.uint8]]:
         """

@@ -6,6 +6,7 @@ import pytest
 
 from t4_e2e_devkit.common import constants as C
 from t4_e2e_devkit.dataset.camera_source import (
+    CameraSource,
     CameraSourceError,
     JpegDirectorySource,
     available_cameras,
@@ -162,6 +163,98 @@ class TestStorageDiscovery:
         assert source.path_for(7) is not None
 
 
+def _write_jpeg(path, width=64, height=48):
+    """A real JPEG with structure, so a resize difference cannot hide in flat pixels."""
+    import numpy as np
+    from PIL import Image
+
+    rows, columns = np.meshgrid(np.arange(height), np.arange(width), indexing="ij")
+    pixels = np.stack(
+        [rows * 5, columns * 3, (rows + columns) * 7], axis=-1
+    ).astype(np.uint8)
+    Image.fromarray(pixels).save(path, quality=95)
+    return pixels
+
+
+class _UnsplittableSource(CameraSource):
+    """A backend with no per-frame blob, e.g. inter-frame-compressed video."""
+
+    def read(self, frame_index):
+        return None
+
+    def native_size(self):
+        return None
+
+    def describe(self):
+        return {"camera": self.name, "storage": "fake"}
+
+
+class TestUndecodedFrames:
+    """``read_encoded`` is the boundary a training loop decodes on the GPU behind.
+
+    Workers cannot use CUDA, so a fast camera path has to move the bytes across
+    the worker boundary still compressed.  Two properties make that safe: the
+    bytes are the stored file verbatim (no re-encode, so no second generation of
+    JPEG loss), and they decode to what ``read`` decodes.
+    """
+
+    def test_bytes_are_the_stored_file_verbatim(self, tmp_path):
+        directory = tmp_path / "data" / "CAM_FRONT_WIDE"
+        directory.mkdir(parents=True)
+        _write_jpeg(directory / "00007.jpg")
+        source = JpegDirectorySource("CAM_FRONT_WIDE", directory, (24, 32))
+        assert source.read_encoded(7) == (directory / "00007.jpg").read_bytes()
+
+    def test_four_digit_names_are_found_too(self, tmp_path):
+        # Raw exports mix five- and four-digit names, sometimes in one directory,
+        # and the encoded path must follow the same probe as path_for.
+        directory = tmp_path / "data" / "CAM_FRONT_WIDE"
+        directory.mkdir(parents=True)
+        _write_jpeg(directory / "0007.jpg")
+        source = JpegDirectorySource("CAM_FRONT_WIDE", directory, (24, 32))
+        assert source.read_encoded(7) == (directory / "0007.jpg").read_bytes()
+
+    def test_an_absent_frame_is_none_not_an_error(self, tmp_path):
+        directory = tmp_path / "data" / "CAM_FRONT_WIDE"
+        directory.mkdir(parents=True)
+        _write_jpeg(directory / "00007.jpg")
+        source = JpegDirectorySource("CAM_FRONT_WIDE", directory, (24, 32))
+        assert source.read_encoded(8) is None
+
+    def test_the_bytes_decode_to_what_read_decodes(self, tmp_path):
+        """Same pixels, exactly, once the caller applies the same resize.
+
+        This is the property the GPU decode path is substituted into: it may
+        resample differently, but it must start from these pixels.
+        """
+        import io
+
+        import numpy as np
+        from PIL import Image
+
+        directory = tmp_path / "data" / "CAM_FRONT_WIDE"
+        directory.mkdir(parents=True)
+        _write_jpeg(directory / "00007.jpg")
+        source = JpegDirectorySource("CAM_FRONT_WIDE", directory, (24, 32))
+
+        blob = source.read_encoded(7)
+        with Image.open(io.BytesIO(blob)) as image:
+            from_bytes = np.asarray(
+                image.convert("RGB").resize((source.width, source.height)), np.uint8
+            )
+        assert np.array_equal(from_bytes, source.read(7))
+
+    def test_a_backend_without_per_frame_blobs_refuses_loudly(self):
+        """Refusing, not ``None``: "unsupported" is not "this frame is absent".
+
+        A caller that read ``None`` as absence would mean-fill every frame of the
+        camera and train on a constant image that looks like data.
+        """
+        source = _UnsplittableSource("CAM_FRONT_WIDE", (672, 1148))
+        with pytest.raises(CameraSourceError, match="cannot hand out undecoded"):
+            source.read_encoded(0)
+
+
 @pytest.mark.data
 class TestRealSceneStorage:
     """Against the dataset: the register and the readable set differ."""
@@ -215,3 +308,37 @@ class TestRealSceneStorage:
                 break
         # Whatever the storage, the reader emits one resolution.
         assert shapes and shapes == {(672, 1148, 3)}
+
+    def test_encoded_bytes_match_the_export_and_decode_to_read(self, t4_scene_dir):
+        """The synthetic JPEG above proves the contract; this proves the export.
+
+        A real wide frame is 2880x1860 and ~1.3 MB, so it exercises the paths a
+        64x48 fixture cannot: the digit-width probe against real filenames, and a
+        decode where any resampling disagreement would be visible.
+        """
+        import io
+
+        import numpy as np
+        from PIL import Image
+
+        names = [
+            name
+            for name in available_cameras(t4_scene_dir)
+            if name.upper() in {value.upper() for value in C.T4_SUPPORTED_CAMERA_NAMES}
+            and not name.startswith("CAM_TRAFFIC")
+        ]
+        if not names:
+            pytest.skip("scene has no supported wide JPEG camera")
+        source = open_camera_source(t4_scene_dir, names[0], (672, 1148))
+        try:
+            blob = source.read_encoded(40)
+            if blob is None:
+                pytest.skip(f"{names[0]} has no frame 40")
+            assert blob == source.path_for(40).read_bytes()
+            with Image.open(io.BytesIO(blob)) as image:
+                from_bytes = np.asarray(
+                    image.convert("RGB").resize((source.width, source.height)), np.uint8
+                )
+            assert np.array_equal(from_bytes, source.read(40))
+        finally:
+            source.close()
