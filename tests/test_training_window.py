@@ -245,3 +245,176 @@ def test_lidar_reader_rejects_corrupt_index_entry(tmp_path):
     path.write_bytes(new)
     with pytest.raises(ValueError, match="invalid bounds"):
         T4LidarPackReader(path)
+
+
+def _dict_scene(n_frames: int = 130) -> dict:
+    """A plain-dict scene mapping, exercising the builder without handles."""
+
+    trajectory = np.zeros((n_frames, 4), np.float32)
+    trajectory[:, 0] = np.arange(n_frames, dtype=np.float32) * 0.5
+    trajectory[:, 2] = 1.0
+    scene = {
+        "meta": {"n_frames": n_frames},
+        "trajectory": trajectory,
+        "velocity": np.zeros((n_frames, 2), np.float32),
+        "turn": np.arange(n_frames, dtype=np.int32) % 3,
+        "goal": np.array([500.0, 300.0, 1.0, 0.0], np.float32),
+        "shape": np.array([2.79, 4.34, 1.7], np.float32),
+        "points": {f"frame_{i:04d}": np.ones((4, 5), np.float32) for i in range(n_frames)},
+    }
+    rng = np.random.default_rng(1)
+    for name, shape in expected_map_shapes().items():
+        scene[name] = rng.standard_normal((n_frames, *shape)).astype(np.float32)
+    return scene
+
+
+def test_map_features_are_indexed_at_center():
+    scene = _dict_scene()
+    center = 40
+    out = TrainingWindowBuilder().extract_window(scene, center)
+    assert out is not None
+    np.testing.assert_array_equal(out["lanes"], scene["lanes"][center])
+    np.testing.assert_array_equal(out["route_lanes"], scene["route"][center])
+    np.testing.assert_array_equal(out["polygons"], scene["polygons"][center])
+    np.testing.assert_array_equal(out["line_strings"], scene["lines"][center])
+
+
+def test_ego_frame_transform_is_vectorized_and_fixed_shape():
+    scene = _dict_scene()
+    out = TrainingWindowBuilder().extract_window(scene, 40)
+    assert out is not None
+    assert out["ego_agent_past"].shape == (PAST_FRAMES, 4)
+    assert out["ego_agent_future"].shape == (FUTURE_FRAMES, 3)
+    # Straight motion at 0.5 m/frame: the current frame is the origin and the
+    # first future point is exactly 0.5 m ahead.
+    np.testing.assert_allclose(out["ego_agent_past"][-1], [0.0, 0.0, 1.0, 0.0])
+    np.testing.assert_allclose(out["ego_agent_future"][0], [0.5, 0.0, 0.0], atol=1e-6)
+
+
+def test_schema_is_strict_about_required_map_fields():
+    scene = _dict_scene()
+    del scene["route"]
+    with pytest.raises(KeyError, match="route"):
+        TrainingWindowBuilder().extract_window(scene, 40)
+
+
+def test_goal_clamp_preserves_bearing():
+    scene = _dict_scene()
+    raw = TrainingWindowBuilder().extract_window(scene, 40)
+    clamped = TrainingWindowBuilder(goal_clamp_m=120.0).extract_window(scene, 40)
+    assert raw is not None and clamped is not None
+    assert np.isclose(np.hypot(*clamped["goal_pose"][:2]), 120.0, atol=1e-5)
+    assert np.isclose(
+        np.arctan2(*clamped["goal_pose"][1::-1]),
+        np.arctan2(*raw["goal_pose"][1::-1]),
+    )
+
+
+def test_valid_window_centers_edge_mask_trims_history_or_future():
+    leading = np.ones(N_FRAMES, bool)
+    leading[:5] = False
+    assert list(valid_window_centers(N_FRAMES, leading))[0] == PAST_FRAMES - 1 + 5
+    trailing = np.ones(N_FRAMES, bool)
+    trailing[-5:] = False
+    last_valid = N_FRAMES - 6
+    centers = list(valid_window_centers(N_FRAMES, trailing))
+    assert centers[-1] == last_valid - FUTURE_FRAMES
+
+
+def test_valid_window_centers_wrong_mask_length_fails_loudly():
+    with pytest.raises(ValueError, match="expected"):
+        valid_window_centers(N_FRAMES, np.ones(N_FRAMES - 1, bool))
+
+
+def test_valid_window_centers_all_false_has_no_rows():
+    assert list(valid_window_centers(N_FRAMES, np.zeros(N_FRAMES, bool))) == []
+
+
+def test_pack_read_timeout_watchdog_path_returns_identical_frames(tmp_path, monkeypatch):
+    frames = [np.arange(15, dtype=np.float32).reshape(3, 5) for _ in range(2)]
+    path = tmp_path / "LIDAR_CONCAT.pack"
+    write_lidar_pack(path, frames)
+    reader = T4LidarPackReader(path)
+    direct = reader.read_frame(0)
+    monkeypatch.setenv("T4E2E_PACK_READ_TIMEOUT", "30")
+    watched = reader.read_frame(0)
+    np.testing.assert_array_equal(direct, watched)
+    reader.close()
+
+
+# --------------------------------------------------------------------------- #
+# TemporalSpec
+# --------------------------------------------------------------------------- #
+
+from t4_e2e_devkit.common.temporal import DEFAULT_TEMPORAL_SPEC, TemporalSpec  # noqa: E402
+
+
+def test_default_spec_reproduces_the_historical_contract():
+    spec = DEFAULT_TEMPORAL_SPEC
+    assert spec.past_frames == PAST_FRAMES
+    assert spec.future_frames == FUTURE_FRAMES
+    assert spec.frame_stride == 1
+    assert spec.min_source_frames == MIN_T4_FRAMES
+    assert spec.interval_seconds == pytest.approx(0.1)
+
+
+def test_spec_validation():
+    with pytest.raises(ValueError, match="divisor"):
+        TemporalSpec(hz=3)
+    with pytest.raises(ValueError, match="divisor"):
+        TemporalSpec(hz=20)
+    with pytest.raises(ValueError, match="grid"):
+        TemporalSpec(future_seconds=4.3, hz=2)  # 8.6 frames
+    with pytest.raises(ValueError, match="positive"):
+        TemporalSpec(future_seconds=0.0)
+    spec = TemporalSpec(history_seconds=2.0, future_seconds=4.0, hz=5)
+    assert spec.past_frames == 11
+    assert spec.future_frames == 20
+    assert spec.frame_stride == 2
+    assert spec.history_span == 20
+    assert spec.future_span == 40
+    assert spec.min_source_frames == 61
+    assert TemporalSpec.from_dict(spec.as_dict()) == spec
+
+
+def test_strided_window_is_the_stride_view_of_the_dense_window():
+    """A 5 Hz window must be EXACTLY every second sample of the 10 Hz window
+    with the same seconds spans — stride sampling, zero interpolation."""
+
+    scene = _dict_scene(n_frames=200)
+    center = 110
+    dense = TrainingWindowBuilder().extract_window(scene, center)
+    spec5 = TemporalSpec(history_seconds=3.0, future_seconds=8.0, hz=5)
+    strided = TrainingWindowBuilder(spec=spec5).extract_window(scene, center)
+    assert dense is not None and strided is not None
+
+    assert strided["ego_agent_past"].shape == (16, 4)  # 3 s @ 5 Hz + current
+    assert strided["ego_agent_future"].shape == (40, 3)  # 8 s @ 5 Hz
+    # History: current frame anchors the grid, so the 5 Hz history is the
+    # dense history sampled backward from the END.
+    np.testing.assert_array_equal(strided["ego_agent_past"], dense["ego_agent_past"][::2])
+    # Future: pose i sits at (i+1)/hz seconds, so the 5 Hz future is every
+    # second dense pose STARTING at the second one.
+    np.testing.assert_array_equal(strided["ego_agent_future"], dense["ego_agent_future"][1::2])
+    np.testing.assert_array_equal(strided["turn_indicators"], dense["turn_indicators"][::2])
+    # Centre-frame payloads are rate-independent.
+    np.testing.assert_array_equal(strided["lanes"], dense["lanes"])
+    np.testing.assert_array_equal(strided["goal_pose"], dense["goal_pose"])
+
+
+def test_valid_window_centers_follow_the_spec_spans():
+    spec = TemporalSpec(history_seconds=2.0, future_seconds=4.0, hz=5)
+    n = spec.min_source_frames + 10
+    centers = valid_window_centers(n, spec=spec)
+    assert centers.start == spec.history_span
+    assert max(centers) == n - 1 - spec.future_span
+    assert valid_window_centers(spec.min_source_frames - 1, spec=spec) == ()
+
+
+def test_short_horizon_spec_admits_short_scenes():
+    """A 4 s @ 5 Hz spec must accept scenes the default 8 s contract rejects."""
+
+    spec = TemporalSpec(history_seconds=2.0, future_seconds=4.0, hz=5)
+    n = spec.min_source_frames  # 61 << MIN_T4_FRAMES (111)
+    assert valid_window_centers(n) == ()
+    assert list(valid_window_centers(n, spec=spec)) == [spec.history_span]

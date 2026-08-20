@@ -39,18 +39,16 @@ from typing import Dict, Optional, Sequence
 import numpy as np
 
 from t4_e2e_devkit.common.constants import (
-    FUTURE_FRAMES,
-    MIN_T4_FRAMES,
     NUM_LINE_STRINGS,
     NUM_POLYGONS,
     NUM_SEGMENTS_IN_LANE,
     NUM_SEGMENTS_IN_ROUTE,
-    PAST_FRAMES,
     POINTS_PER_LANELET,
     POINTS_PER_LINE_STRING,
     POINTS_PER_POLYGON,
     SEGMENT_POINT_DIM,
 )
+from t4_e2e_devkit.common.temporal import DEFAULT_TEMPORAL_SPEC, TemporalSpec
 from t4_e2e_devkit.dataset.scene import T4BundleReader, T4LidarPackReader
 
 log = logging.getLogger(__name__)
@@ -90,21 +88,25 @@ def valid_window_centers(
     n_frames: int,
     valid_mask: np.ndarray | None = None,
     stride: int = 1,
+    *,
+    spec: TemporalSpec = DEFAULT_TEMPORAL_SPEC,
 ) -> range | tuple[()]:
     """Return structurally valid center frames for one T4 scene.
 
     Current T4 scenes are contiguous.  A ``valid_mask`` is still accepted to
     honor trimmed edges and to reject a corrupt mask with an interior hole.
 
-    ``stride`` subsamples the centers.  At the default of 1 every frame is a
-    window center, so consecutive samples are one frame apart and share over
-    98% of their 8 s future — they are very nearly the same training pair.
-    Coverage is unchanged by striding: every part of every scene is still
-    reachable, just sampled every ``stride`` frames; what drops is the count
-    of near-duplicate pairs.
+    ``stride`` subsamples the centers (a data-list construction choice,
+    distinct from ``spec.frame_stride``, which is the model-rate sampling
+    *within* one window).  At the default of 1 every frame is a window
+    center, so consecutive samples are one frame apart and share almost all
+    of their future — they are very nearly the same training pair.  Coverage
+    is unchanged by striding: every part of every scene is still reachable,
+    just sampled every ``stride`` frames; what drops is the count of
+    near-duplicate pairs.
     """
 
-    if n_frames < MIN_T4_FRAMES:
+    if n_frames < spec.min_source_frames:
         return ()
     mask = np.ones(n_frames, dtype=bool) if valid_mask is None else np.asarray(valid_mask, bool)
     if len(mask) != n_frames:
@@ -120,8 +122,8 @@ def valid_window_centers(
             f"[{first_valid}, {last_valid}]"
         )
 
-    first = max(PAST_FRAMES - 1, first_valid + PAST_FRAMES - 1)
-    last = min(n_frames - 1, last_valid) - FUTURE_FRAMES
+    first = max(spec.history_span, first_valid + spec.history_span)
+    last = min(n_frames - 1, last_valid) - spec.future_span
     if last < first:
         return ()
     step = max(1, int(stride))
@@ -354,6 +356,9 @@ class TrainingWindowBuilder:
         is still emitted — empty — so the batch contract is unchanged and
         only the sweep read disappears (a camera-only backbone reads no
         LiDAR, and the sweep is by far the largest thing in the window).
+    :param spec: the window's temporal contract — history/future span and
+        model rate.  Sampling is stride-based on the 10 Hz source, so any
+        extracted value is bit-identical to a source frame value.
     """
 
     def __init__(
@@ -362,12 +367,14 @@ class TrainingWindowBuilder:
         goal_clamp_m: float | None = None,
         point_range: Sequence[float] | None = None,
         load_points: bool = True,
+        spec: TemporalSpec = DEFAULT_TEMPORAL_SPEC,
     ):
         self.goal_clamp_m = float(goal_clamp_m) if goal_clamp_m is not None else None
         self.point_range = tuple(float(v) for v in point_range) if point_range else None
         if self.point_range is not None and len(self.point_range) != 6:
             raise ValueError("point_range must be [x_min, y_min, z_min, x_max, y_max, z_max]")
         self.load_points = bool(load_points)
+        self.spec = spec
 
     @staticmethod
     def _load_lidar_frame(scene: dict, frame_idx: int) -> np.ndarray:
@@ -383,15 +390,18 @@ class TrainingWindowBuilder:
         return np.zeros((0, 5), dtype=np.float32)
 
     def extract_window(self, scene: dict, center_idx: int) -> Optional[dict]:
-        """Extract one PAST_FRAMES-history/FUTURE_FRAMES-future window.
+        """Extract one spec-shaped window around ``center_idx``.
 
-        Everything is returned in the centre frame's ego coordinates.
-        Returns ``None`` when the window does not fit inside the scene.
+        Everything is returned in the centre frame's ego coordinates, sampled
+        at the spec's model rate by striding the 10 Hz source.  Returns
+        ``None`` when the window does not fit inside the scene.
         """
 
+        spec = self.spec
+        fs = spec.frame_stride
         n_frames = int(scene["meta"]["n_frames"])
-        past_start = center_idx - PAST_FRAMES + 1
-        future_end = center_idx + FUTURE_FRAMES + 1
+        past_start = center_idx - spec.history_span
+        future_end = center_idx + spec.future_span + 1
         if past_start < 0 or future_end > n_frames:
             return None
 
@@ -401,7 +411,7 @@ class TrainingWindowBuilder:
         heading = np.arctan2(center_sin, center_cos)
         cos_neg, sin_neg = np.cos(-heading), np.sin(-heading)
 
-        past = trajectory[past_start : center_idx + 1]
+        past = trajectory[past_start : center_idx + 1 : fs]
         dx, dy = past[:, 0] - center_x, past[:, 1] - center_y
         relative_heading = np.arctan2(past[:, 3], past[:, 2]) - heading
         ego_past = np.stack(
@@ -414,7 +424,7 @@ class TrainingWindowBuilder:
             axis=1,
         ).astype(np.float32)
 
-        future = trajectory[center_idx + 1 : future_end]
+        future = trajectory[center_idx + fs : future_end : fs]
         dx, dy = future[:, 0] - center_x, future[:, 1] - center_y
         ego_future = np.stack(
             [
@@ -446,7 +456,7 @@ class TrainingWindowBuilder:
             dtype=np.float32,
         )
 
-        turn = np.asarray(scene["turn"])[past_start : center_idx + 1].astype(np.int32)
+        turn = np.asarray(scene["turn"])[past_start : center_idx + 1 : fs].astype(np.int32)
         goal = np.asarray(scene["goal"])
         goal_dx, goal_dy = goal[0] - center_x, goal[1] - center_y
         goal_x = goal_dx * cos_neg - goal_dy * sin_neg
