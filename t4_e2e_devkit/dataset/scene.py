@@ -69,8 +69,7 @@ def normalize_t4_camera_names(
     unknown = [name for name in names if name not in known]
     if unknown:
         raise ValueError(
-            f"unknown T4 camera name(s): {unknown}; "
-            f"available names: {list(T4_ALL_CAMERA_NAMES)}"
+            f"unknown T4 camera name(s): {unknown}; available names: {list(T4_ALL_CAMERA_NAMES)}"
         )
     if require_count is not None and len(names) != int(require_count):
         raise ValueError(
@@ -104,6 +103,7 @@ _FRAME_CACHE_VARIABLE_FIELDS = ("gt_boxes", "gt_labels")
 _BRIDGE_STATIC_SPEED_MS = 0.15
 _BRIDGE_MATCH_RADIUS_M = 0.75
 
+
 def _bridge_stationary_boxes(
     fboxes: List[np.ndarray], flabels: List[np.ndarray]
 ) -> Tuple[List[np.ndarray], List[np.ndarray]]:
@@ -124,9 +124,7 @@ def _bridge_stationary_boxes(
             best = None
             best_distance = _BRIDGE_MATCH_RADIUS_M
             for cluster in clusters:
-                distance = float(
-                    np.hypot(row[0] - cluster["cx"], row[1] - cluster["cy"])
-                )
+                distance = float(np.hypot(row[0] - cluster["cx"], row[1] - cluster["cy"]))
                 if distance <= best_distance:
                     best_distance = distance
                     best = cluster
@@ -163,9 +161,7 @@ def _bridge_stationary_boxes(
         # Circular median avoids a bogus heading near
         # zero when observations straddle the +/-pi boundary.
         representative[6] = float(
-            np.arctan2(
-                np.median(np.sin(rows[:, 6])), np.median(np.cos(rows[:, 6]))
-            )
+            np.arctan2(np.median(np.sin(rows[:, 6])), np.median(np.cos(rows[:, 6])))
         )
         representative[7:9] = 0.0
         representative = representative.astype(np.float32)
@@ -185,9 +181,7 @@ def _bridge_stationary_boxes(
                 )
                 if bool((distance <= _BRIDGE_MATCH_RADIUS_M).any()):
                     continue
-            output_boxes[frame_index] = np.concatenate(
-                (existing, representative[None]), axis=0
-            )
+            output_boxes[frame_index] = np.concatenate((existing, representative[None]), axis=0)
             output_labels[frame_index] = np.concatenate(
                 (output_labels[frame_index], representative_label)
             )
@@ -254,9 +248,7 @@ def global_to_ego(poses: np.ndarray, center_pose: np.ndarray) -> np.ndarray:
     )
 
 
-def build_ego_status(
-    global_poses: np.ndarray, center_pose: np.ndarray, dt: float
-) -> np.ndarray:
+def build_ego_status(global_poses: np.ndarray, center_pose: np.ndarray, dt: float) -> np.ndarray:
     """Build the ``[N, 7]`` ego-status history from a pose history alone.
 
     ``global_poses`` is ``[N, 4]`` global ``[x, y, cos, sin]`` ordered oldest to
@@ -367,8 +359,7 @@ class T4BundleReader:
         if header.get("format") != "t4bundle" or header.get("version") != 2:
             self.close()
             raise ValueError(
-                f"{self.path}: unsupported bundle "
-                f"{header.get('format')}/{header.get('version')}"
+                f"{self.path}: unsupported bundle {header.get('format')}/{header.get('version')}"
             )
         self.n_frames = int(header["n_frames"])
         pos = 4 + header_size
@@ -380,15 +371,11 @@ class T4BundleReader:
         self._counts: Dict[str, np.ndarray] = {}
         for field in self._spec:
             if field.get("variable", False):
-                self._counts[field["name"]] = np.frombuffer(
-                    raw, np.uint32, self.n_frames, pos
-                )
+                self._counts[field["name"]] = np.frombuffer(raw, np.uint32, self.n_frames, pos)
                 pos += 4 * self.n_frames
         self.field_spec = {
             field["name"]: {
-                "shape": field["shape"][1:]
-                if field.get("variable", False)
-                else field["shape"],
+                "shape": field["shape"][1:] if field.get("variable", False) else field["shape"],
                 "dtype": field["dtype"],
                 "variable": field.get("variable", False),
             }
@@ -403,8 +390,7 @@ class T4BundleReader:
             import zstandard as zstd
         except ImportError as exc:  # pragma: no cover - environment dependent
             raise ImportError(
-                "T4 derived/frames.pack requires zstandard; install the "
-                "repository requirements"
+                "T4 derived/frames.pack requires zstandard; install the repository requirements"
             ) from exc
         return zstd.ZstdDecompressor()
 
@@ -415,9 +401,7 @@ class T4BundleReader:
         if index == self._cached_index:
             assert self._cached_frame is not None
             return self._cached_frame
-        compressed = os.pread(
-            self._fd, int(self._sizes[index]), int(self._offsets[index])
-        )
+        compressed = os.pread(self._fd, int(self._sizes[index]), int(self._offsets[index]))
         # bytearray keeps returned arrays writable when callers convert them to
         # tensors or apply augmentation in-place.
         raw = bytearray(self._dctx.decompress(compressed))
@@ -433,9 +417,7 @@ class T4BundleReader:
             out[name] = np.frombuffer(raw, dtype, count, pos).reshape(shape)
             pos += count * dtype.itemsize
         if pos != len(raw):
-            raise ValueError(
-                f"{self.path}: frame {index} has {len(raw) - pos} trailing bytes"
-            )
+            raise ValueError(f"{self.path}: frame {index} has {len(raw) - pos} trailing bytes")
         self._cached_index, self._cached_frame = index, out
         return out
 
@@ -502,8 +484,7 @@ class T4FrameCache:
             if actual != shape:
                 self.close()
                 raise ValueError(
-                    f"T4 frame cache {self.cache_dir}: {field} has shape "
-                    f"{actual}, expected {shape}"
+                    f"T4 frame cache {self.cache_dir}: {field} has shape {actual}, expected {shape}"
                 )
 
     @staticmethod
@@ -579,10 +560,7 @@ class T4FrameCache:
             raise IndexError(f"T4 frame cache index {index} outside [0, {self.n_frames})")
         count = int(self._arrays["gt_counts"][index])
         return {
-            **{
-                field: self._arrays[field][index]
-                for field in _FRAME_CACHE_FIXED_FIELDS
-            },
+            **{field: self._arrays[field][index] for field in _FRAME_CACHE_FIXED_FIELDS},
             "gt_boxes": self._arrays["gt_boxes"][index, :count],
             "gt_labels": self._arrays["gt_labels"][index, :count],
         }
@@ -642,9 +620,7 @@ def build_t4_frame_cache(
     n_frames = int(bundle.n_frames)
     max_agents = int(np.max(counts)) if n_frames else 0
 
-    temp_dir = Path(
-        tempfile.mkdtemp(prefix=f".{cache_dir.name}.tmp-", dir=str(cache_root))
-    )
+    temp_dir = Path(tempfile.mkdtemp(prefix=f".{cache_dir.name}.tmp-", dir=str(cache_root)))
     arrays: Dict[str, np.memmap] = {}
     try:
         shapes: Dict[str, Tuple[int, ...]] = {}
@@ -684,9 +660,7 @@ def build_t4_frame_cache(
             frame_labels = np.asarray(frame["gt_labels"]).reshape(-1)
             count = int(frame_boxes.shape[0])
             if count != int(counts[frame_index]) or count != int(frame_labels.shape[0]):
-                raise ValueError(
-                    f"{scene_dir}: inconsistent GT count at frame {frame_index}"
-                )
+                raise ValueError(f"{scene_dir}: inconsistent GT count at frame {frame_index}")
             arrays["gt_counts"][frame_index] = count
             if count:
                 arrays["gt_boxes"][frame_index, :count] = frame_boxes
@@ -764,14 +738,11 @@ class T4LidarPackReader:
         if os.pread(self._fd, len(self.MAGIC), 0) != self.MAGIC:
             self.close()
             raise ValueError(f"{self.path}: invalid T4 LiDAR pack magic")
-        index = json.loads(
-            self._dctx.decompress(os.pread(self._fd, index_size, index_offset))
-        )
+        index = json.loads(self._dctx.decompress(os.pread(self._fd, index_size, index_offset)))
         if index.get("format") != "t4pack" or index.get("version") != 1:
             self.close()
             raise ValueError(
-                f"{self.path}: unsupported LiDAR pack "
-                f"{index.get('format')}/{index.get('version')}"
+                f"{self.path}: unsupported LiDAR pack {index.get('format')}/{index.get('version')}"
             )
         frames = index.get("frames")
         if not isinstance(frames, list) or not isinstance(index.get("n_frames"), int):
@@ -806,18 +777,14 @@ class T4LidarPackReader:
             isinstance(value, bool) or not isinstance(value, int)
             for value in (offset, size, n_points)
         ):
-            raise ValueError(
-                f"T4 LiDAR pack frame {index} has non-integer bounds or point count"
-            )
+            raise ValueError(f"T4 LiDAR pack frame {index} has non-integer bounds or point count")
         if (
             offset < len(T4LidarPackReader.MAGIC)
             or size <= 0
             or n_points < 0
             or offset + size > data_end
         ):
-            raise ValueError(
-                f"T4 LiDAR pack frame {index} has invalid bounds or point count"
-            )
+            raise ValueError(f"T4 LiDAR pack frame {index} has invalid bounds or point count")
         dtypes = frame["dtypes"]
         if not isinstance(dtypes, list) or len(dtypes) != 5:
             raise ValueError(f"T4 LiDAR pack frame {index} must describe 5 columns")
@@ -830,8 +797,7 @@ class T4LidarPackReader:
             import zstandard as zstd
         except ImportError as exc:  # pragma: no cover - environment dependent
             raise ImportError(
-                "T4 data/LIDAR_CONCAT.pack requires zstandard; install the "
-                "repository requirements"
+                "T4 data/LIDAR_CONCAT.pack requires zstandard; install the repository requirements"
             ) from exc
         return zstd.ZstdDecompressor()
 
@@ -861,12 +827,12 @@ class T4LidarPackReader:
             prefix += 1
         pos = 0
         if prefix and n:
-            planes = np.frombuffer(
-                raw, np.uint8, count=4 * n * prefix, offset=0
-            ).reshape(prefix, 4, n)
-            out[:, :prefix] = np.ascontiguousarray(
-                planes.transpose(2, 0, 1)
-            ).view(np.float32).reshape(n, prefix)
+            planes = np.frombuffer(raw, np.uint8, count=4 * n * prefix, offset=0).reshape(
+                prefix, 4, n
+            )
+            out[:, :prefix] = (
+                np.ascontiguousarray(planes.transpose(2, 0, 1)).view(np.float32).reshape(n, prefix)
+            )
             pos = 4 * n * prefix
         for column in range(prefix, len(dtypes)):
             dtype = dtypes[column]
@@ -878,16 +844,12 @@ class T4LidarPackReader:
                 pos += n
             elif dtype == "f4s":
                 planes = np.frombuffer(raw, np.uint8, 4 * n, pos).reshape(4, n)
-                out[:, column] = np.ascontiguousarray(planes.T).reshape(-1).view(
-                    np.float32
-                )
+                out[:, column] = np.ascontiguousarray(planes.T).reshape(-1).view(np.float32)
                 pos += 4 * n
             else:
                 raise ValueError(f"{column}: unknown T4 pack dtype {dtype!r}")
         if pos != len(raw):
-            raise ValueError(
-                f"T4 LiDAR frame has {len(raw) - pos} trailing bytes"
-            )
+            raise ValueError(f"T4 LiDAR frame has {len(raw) - pos} trailing bytes")
         return out
 
     def read_frame(self, index: int) -> np.ndarray:
@@ -944,9 +906,28 @@ class T4LidarPackReader:
 
 
 class T4SceneReader:
-    """Lazily opened reader for one T4 scene."""
+    """Lazily opened reader for one T4 scene.
 
-    def __init__(self, scene_dir: str | Path, root: str | Path, config: Any):
+    ``bundle`` / ``meta`` / ``scalars`` let a caller that has ALREADY opened
+    the scene (a training loader holding
+    :class:`~t4_e2e_devkit.dataset.training_window.TrainingSceneHandles`)
+    share its state instead of re-reading the same files: the adopted bundle
+    reader brings its open descriptor, parsed index and decoded-frame cache,
+    and an adopted bundle is **borrowed** — :meth:`close` leaves it open for
+    its owner.  Adoption changes where bytes come from, never what they are;
+    the parity test pins the assembled scene as identical either way.
+    """
+
+    def __init__(
+        self,
+        scene_dir: str | Path,
+        root: str | Path,
+        config: Any,
+        *,
+        bundle: Optional[T4BundleReader] = None,
+        meta: Optional[dict] = None,
+        scalars: Optional[Dict[str, np.ndarray]] = None,
+    ):
         self.scene_dir = Path(scene_dir)
         self.root = Path(root)
         # Resolve the configured camera slots before touching the raw scene.
@@ -954,9 +935,15 @@ class T4SceneReader:
         derived = self.scene_dir / "derived"
         if not derived.is_dir():
             raise FileNotFoundError(f"T4 scene has no derived directory: {self.scene_dir}")
-        self.meta = json.loads((derived / "meta.json").read_text())
-        with np.load(derived / "scalars.npz", allow_pickle=False) as values:
-            self.scalars = {name: values[name] for name in values.files}
+        if (meta is None) != (scalars is None):
+            raise ValueError("adopt meta and scalars together or not at all")
+        if meta is not None and scalars is not None:
+            self.meta = meta
+            self.scalars = dict(scalars)
+        else:
+            self.meta = json.loads((derived / "meta.json").read_text())
+            with np.load(derived / "scalars.npz", allow_pickle=False) as values:
+                self.scalars = {name: values[name] for name in values.files}
         self.n_frames = int(self.meta.get("n_frames", self.scalars["trajectory"].shape[0]))
         if self.scalars["trajectory"].shape[0] != self.n_frames:
             raise ValueError(f"{self.scene_dir}: trajectory/meta frame count mismatch")
@@ -988,7 +975,8 @@ class T4SceneReader:
             extrinsics[self.camera_indices], dtype=np.float32
         )
 
-        self._bundle: Optional[T4BundleReader] = None
+        self._bundle: Optional[T4BundleReader] = bundle
+        self._owns_bundle = bundle is None
         self._lidar: Optional[T4LidarPackReader] = None
         self._gt_frames: Optional[Dict[int, tuple]] = None
         self._gt_fields_ok = False
@@ -1000,9 +988,7 @@ class T4SceneReader:
                 self.root,
                 Path(str(cache_root)),
                 require=_as_bool(_cfg_get(config, "t4_frame_cache_required", False)),
-                verify_source=_as_bool(
-                    _cfg_get(config, "t4_frame_cache_verify_source", True)
-                ),
+                verify_source=_as_bool(_cfg_get(config, "t4_frame_cache_verify_source", True)),
             )
 
     @staticmethod
@@ -1087,7 +1073,6 @@ class T4SceneReader:
             "supported by the T4 reader"
         )
 
-
     def frame(self, index: int) -> Dict[str, np.ndarray]:
         """Return one raw frame from ``derived/frames.pack``."""
 
@@ -1117,11 +1102,12 @@ class T4SceneReader:
         pack_index = frame + int(self.meta.get("frame_offset", 0))
         return self._lidar_reader().read_frame(pack_index)
 
-
-
     def close(self) -> None:
         if self._bundle is not None:
-            self._bundle.close()
+            # An adopted bundle is borrowed from the training handles that
+            # opened it; closing it here would break their reads mid-scene.
+            if self._owns_bundle:
+                self._bundle.close()
             self._bundle = None
         if self._lidar is not None:
             self._lidar.close()

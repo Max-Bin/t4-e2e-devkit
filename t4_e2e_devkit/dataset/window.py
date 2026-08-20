@@ -56,6 +56,7 @@ from t4_e2e_devkit.dataset.contract import BUNDLE_TO_CONTRACT
 from t4_e2e_devkit.dataset.rigs import readable_camera_names, resolve_camera_names
 from t4_e2e_devkit.dataset.route import T4RouteMetadata, load_t4_route
 from t4_e2e_devkit.dataset.scene import (
+    T4BundleReader,
     T4SceneReader,
     _bridge_stationary_boxes,
     _transform_agent_boxes_to_center,
@@ -100,6 +101,10 @@ class T4WindowBuilder:
         sensor_config: Optional[SensorConfig] = None,
         scene_filter: Optional[SceneFilter] = None,
         reader_config: Optional[Dict[str, Any]] = None,
+        *,
+        shared_bundle: Optional["T4BundleReader"] = None,
+        shared_meta: Optional[Dict[str, Any]] = None,
+        shared_scalars: Optional[Dict[str, Any]] = None,
     ) -> None:
         """
         :param scene_dir: the T4 scene directory.
@@ -108,6 +113,12 @@ class T4WindowBuilder:
         :param scene_filter: the window shape; the contract default otherwise.
         :param reader_config: extra settings forwarded to :class:`T4SceneReader`
             (frame cache directory, image size, missing-camera policy, ...).
+        :param shared_bundle: an already-open bundle reader to borrow instead of
+            opening the scene's ``frames.pack`` a second time. Pass together
+            with ``shared_meta``/``shared_scalars`` from the handles that own
+            them; the builder never closes a borrowed bundle.
+        :param shared_meta: pre-parsed ``derived/meta.json`` to adopt.
+        :param shared_scalars: pre-loaded ``derived/scalars.npz`` to adopt.
         """
         self.scene_dir = Path(scene_dir)
         self.root = Path(root)
@@ -172,7 +183,14 @@ class T4WindowBuilder:
                 strict=_as_bool(config.get("t4_map_required", False)),
                 route_lane_ids=route_lane_ids,
             )
-        self.reader = T4SceneReader(self.scene_dir, self.root, config)
+        self.reader = T4SceneReader(
+            self.scene_dir,
+            self.root,
+            config,
+            bundle=shared_bundle,
+            meta=shared_meta,
+            scalars=shared_scalars,
+        )
         self._image_hw = tuple(int(value) for value in config["t4_image_size_hw"])
         # Camera decoders, opened as a register on first use; see camera_source.
         self._camera_sources: Dict[str, Any] = {}
