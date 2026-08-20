@@ -299,6 +299,13 @@ def describe_data_list(data_list: DataList) -> str:
     if cameras:
         lines.append(f"cameras   : {', '.join(cameras)}")
 
+    # What the request resolved to on the rigs in the list.  More than one entry
+    # means no single camera model can read the whole list.
+    for entry in manifest.get("camera_registers") or ():
+        if isinstance(entry, Mapping):
+            register = ", ".join(entry.get("register") or ()) or "(none)"
+            lines.append(f"register  : {register}  [{entry.get('scenes')} scene(s)]")
+
     policy = manifest.get("filter")
     if isinstance(policy, Mapping):
         lines.append("filter    :")

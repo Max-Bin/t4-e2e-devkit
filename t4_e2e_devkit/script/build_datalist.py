@@ -11,12 +11,25 @@ each gate cost -- per label, per scene, per camera -- so a short list can be
 explained later without rebuilding it.  A run whose list does not say why it is
 short is a run nobody can reproduce.
 
+``--glob`` and ``--camera-names`` are both required, and neither defaults to the
+main ``prd_jt`` rig.  The register is resolved against every scene as the list is
+built, so a scene whose rig cannot serve it is dropped here with a reason rather
+than at the first camera batch of a training run.  Pass ``--camera-names none``
+for a map/ego/LiDAR list that declares no camera contract at all.
+
 Usage::
 
     python -m t4_e2e_devkit.script.build_datalist \\
         --root /path/to/t4_dataset \\
         --glob 'prd_jt/*/*/*' \\
+        --camera-names wide5 \\
         --out /path/to/t4_train.json
+
+    python -m t4_e2e_devkit.script.build_datalist \\
+        --root /path/to/t4_dataset \\
+        --glob 'x2_dev/*/*/*' \\
+        --camera-names x2_surround6 \\
+        --out /path/to/x2_train.json
 """
 
 from __future__ import annotations
@@ -32,10 +45,11 @@ from t4_e2e_devkit.common.constants import (
     DEFAULT_CENTER_STRIDE,
     FUTURE_FRAMES,
     PAST_FRAMES,
-    T4_WIDE5_CAMERA_NAMES,
+    T4_CAMERA_PROFILES,
 )
-from t4_e2e_devkit.common.dataclasses import SceneFilter
+from t4_e2e_devkit.common.dataclasses import SceneFilter, SensorConfig
 from t4_e2e_devkit.dataset.datalist import DataList, is_e2e_scene_path
+from t4_e2e_devkit.dataset.rigs import RigMismatch, sensor_config_for_scene
 from t4_e2e_devkit.dataset.scene_tags import T4SceneTagIndex
 from t4_e2e_devkit.dataset.window import T4WindowBuilder
 
@@ -53,8 +67,8 @@ def parse_args(argv: Optional[Sequence[str]] = None) -> argparse.Namespace:
     parser.add_argument("--root", required=True, type=Path, help="T4 dataset root")
     parser.add_argument(
         "--glob",
-        default="prd_jt/*/*/*",
-        help="scene directory glob, relative to --root (default: %(default)s)",
+        required=True,
+        help="scene directory glob, relative to --root, e.g. 'prd_jt/*/*/*'",
     )
     parser.add_argument("--out", required=True, type=Path, help="output data-list path")
     parser.add_argument(
@@ -121,15 +135,17 @@ def parse_args(argv: Optional[Sequence[str]] = None) -> argparse.Namespace:
     parser.add_argument(
         "--camera-names",
         nargs="+",
-        default=list(T4_WIDE5_CAMERA_NAMES),
-        help="camera register a scene must expose (default: the five wide views)",
+        required=True,
+        help="camera register a scene must expose: an explicit list, a profile "
+        f"name ({', '.join(sorted(T4_CAMERA_PROFILES))}), or 'none' for a list "
+        "with no camera contract. No rig is the default",
     )
     parser.add_argument(
         "--require-cameras",
         nargs="*",
         default=None,
         help="cameras a window must have an image for at its centre; "
-        "'none' requires nothing, omitted means --camera-names",
+        "'none' requires nothing, omitted means the resolved --camera-names",
     )
     parser.add_argument(
         "--max-window-gap-frames",
@@ -161,15 +177,21 @@ def build(args: argparse.Namespace) -> DataList:
         frame_interval=args.center_stride,
     )
 
+    camera_request: Optional[List[str]] = list(args.camera_names)
+    if _means_none(camera_request):
+        camera_request = None
+
+    # ``None`` means "whatever this scene's rig resolves to", which is the only
+    # honest default once a list may span rigs that share no camera.
     require_cameras: Optional[List[str]]
     if args.require_cameras is None:
-        require_cameras = list(args.camera_names)
-    elif len(args.require_cameras) == 1 and args.require_cameras[0].lower() == "none":
+        require_cameras = None
+    elif _means_none(args.require_cameras):
         require_cameras = []
     else:
         require_cameras = list(args.require_cameras)
 
-    reader_config: Dict[str, Any] = {"camera_names": list(args.camera_names)}
+    reader_config: Dict[str, Any] = {}
     tag_index = None
     if args.scene_tags_root is not None:
         tag_index = T4SceneTagIndex.cached(args.scene_tags_root)
@@ -177,6 +199,7 @@ def build(args: argparse.Namespace) -> DataList:
 
     rows: List[tuple] = []
     scenes: List[str] = []
+    registers: Dict[tuple, int] = {}
     dropped: Dict[str, int] = {
         "scene_outside_e2e_subtree": 0,
         "scene_unreadable": 0,
@@ -218,9 +241,36 @@ def build(args: argparse.Namespace) -> DataList:
                 dropped["scenes_dropped_by_scene_tags"] += 1
                 continue
 
+        # Resolve the register against this scene's rig before reading anything.
+        # A rig that cannot serve the requested register is a whole-scene
+        # exclusion, counted apart from a corrupt scene, and it has to happen
+        # here: a list that records a register its scenes do not have is a list
+        # that fails at the first camera batch of a training run.
+        try:
+            sensor_config = (
+                SensorConfig.build_no_sensors()
+                if camera_request is None
+                else sensor_config_for_scene(scene_path, camera_request)
+            )
+        except (RigMismatch, FileNotFoundError) as error:
+            dropped["scene_without_cameras"] += 1
+            scene_errors[relative] = type(error).__name__
+            continue
+        resolved_cameras = list(sensor_config.cameras)
+        required = resolved_cameras if require_cameras is None else require_cameras
+        missing = [name for name in required if name not in resolved_cameras]
+        if missing:
+            dropped["scene_without_cameras"] += 1
+            scene_errors[relative] = "RigMismatch"
+            continue
+
         try:
             builder = T4WindowBuilder(
-                scene_path, root, scene_filter=scene_filter, reader_config=reader_config
+                scene_path,
+                root,
+                scene_filter=scene_filter,
+                sensor_config=sensor_config,
+                reader_config={**reader_config, "camera_names": resolved_cameras},
             )
         except ValueError as error:
             # A missing camera directory is a whole-scene exclusion, not a
@@ -236,13 +286,14 @@ def build(args: argparse.Namespace) -> DataList:
             continue
 
         try:
-            scene_rows = _scene_rows(builder, relative, require_cameras, args, dropped)
+            scene_rows = _scene_rows(builder, relative, required, args, dropped)
         finally:
             builder.close()
 
         if scene_rows:
             rows.extend(scene_rows)
             scenes.append(relative)
+            registers[tuple(resolved_cameras)] = registers.get(tuple(resolved_cameras), 0) + 1
         else:
             dropped["scene_too_short"] += 1
 
@@ -255,13 +306,22 @@ def build(args: argparse.Namespace) -> DataList:
         "vehicles": args.vehicle,
         "scene_tags_enabled": args.scene_tags_root is not None,
         "camera_names": list(args.camera_names),
+        # What the request actually resolved to, per rig.  More than one entry
+        # means the list spans registers, which no single camera model can read.
+        "camera_registers": [
+            {"register": list(register), "scenes": count}
+            for register, count in sorted(registers.items(), key=lambda item: -item[1])
+        ],
         "history_frames": args.history_frames,
         "gt_future_frames": args.future_frames,
         "center_stride": args.center_stride,
         # Recorded apart from camera_names because they are allowed to differ:
         # what the model reads and what a window must have are two decisions.
         "filter": {
-            "require_cameras": sorted(require_cameras),
+            # Left null when the requirement follows each scene's resolved
+            # register; the flag says so, rather than a string in a list field.
+            "require_cameras": None if require_cameras is None else sorted(require_cameras),
+            "require_resolved_register": require_cameras is None,
             "max_window_gap_frames": args.max_window_gap_frames,
             "scene_tag_filters": {
                 "include_events": args.include_tag_event,
@@ -275,6 +335,11 @@ def build(args: argparse.Namespace) -> DataList:
         },
     }
     return DataList(root=root, rows=rows, manifest=manifest)
+
+
+def _means_none(values: Sequence[str]) -> bool:
+    """Whether a camera argument spells the empty register."""
+    return len(values) == 1 and str(values[0]).strip().lower() in ("none", "null")
 
 
 def _matches_scene_tags(tags: Sequence[Any], args: argparse.Namespace) -> bool:
@@ -315,11 +380,16 @@ def _scene_rows(
     """Enumerate the accepted centres of one scene."""
     presence = builder.reader.scalars.get("cam_presence")
     valid_mask = builder.reader.scalars.get("valid_mask")
-    camera_slots = [
-        builder.reader.camera_indices[builder.reader.camera_names.index(name)]
-        for name in require_cameras
-        if name in builder.reader.camera_names
-    ]
+    # Every required name is in the resolved register: the caller dropped the
+    # scene otherwise.  Skipping unknown names here instead is what made this
+    # gate a no-op -- an absent camera silently required nothing.
+    slot_of = {
+        name.upper(): index
+        for name, index in zip(
+            builder.reader.camera_names, builder.reader.camera_indices, strict=True
+        )
+    }
+    camera_slots = [slot_of[name.upper()] for name in require_cameras]
 
     rows: List[tuple] = []
     for center in builder.valid_centers():
@@ -362,10 +432,13 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
                 "out": str(path),
                 "n_scenes": len(data_list.scene_dirs),
                 "n_rows": len(data_list.rows),
+                "registers": data_list.manifest["camera_registers"],
+                # bool is an int in Python, and a policy flag in the drop
+                # summary reads as "one window lost to require_resolved_register".
                 "dropped": {
                     key: value
                     for key, value in data_list.manifest["filter"].items()
-                    if isinstance(value, int) and value
+                    if type(value) is int and value
                 },
             },
             indent=2,
