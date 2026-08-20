@@ -8,7 +8,12 @@ from typing import Any, Optional
 class TwoStageController:
     """Apply a tracker and then a motion model, if supplied."""
 
-    def __init__(self, scenario: Optional[Any] = None, tracker: Optional[Any] = None, motion_model: Optional[Any] = None) -> None:
+    def __init__(
+        self,
+        scenario: Optional[Any] = None,
+        tracker: Optional[Any] = None,
+        motion_model: Optional[Any] = None,
+    ) -> None:
         self.scenario = scenario
         self.tracker = tracker
         self.motion_model = motion_model

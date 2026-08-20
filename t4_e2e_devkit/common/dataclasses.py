@@ -205,8 +205,7 @@ class Lidar:
         values = np.asarray(self.lidar_pc, dtype=np.float32)
         if values.ndim != 2 or values.shape[1] != T4_LIDAR_POINT_DIM:
             raise ValueError(
-                f"T4 LiDAR points are [x, y, z, intensity, ring_or_time]; "
-                f"got shape {values.shape}"
+                f"T4 LiDAR points are [x, y, z, intensity, ring_or_time]; got shape {values.shape}"
             )
         self.lidar_pc = np.ascontiguousarray(values)
 
@@ -240,7 +239,9 @@ class EgoShape:
         """:param array: ``[3]`` of ``(wheel_base, length, width)``."""
         values = np.asarray(array, dtype=np.float64).reshape(-1)
         if values.shape[0] != 3:
-            raise ValueError(f"ego_shape must be [wheel_base, length, width]; got shape {values.shape}")
+            raise ValueError(
+                f"ego_shape must be [wheel_base, length, width]; got shape {values.shape}"
+            )
         return cls(
             wheel_base=float(values[EGO_SHAPE_IDX_WHEEL_BASE]),
             length=float(values[EGO_SHAPE_IDX_LENGTH]),
@@ -396,8 +397,7 @@ class MapObjectIds:
         output = Path(path)
         output.parent.mkdir(parents=True, exist_ok=True)
         output.write_text(
-            json.dumps(self.as_dict(), ensure_ascii=False, indent=2, sort_keys=True)
-            + "\n",
+            json.dumps(self.as_dict(), ensure_ascii=False, indent=2, sort_keys=True) + "\n",
             encoding="utf-8",
         )
         return str(output)
@@ -474,9 +474,7 @@ class Annotations:
                 f"(x, y, z, width, length, height, yaw[, vx, vy]); got {boxes.shape}"
             )
         if len(labels) != len(boxes):
-            raise ValueError(
-                f"annotation labels ({len(labels)}) and boxes ({len(boxes)}) disagree"
-            )
+            raise ValueError(f"annotation labels ({len(labels)}) and boxes ({len(boxes)}) disagree")
         if self.track_tokens is not None and len(self.track_tokens) != len(boxes):
             raise ValueError(
                 f"annotation track_tokens ({len(self.track_tokens)}) and boxes "
@@ -538,14 +536,18 @@ class Trajectory:
         validate_trajectory_sampling(self.trajectory_sampling)
         poses = np.asarray(self.poses, dtype=np.float32)
         if poses.ndim != 2:
-            raise ValueError(f"Trajectory poses need two dimensions (samples, pose); got {poses.shape}")
+            raise ValueError(
+                f"Trajectory poses need two dimensions (samples, pose); got {poses.shape}"
+            )
         if poses.shape[0] != self.trajectory_sampling.num_poses:
             raise ValueError(
                 f"Trajectory has {poses.shape[0]} poses but its sampling declares "
                 f"{self.trajectory_sampling.num_poses}"
             )
         if poses.shape[1] != 3:
-            raise ValueError(f"Trajectory poses need (x, y, heading) at the last dim; got {poses.shape}")
+            raise ValueError(
+                f"Trajectory poses need (x, y, heading) at the last dim; got {poses.shape}"
+            )
         if not np.isfinite(poses).all():
             raise ValueError("Trajectory poses must contain only finite values")
         # The dataclass is the numpy boundary.  Normalising here keeps callers
@@ -589,8 +591,12 @@ class Trajectory:
         source_interval = float(self.trajectory_sampling.interval_length)
         target_interval = float(target_sampling.interval_length)
         source_times = np.arange(len(self) + 1, dtype=np.float64) * source_interval
-        target_times = np.arange(1, target_sampling.num_poses + 1, dtype=np.float64) * target_interval
-        source_poses = np.vstack((np.zeros((1, 3), dtype=np.float64), self.poses.astype(np.float64)))
+        target_times = (
+            np.arange(1, target_sampling.num_poses + 1, dtype=np.float64) * target_interval
+        )
+        source_poses = np.vstack(
+            (np.zeros((1, 3), dtype=np.float64), self.poses.astype(np.float64))
+        )
 
         if target_times.size:
             source_horizon = float(source_times[-1])
@@ -613,9 +619,7 @@ class Trajectory:
                 result[index] = values[-1] + slope * (time - source_times[-1])
             return result
 
-        xy = np.stack(
-            [interpolate(source_poses[:, column]) for column in (0, 1)], axis=-1
-        )
+        xy = np.stack([interpolate(source_poses[:, column]) for column in (0, 1)], axis=-1)
         unwrapped_heading = np.unwrap(source_poses[:, 2])
         heading = interpolate(unwrapped_heading)
         poses = np.column_stack((xy, heading)).astype(np.float32)
@@ -782,9 +786,7 @@ class T4Scene:
                 "it was read with a filter that excluded them"
             )
         if trajectory_sampling is not None and (num_poses is not None or stride is not None):
-            raise ValueError(
-                "trajectory_sampling cannot be combined with num_poses or stride"
-            )
+            raise ValueError("trajectory_sampling cannot be combined with num_poses or stride")
         if trajectory_sampling is None:
             num_poses = TRAJECTORY_POSES if num_poses is None else int(num_poses)
             stride = FUTURE_STRIDE if stride is None else int(stride)
@@ -939,9 +941,7 @@ class SensorConfig:
         )
 
     @classmethod
-    def build_all_sensors(
-        cls, camera_names: Optional[Sequence[str]] = None
-    ) -> SensorConfig:
+    def build_all_sensors(cls, camera_names: Optional[Sequence[str]] = None) -> SensorConfig:
         """
         :param camera_names: cameras to decode; the wide-five profile by default.
         :return: every named camera and LiDAR at every history step.

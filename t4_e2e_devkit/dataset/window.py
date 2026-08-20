@@ -164,9 +164,7 @@ class T4WindowBuilder:
         self.map_api: Optional[T4MapAPI] = None
         if _as_bool(config.get("t4_attach_map_ids", False)):
             route_lane_ids = (
-                self.route_metadata.route_lane_ids
-                if self.route_metadata is not None
-                else ()
+                self.route_metadata.route_lane_ids if self.route_metadata is not None else ()
             )
             self.map_api = T4MapAPI.from_scene(
                 self.scene_dir,
@@ -328,9 +326,7 @@ class T4WindowBuilder:
         if self.map_api is not None:
             center_pose = np.asarray(self.reader.trajectory[int(frame_index)], dtype=np.float64)
             route_ids = (
-                self.route_metadata.route_lane_ids
-                if self.route_metadata is not None
-                else ()
+                self.route_metadata.route_lane_ids if self.route_metadata is not None else ()
             )
             lane_matches = self.map_api.match_local_centerlines_detailed(
                 fields["lanes"],
@@ -359,13 +355,9 @@ class T4WindowBuilder:
             )
             object_ids = MapObjectIds(
                 lane_ids=tuple(match.source_object_id for match in lane_matches),
-                route_lane_ids=tuple(
-                    match.source_object_id for match in route_matches
-                ),
+                route_lane_ids=tuple(match.source_object_id for match in route_matches),
                 polygon_ids=tuple(match.source_object_id for match in polygon_matches),
-                line_string_ids=tuple(
-                    match.source_object_id for match in line_string_matches
-                ),
+                line_string_ids=tuple(match.source_object_id for match in line_string_matches),
                 source_path=self.map_api.source_label,
                 frame_index=int(frame_index),
                 matches=lane_matches + route_matches + polygon_matches + line_string_matches,

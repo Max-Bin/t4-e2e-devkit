@@ -141,9 +141,7 @@ def test_rank_merge_validates_manifests_and_keeps_configuration_fingerprint(tmp_
 def test_dashboard_links_files_when_written_outside_results_dir(tmp_path):
     results = tmp_path / "results"
     results.mkdir()
-    (results / "aggregate.json").write_text(
-        json.dumps({"pdm": {"score": 0.5}}), encoding="utf-8"
-    )
+    (results / "aggregate.json").write_text(json.dumps({"pdm": {"score": 0.5}}), encoding="utf-8")
     (results / "run.json").write_text(
         json.dumps({"status": "completed", "num_completed": 1, "num_failed": 0}),
         encoding="utf-8",

@@ -104,11 +104,15 @@ class T4ReplayObservationSource:
         if self.include_sensors:
             return sensors if sensors is not None else Sensors(pointcloud=None, images=None)
         if self.include_tracks:
-            return tracks if tracks is not None else DetectionsTracks(
-                tracked_objects=annotations_to_detections_tracks(
-                    scene.current_frame.annotations or Annotations.empty(),
-                    timestamp_us=scene.current_frame.timestamp_us,
-                ).tracked_objects
+            return (
+                tracks
+                if tracks is not None
+                else DetectionsTracks(
+                    tracked_objects=annotations_to_detections_tracks(
+                        scene.current_frame.annotations or Annotations.empty(),
+                        timestamp_us=scene.current_frame.timestamp_us,
+                    ).tracked_objects
+                )
             )
         return Observation()
 

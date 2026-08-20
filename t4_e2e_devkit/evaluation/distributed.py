@@ -139,7 +139,11 @@ class DistributedExecutor:
         previous: dict[str, WorkerResult] = {}
         if resume and manifest_path is not None and Path(manifest_path).is_file():
             saved = WorkerManifest.read(manifest_path)
-            if saved.run_id != self.config.run_id or saved.rank != self.config.rank or saved.world_size != self.config.world_size:
+            if (
+                saved.run_id != self.config.run_id
+                or saved.rank != self.config.rank
+                or saved.world_size != self.config.world_size
+            ):
                 raise ValueError("resume manifest does not belong to this distributed rank")
             requested_ids = {task.task_id for task in values}
             previous = {

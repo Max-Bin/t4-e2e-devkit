@@ -137,7 +137,9 @@ def merge_closed_loop_reports(
         merged_payload = dict(payload)
         merged_payload["config"] = run_config
         merged_payload["config_fingerprint"] = config_fingerprint
-        write_rollout_payload(rollout_artifact_path(output / "rollouts", index, token), merged_payload)
+        write_rollout_payload(
+            rollout_artifact_path(output / "rollouts", index, token), merged_payload
+        )
 
     report = aggregate_evaluation(closed_loop=metrics, num_failed=len(failures))
     report["run"].update(

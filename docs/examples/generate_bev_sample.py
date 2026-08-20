@@ -131,8 +131,7 @@ def _make_map() -> MapTensors:
         (6.4, "white"),
     ]
     lane_paths = [
-        (np.column_stack((x_main, np.full_like(x_main, y))), state)
-        for y, state in lane_specs
+        (np.column_stack((x_main, np.full_like(x_main, y))), state) for y, state in lane_specs
     ]
 
     y_cross = np.linspace(-52.0, 52.0, 80)
@@ -165,9 +164,7 @@ def _make_map() -> MapTensors:
     for index, shape in enumerate(polygon_shapes):
         _put_ring(polygons, index, shape)
 
-    line_strings = np.zeros(
-        (NUM_LINE_STRINGS, POINTS_PER_LINE_STRING, 4), dtype=np.float32
-    )
+    line_strings = np.zeros((NUM_LINE_STRINGS, POINTS_PER_LINE_STRING, 4), dtype=np.float32)
     line_specs: list[tuple[np.ndarray, bool]] = [
         (np.column_stack((x_main, np.full_like(x_main, -10.4))), True),
         (np.column_stack((x_main, np.full_like(x_main, 10.4))), True),
@@ -335,9 +332,9 @@ def build_figure():
     prediction_y = 0.15 * prediction_time**2 + 0.25 * np.sin(prediction_time)
     prediction_dy = 0.30 * prediction_time + 0.25 * np.cos(prediction_time)
     prediction = Trajectory(
-        poses=np.column_stack(
-            (prediction_x, prediction_y, np.arctan2(prediction_dy, 6.15))
-        ).astype(np.float32)
+        poses=np.column_stack((prediction_x, prediction_y, np.arctan2(prediction_dy, 6.15))).astype(
+            np.float32
+        )
     )
     trajectories = {
         "history": scene.get_history_poses(),

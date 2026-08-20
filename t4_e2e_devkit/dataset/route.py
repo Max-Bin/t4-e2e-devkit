@@ -42,11 +42,7 @@ class T4RouteMetadata:
     @property
     def primitive_ids(self) -> tuple[str, ...]:
         """All ordered route primitive IDs, preserving segment order."""
-        return tuple(
-            primitive.id
-            for segment in self.segments
-            for primitive in segment.primitives
-        )
+        return tuple(primitive.id for segment in self.segments for primitive in segment.primitives)
 
     @property
     def route_lane_ids(self) -> tuple[str, ...]:
@@ -87,9 +83,9 @@ def _pose(value: Any) -> Optional[tuple[float, ...]]:
     if not isinstance(position, Mapping) or not isinstance(orientation, Mapping):
         return None
     try:
-        return tuple(
-            float(position[key]) for key in ("x", "y", "z")
-        ) + tuple(float(orientation[key]) for key in ("x", "y", "z", "w"))
+        return tuple(float(position[key]) for key in ("x", "y", "z")) + tuple(
+            float(orientation[key]) for key in ("x", "y", "z", "w")
+        )
     except (KeyError, TypeError, ValueError):
         return None
 

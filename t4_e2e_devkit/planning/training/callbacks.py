@@ -99,11 +99,10 @@ class TrajectoryVizCallback(pl.Callback):
 
         for scene_dir, center in self._rows or []:
             absolute = data_list.absolute_scene_dir(scene_dir)
-            sensor_config = (
-                sensor_config_for_scene(absolute) if needs_cameras else None
-            )
+            sensor_config = sensor_config_for_scene(absolute) if needs_cameras else None
             builder = T4WindowBuilder(
-                absolute, data_list.root,
+                absolute,
+                data_list.root,
                 sensor_config=sensor_config,
                 reader_config=self.reader_config,
             )
@@ -185,7 +184,10 @@ class TrajectoryVizCallback(pl.Callback):
             self._failures += 1
             logger.warning(
                 "TrajectoryVizCallback failed at epoch %d (%d/%d): %r",
-                trainer.current_epoch, self._failures, self.max_failures, error,
+                trainer.current_epoch,
+                self._failures,
+                self.max_failures,
+                error,
             )
             if self._failures >= self.max_failures:
                 self._disabled = True

@@ -36,17 +36,13 @@ class MyAgent(AbstractT4Agent):
         return [CameraFeatureBuilder(), MapFeatureBuilder()]
 
     def get_target_builders(self):
-        return [
-            TrajectoryTargetBuilder(trajectory_sampling=self.trajectory_sampling)
-        ]
+        return [TrajectoryTargetBuilder(trajectory_sampling=self.trajectory_sampling)]
 
     def forward(self, features):
         return {"trajectory": self.network(features)}  # [B, 80, 3]
 
     def compute_loss(self, features, targets, predictions):
-        return torch.nn.functional.smooth_l1_loss(
-            predictions["trajectory"], targets["trajectory"]
-        )
+        return torch.nn.functional.smooth_l1_loss(predictions["trajectory"], targets["trajectory"])
 
     def get_optimizers(self):
         return torch.optim.AdamW(self.parameters(), lr=1e-4)
@@ -108,7 +104,7 @@ can use `SensorConfig.build_no_sensors()`.
 
 ```python
 components = scorer.score_proposals(
-    proposals,                         # [B, N, P, 3]
+    proposals,  # [B, N, P, 3]
     scenes,
     metric_names=("ego_progress", "score"),
     trajectory_sampling=agent.trajectory_sampling,

@@ -13,15 +13,27 @@ class PredictorReport:
     compute_predictions_runtimes: tuple[float, ...]
 
     def __init__(self, compute_predictions_runtimes: Iterable[float] = ()) -> None:
-        object.__setattr__(self, "compute_predictions_runtimes", tuple(float(v) for v in compute_predictions_runtimes))
+        object.__setattr__(
+            self,
+            "compute_predictions_runtimes",
+            tuple(float(v) for v in compute_predictions_runtimes),
+        )
 
     @property
     def mean_runtime_s(self) -> float:
-        return float(np.mean(self.compute_predictions_runtimes)) if self.compute_predictions_runtimes else 0.0
+        return (
+            float(np.mean(self.compute_predictions_runtimes))
+            if self.compute_predictions_runtimes
+            else 0.0
+        )
 
     @property
     def max_runtime_s(self) -> float:
-        return float(np.max(self.compute_predictions_runtimes)) if self.compute_predictions_runtimes else 0.0
+        return (
+            float(np.max(self.compute_predictions_runtimes))
+            if self.compute_predictions_runtimes
+            else 0.0
+        )
 
     def as_dict(self) -> dict[str, Any]:
         return {

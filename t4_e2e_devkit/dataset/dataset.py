@@ -71,9 +71,7 @@ class T4Dataset(Dataset):
         :param return_scene: include the privileged scene as a third batch item;
             useful for explicit training-time metric evaluation.
         """
-        self.data_list = (
-            data_list if isinstance(data_list, DataList) else load_data_list(data_list)
-        )
+        self.data_list = data_list if isinstance(data_list, DataList) else load_data_list(data_list)
         self.sensor_config = sensor_config or SensorConfig.build_no_sensors()
         self.scene_filter = scene_filter or SceneFilter()
         self.feature_builders = list(feature_builders or [])
@@ -82,9 +80,7 @@ class T4Dataset(Dataset):
         self.return_scene = bool(return_scene)
         self.scene_cache_size = 0 if scene_cache_size is None else int(scene_cache_size)
         if self.scene_cache_size < 0:
-            raise ValueError(
-                f"scene_cache_size must be non-negative, got {scene_cache_size}"
-            )
+            raise ValueError(f"scene_cache_size must be non-negative, got {scene_cache_size}")
 
         if feature_cache is None:
             self.feature_cache = None
@@ -223,9 +219,7 @@ def _builder_signature(
             {
                 "type": f"{type(builder).__module__}.{type(builder).__qualname__}",
                 "name": (
-                    str(builder.get_unique_name())
-                    if hasattr(builder, "get_unique_name")
-                    else None
+                    str(builder.get_unique_name()) if hasattr(builder, "get_unique_name") else None
                 ),
                 "config": repr(getattr(builder, "__dict__", {})),
             }
@@ -282,9 +276,7 @@ class T4SceneLocalitySampler(Sampler):
         if self.num_replicas < 1:
             raise ValueError(f"num_replicas must be at least 1, got {num_replicas}")
         if self.rank < 0 or self.rank >= self.num_replicas:
-            raise ValueError(
-                f"rank must be in [0, {self.num_replicas}), got {self.rank}"
-            )
+            raise ValueError(f"rank must be in [0, {self.num_replicas}), got {self.rank}")
         self.shuffle = shuffle
         self.seed = seed
         self.drop_last = drop_last

@@ -265,7 +265,4 @@ def open_camera_sources(
     :param image_size_hw: output resolution as ``(height, width)``.
     :return: camera name -> source, in register order.
     """
-    return {
-        name: open_camera_source(scene_dir, name, image_size_hw)
-        for name in camera_names
-    }
+    return {name: open_camera_source(scene_dir, name, image_size_hw) for name in camera_names}

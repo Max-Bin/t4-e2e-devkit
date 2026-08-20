@@ -325,10 +325,7 @@ class LocalDistributedLauncher:
         env.update(self.environment)
         if self.environment_factory is not None:
             env.update(
-                {
-                    str(key): str(value)
-                    for key, value in self.environment_factory(rank).items()
-                }
+                {str(key): str(value) for key, value in self.environment_factory(rank).items()}
             )
         env.update(
             {
@@ -398,7 +395,10 @@ class LocalDistributedLauncher:
                         returncode = process.wait(timeout=0.25)
                         break
                     except subprocess.TimeoutExpired:
-                        if self.timeout_s is not None and time.monotonic() - started_clock >= self.timeout_s:
+                        if (
+                            self.timeout_s is not None
+                            and time.monotonic() - started_clock >= self.timeout_s
+                        ):
                             timed_out = True
                             _stop_process(process, signal.SIGTERM)
                             try:

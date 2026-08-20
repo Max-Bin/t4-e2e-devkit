@@ -62,8 +62,10 @@ class LogFuturePlanner(AbstractPlanner):
         for state in states[: int(self.sampling.num_poses)]:
             delta = np.asarray(state.ego_pose[:2], dtype=np.float64) - origin[:2]
             local = np.array(
-                [cos_heading * delta[0] + sin_heading * delta[1],
-                 -sin_heading * delta[0] + cos_heading * delta[1]],
+                [
+                    cos_heading * delta[0] + sin_heading * delta[1],
+                    -sin_heading * delta[0] + cos_heading * delta[1],
+                ],
             )
             poses.append([local[0], local[1], float(state.ego_pose[2] - origin[2])])
         self._last_trajectory = Trajectory(

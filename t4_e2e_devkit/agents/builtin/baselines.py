@@ -78,9 +78,7 @@ class ConstantVelocityAgent(AbstractT4Agent):
 
     def get_target_builders(self) -> List[AbstractTargetBuilder]:
         """:return: the trajectory target builder."""
-        return [
-            TrajectoryTargetBuilder(trajectory_sampling=self.trajectory_sampling)
-        ]
+        return [TrajectoryTargetBuilder(trajectory_sampling=self.trajectory_sampling)]
 
     def forward(self, features: Dict[str, torch.Tensor]) -> Dict[str, torch.Tensor]:
         """
@@ -94,9 +92,10 @@ class ConstantVelocityAgent(AbstractT4Agent):
         # The ego status is already expressed in the current frame, so the pose
         # is the origin and the velocity is the body-frame direction of travel.
         velocity = ego_status[:, EgoStatusIndex.VELOCITY_2D]
-        times = torch.arange(
-            1, self.num_poses + 1, device=ego_status.device, dtype=ego_status.dtype
-        ) * self.interval_length
+        times = (
+            torch.arange(1, self.num_poses + 1, device=ego_status.device, dtype=ego_status.dtype)
+            * self.interval_length
+        )
 
         displacement = velocity.unsqueeze(1) * times.view(1, -1, 1)  # [B, P, 2]
         heading = torch.zeros_like(displacement[..., :1])
@@ -150,18 +149,14 @@ class HumanAgent(AbstractT4Agent):
 
     def get_target_builders(self) -> List[AbstractTargetBuilder]:
         """:return: the trajectory target builder."""
-        return [
-            TrajectoryTargetBuilder(trajectory_sampling=self.trajectory_sampling)
-        ]
+        return [TrajectoryTargetBuilder(trajectory_sampling=self.trajectory_sampling)]
 
     def compute_trajectory_from_scene(self, scene: T4Scene) -> Trajectory:
         """
         :param scene: the privileged window view.
         :return: the recorded human trajectory.
         """
-        return scene.get_future_trajectory(
-            trajectory_sampling=self.trajectory_sampling
-        )
+        return scene.get_future_trajectory(trajectory_sampling=self.trajectory_sampling)
 
     def compute_trajectory(self, agent_input: T4AgentInput) -> Trajectory:
         """:raises NotImplementedError: always -- use

@@ -63,12 +63,8 @@ def resolve_navsim_metric_names(
 
     normalized_version = str(version).lower().removeprefix("navsim-")
     if normalized_version not in NAVSIM_VERSIONS:
-        raise ValueError(
-            f"version must be one of {NAVSIM_VERSIONS}, got {version!r}"
-        )
-    available = (
-        NAVSIM_V1_METRICS if normalized_version == "v1" else NAVSIM_V2_METRICS
-    )
+        raise ValueError(f"version must be one of {NAVSIM_VERSIONS}, got {version!r}")
+    available = NAVSIM_V1_METRICS if normalized_version == "v1" else NAVSIM_V2_METRICS
     if metric_names is None:
         return available
     if isinstance(metric_names, str):
@@ -389,9 +385,7 @@ class T4NavSimScorer:
         previous_trajectories = (
             [None] * batch_size if previous_trajectories is None else list(previous_trajectories)
         )
-        previous_scenes = (
-            [None] * batch_size if previous_scenes is None else list(previous_scenes)
-        )
+        previous_scenes = [None] * batch_size if previous_scenes is None else list(previous_scenes)
         human_trajectories = (
             [None] * batch_size if human_trajectories is None else list(human_trajectories)
         )
@@ -421,8 +415,7 @@ class T4NavSimScorer:
                     human_trajectory=human_trajectory,
                     previous_human_trajectory=previous_human_trajectory,
                 )
-                for trajectory, scene, previous_trajectory, previous_scene,
-                human_trajectory, previous_human_trajectory in zip(
+                for trajectory, scene, previous_trajectory, previous_scene, human_trajectory, previous_human_trajectory in zip(
                     trajectories,
                     scenes,
                     previous_trajectories,
@@ -452,9 +445,7 @@ class T4NavSimScorer:
             extended = output.get("extended_comfort")
             if extended is not None and not isfinite(float(extended)):
                 extended = None
-            required_metrics = required_navsim_metric_names(
-                self.config.version, selected_metrics
-            )
+            required_metrics = required_navsim_metric_names(self.config.version, selected_metrics)
             if (
                 "extended_comfort" in required_metrics
                 and extended is None
@@ -525,18 +516,14 @@ class T4NavSimScorer:
             raise NavSimScoringError(
                 "previous_human_trajectory requires a previous prediction pair"
             )
-        required_metrics = required_navsim_metric_names(
-            self.config.version, metric_names
-        )
+        required_metrics = required_navsim_metric_names(self.config.version, metric_names)
         current = self._score_components(
             trajectory,
             scene,
             metric_names=required_metrics,
         )
         extended = None
-        needs_extended = (
-            self.config.version == "v2" and "extended_comfort" in required_metrics
-        )
+        needs_extended = self.config.version == "v2" and "extended_comfort" in required_metrics
         if needs_extended and previous_trajectory is not None:
             extended = self._extended_comfort(
                 trajectory,
@@ -579,9 +566,7 @@ class T4NavSimScorer:
             for key in required_metrics
             if key in NAVSIM_COMPONENT_METRICS and key in current
         }
-        score = (
-            self._aggregate(values, extended) if "score" in metric_names else None
-        )
+        score = self._aggregate(values, extended) if "score" in metric_names else None
         metadata = dict(current["metadata"])
         metadata["human_filter_applied"] = float(human is not None)
         metadata["extended_comfort_available"] = float(extended is not None)
@@ -643,7 +628,9 @@ class T4NavSimScorer:
             if require_extended_comfort and not result.metadata.get(
                 "extended_comfort_available", False
             ):
-                raise NavSimScoringError(f"sample {index} has no previous plan for extended comfort")
+                raise NavSimScoringError(
+                    f"sample {index} has no previous plan for extended comfort"
+                )
         return results
 
     def score_proposals(
@@ -666,9 +653,7 @@ class T4NavSimScorer:
         import torch
 
         if not torch.is_tensor(proposals) or proposals.ndim != 4 or proposals.shape[-1] != 3:
-            raise NavSimScoringError(
-                "proposals must be a floating tensor with shape [B,N,T,3]"
-            )
+            raise NavSimScoringError("proposals must be a floating tensor with shape [B,N,T,3]")
         if not proposals.is_floating_point() or not torch.isfinite(proposals).all():
             raise NavSimScoringError("proposals must contain finite floating-point values")
         if len(scenes) != proposals.shape[0]:
@@ -730,9 +715,7 @@ class T4NavSimScorer:
         }
         needs_map = bool(required.intersection(map_metrics))
         needs_annotations = bool(
-            required.intersection(
-                {"no_at_fault_collisions", "time_to_collision_within_bound"}
-            )
+            required.intersection({"no_at_fault_collisions", "time_to_collision_within_bound"})
         )
         needs_states = bool(
             required.intersection(
@@ -773,9 +756,7 @@ class T4NavSimScorer:
             borders, red_rings, coverage = [], [], {}
 
         area_flags = None
-        if required.intersection(
-            {"no_at_fault_collisions", "time_to_collision_within_bound"}
-        ):
+        if required.intersection({"no_at_fault_collisions", "time_to_collision_within_bound"}):
             assert states is not None
             area_flags = formulas.ego_area_flags(
                 states,
@@ -912,7 +893,11 @@ class T4NavSimScorer:
 
     def _available_weight(self, extended: Optional[float]) -> float:
         if self.config.version == "v1":
-            return self.config.progress_weight + self.config.ttc_weight + self.config.history_comfort_weight
+            return (
+                self.config.progress_weight
+                + self.config.ttc_weight
+                + self.config.history_comfort_weight
+            )
         return (
             self.config.progress_weight
             + self.config.ttc_weight
@@ -944,7 +929,8 @@ class T4NavSimScorer:
         current = _local_to_global(current, scene)
         previous = _local_to_global(previous, previous_scene)
         delta_s = (
-            float(scene.current_frame.timestamp_us - previous_scene.current_frame.timestamp_us) / 1e6
+            float(scene.current_frame.timestamp_us - previous_scene.current_frame.timestamp_us)
+            / 1e6
         )
         if delta_s <= 0.0:
             delta_s = self.config.observation_interval_s
@@ -975,7 +961,11 @@ def aggregate_navsim_results(results: Sequence[Mapping[str, float]]) -> dict[str
     keys = sorted({str(key) for result in results for key in result})
     output = {"num_scenes": float(len(results))}
     for key in keys:
-        values = [float(result[key]) for result in results if key in result and np.isfinite(float(result[key]))]
+        values = [
+            float(result[key])
+            for result in results
+            if key in result and np.isfinite(float(result[key]))
+        ]
         if values:
             output[key] = float(np.mean(values))
     return output
@@ -998,7 +988,10 @@ def aggregate_pseudo_closed_loop(
     if endpoint.shape != (2,) or not np.isfinite(endpoint).all():
         raise ValueError("first_stage_endpoint_xy must be two finite values")
     distances = np.asarray(
-        [np.sum((endpoint - np.asarray(item.start_xy, dtype=np.float64)) ** 2) for item in followups],
+        [
+            np.sum((endpoint - np.asarray(item.start_xy, dtype=np.float64)) ** 2)
+            for item in followups
+        ],
         dtype=np.float64,
     )
     weights = np.exp(-distances / (2.0 * float(sigma_squared)))
@@ -1082,7 +1075,9 @@ def _map_layers(map_tensors) -> tuple[list, list, list, list, list, list, dict[s
     route_centerlines = [row[:, :2] for row in route if row.shape[0] >= 2]
     intersection_rings = [row[:, :2] for row in polygons if row.shape[0] >= 3]
     borders = [row[:, :2] for row in lines if row.shape[1] >= 4 and np.any(row[:, 3] > 0.5)]
-    red_rings = [ring for row, ring in zip(route, route_rings, strict=False) if np.any(row[:, 10] > 0.5)]
+    red_rings = [
+        ring for row, ring in zip(route, route_rings, strict=False) if np.any(row[:, 10] > 0.5)
+    ]
     route_count = max(len(route), 1)
     line_count = len(lines)
     coverage = {
@@ -1091,7 +1086,15 @@ def _map_layers(map_tensors) -> tuple[list, list, list, list, list, list, dict[s
         "lane_centerline_frac": float(len(route_centerlines) / route_count),
         "traffic_light_route_frac": float(len(red_rings) / route_count),
     }
-    return lane_rings, route_rings, route_centerlines, intersection_rings, borders, red_rings, coverage
+    return (
+        lane_rings,
+        route_rings,
+        route_centerlines,
+        intersection_rings,
+        borders,
+        red_rings,
+        coverage,
+    )
 
 
 def _valid_rows(values: np.ndarray, *, min_columns: int) -> list[np.ndarray]:
@@ -1176,7 +1179,9 @@ def _lane_keeping(
 
     from shapely.geometry import LineString, Point, Polygon
 
-    lines = [LineString(np.asarray(line, dtype=np.float64)) for line in centerlines if len(line) >= 2]
+    lines = [
+        LineString(np.asarray(line, dtype=np.float64)) for line in centerlines if len(line) >= 2
+    ]
     if not lines:
         return 1.0
     intersections = []
@@ -1210,9 +1215,7 @@ def _local_to_global(poses: np.ndarray, scene: T4Scene) -> np.ndarray:
     return np.column_stack((x, y, np.cos(heading), np.sin(heading)))
 
 
-def _apply_human_filter(
-    agent: Mapping[str, Any], human: Mapping[str, Any]
-) -> dict[str, Any]:
+def _apply_human_filter(agent: Mapping[str, Any], human: Mapping[str, Any]) -> dict[str, Any]:
     filtered = dict(agent)
     for key in (
         "no_at_fault_collisions",

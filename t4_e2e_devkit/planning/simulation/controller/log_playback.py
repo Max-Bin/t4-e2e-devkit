@@ -8,8 +8,14 @@ from typing import Any, Iterable, Optional
 class LogPlaybackController:
     """Advance through states supplied by a scenario or an in-memory sequence."""
 
-    def __init__(self, scenario: Optional[Any] = None, states: Optional[Iterable[Any]] = None) -> None:
-        if states is None and scenario is not None and not hasattr(scenario, "get_ego_state_at_iteration"):
+    def __init__(
+        self, scenario: Optional[Any] = None, states: Optional[Iterable[Any]] = None
+    ) -> None:
+        if (
+            states is None
+            and scenario is not None
+            and not hasattr(scenario, "get_ego_state_at_iteration")
+        ):
             states = scenario
             scenario = None
         self.scenario = scenario

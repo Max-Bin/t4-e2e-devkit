@@ -41,10 +41,14 @@ class VisualizationCallback(AbstractCallback):
             else _portable_value(sample)
         )
         token = str(getattr(getattr(setup, "scenario", None), "token", "simulation"))
-        safe_token = "".join(character if character.isalnum() or character in "-_" else "_" for character in token)
+        safe_token = "".join(
+            character if character.isalnum() or character in "-_" else "_" for character in token
+        )
         path = self.output_dir / safe_token / f"{int(sample.iteration.index):06d}.json"
         path.parent.mkdir(parents=True, exist_ok=True)
-        path.write_text(json.dumps(_portable_value(payload), sort_keys=True) + "\n", encoding="utf-8")
+        path.write_text(
+            json.dumps(_portable_value(payload), sort_keys=True) + "\n", encoding="utf-8"
+        )
         self.paths.append(path)
 
 

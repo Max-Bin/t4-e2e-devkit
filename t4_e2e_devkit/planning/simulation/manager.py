@@ -84,8 +84,7 @@ class T4SimulationManager:
 
         if not isinstance(request, SimulationRequest):
             raise TypeError(
-                "T4SimulationManager.run expects SimulationRequest, "
-                f"got {type(request).__name__}"
+                f"T4SimulationManager.run expects SimulationRequest, got {type(request).__name__}"
             )
         return self.runner.run(
             request.start_frame,

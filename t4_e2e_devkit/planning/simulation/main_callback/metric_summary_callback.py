@@ -25,9 +25,15 @@ class MetricSummaryCallback(AbstractMainCallback):
 
     def on_run_simulation_end(self, *args: Any, **kwargs: Any) -> None:
         del args, kwargs
-        files = sorted(
-            path for path in self.metric_dir.rglob("*") if path.is_file() and path.suffix == ".json"
-        ) if self.metric_dir.is_dir() else []
+        files = (
+            sorted(
+                path
+                for path in self.metric_dir.rglob("*")
+                if path.is_file() and path.suffix == ".json"
+            )
+            if self.metric_dir.is_dir()
+            else []
+        )
         records = [_read(path) for path in files]
         records = [record for record in records if record is not None]
         self.summary = {

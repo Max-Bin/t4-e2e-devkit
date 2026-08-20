@@ -53,9 +53,7 @@ def _proposals(device: torch.device) -> tuple[torch.Tensor, torch.Tensor]:
     generator = torch.Generator(device="cpu").manual_seed(0)
     time = torch.arange(STEPS + 1, dtype=torch.float64) * INTERVAL
     speed = 3.0 + 4.0 * torch.rand((ROWS, 1), generator=generator, dtype=torch.float64)
-    curvature = 0.4 * (
-        torch.rand((ROWS, 1), generator=generator, dtype=torch.float64) - 0.5
-    )
+    curvature = 0.4 * (torch.rand((ROWS, 1), generator=generator, dtype=torch.float64) - 0.5)
     heading = curvature * speed * time
     states = torch.zeros((ROWS, STEPS + 1, 11), dtype=torch.float64)
     states[..., StateIndex.X] = (speed * time) * torch.cos(heading)

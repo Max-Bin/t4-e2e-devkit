@@ -82,7 +82,9 @@ def write_json(path: str | Path, value: Mapping[str, Any]) -> Path:
     return output
 
 
-def read_record(path: str | Path, *, config_fingerprint: str | None = None) -> dict[str, Any] | None:
+def read_record(
+    path: str | Path, *, config_fingerprint: str | None = None
+) -> dict[str, Any] | None:
     """Read a successful record, returning ``None`` for stale/corrupt data."""
 
     try:
@@ -123,9 +125,7 @@ def aggregate_records(
                     f"{pdm_version!r} and {version!r}"
                 )
             pdm_version = version
-            pdm.append(
-                {str(key): value for key, value in values.items() if key != "pdm_version"}
-            )
+            pdm.append({str(key): value for key, value in values.items() if key != "pdm_version"})
         values = families.get("open_loop")
         if isinstance(values, Mapping):
             required = {

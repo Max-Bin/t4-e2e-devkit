@@ -124,9 +124,9 @@ class OfficialDevkitScoreCallback(pl.Callback):
                 self._status_path(epoch, name).unlink(missing_ok=True)
             for index in range(self._world_size()):
                 for suffix in ("complete", "failed"):
-                    self._status_path(
-                        epoch, f"score-rank-{index:05d}.{suffix}"
-                    ).unlink(missing_ok=True)
+                    self._status_path(epoch, f"score-rank-{index:05d}.{suffix}").unlink(
+                        missing_ok=True
+                    )
             (epoch_dir / "predictions.jsonl").unlink(missing_ok=True)
         if active:
             self._barrier()
@@ -163,14 +163,26 @@ class OfficialDevkitScoreCallback(pl.Callback):
                 ),
                 dtype=np.float32,
             )
-        if poses.ndim != 3 or poses.shape[0] != len(keys) or (
-            len(predictions) and (poses.shape[1] < 1 or poses.shape[2] not in (3, 4))
+        if (
+            poses.ndim != 3
+            or poses.shape[0] != len(keys)
+            or (len(predictions) and (poses.shape[1] < 1 or poses.shape[2] not in (3, 4)))
         ):
-            raise RuntimeError(f"official devkit predictions must be [N, T, 3|4], got {poses.shape}")
+            raise RuntimeError(
+                f"official devkit predictions must be [N, T, 3|4], got {poses.shape}"
+            )
         if not np.isfinite(poses).all():
             raise RuntimeError("official devkit predictions contain NaN or Inf")
-        num_poses = int(poses.shape[1]) if len(predictions) else int(getattr(pl_module, "_official_score_num_poses", 0) or 0)
-        pose_dim = int(poses.shape[2]) if len(predictions) else int(getattr(pl_module, "_official_score_pose_dim", 0) or 0)
+        num_poses = (
+            int(poses.shape[1])
+            if len(predictions)
+            else int(getattr(pl_module, "_official_score_num_poses", 0) or 0)
+        )
+        pose_dim = (
+            int(poses.shape[2])
+            if len(predictions)
+            else int(getattr(pl_module, "_official_score_pose_dim", 0) or 0)
+        )
         path.parent.mkdir(parents=True, exist_ok=True)
         np.savez_compressed(
             path,
@@ -222,7 +234,13 @@ class OfficialDevkitScoreCallback(pl.Callback):
                 if len(scenes):
                     if num_poses is None:
                         num_poses, pose_dim, interval = rank_num_poses, rank_pose_dim, rank_interval
-                    elif num_poses != rank_num_poses or pose_dim != rank_pose_dim or not math.isclose(interval or 0.0, rank_interval, rel_tol=0.0, abs_tol=1e-9):
+                    elif (
+                        num_poses != rank_num_poses
+                        or pose_dim != rank_pose_dim
+                        or not math.isclose(
+                            interval or 0.0, rank_interval, rel_tol=0.0, abs_tol=1e-9
+                        )
+                    ):
                         errors.append(f"inconsistent trajectory metadata across ranks: {path}")
                         continue
                 for scene, center, trajectory in zip(scenes, centers, poses, strict=True):
@@ -285,7 +303,11 @@ class OfficialDevkitScoreCallback(pl.Callback):
             for report in reports:
                 value = report.get(key)
                 metric_count = int(report.get("_metric_counts", {}).get(key, 0))
-                if isinstance(value, (int, float)) and not isinstance(value, bool) and metric_count > 0:
+                if (
+                    isinstance(value, (int, float))
+                    and not isinstance(value, bool)
+                    and metric_count > 0
+                ):
                     total += float(value) * metric_count
                     count += metric_count
             if count:
@@ -324,7 +346,9 @@ class OfficialDevkitScoreCallback(pl.Callback):
         payload = {
             f"{log_prefix}/{REPORT_TO_LOG[key]}": float(report[key])
             for key in REPORT_TO_LOG
-            if key in report and isinstance(report[key], (int, float)) and not isinstance(report[key], bool)
+            if key in report
+            and isinstance(report[key], (int, float))
+            and not isinstance(report[key], bool)
         }
         if not payload:
             return

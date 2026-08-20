@@ -126,8 +126,7 @@ def add_fixed_bev_legend(
     for role in trajectory_roles:
         if role not in TRAJECTORY_CONFIG:
             raise ValueError(
-                f"unknown trajectory role {role!r}; expected one of "
-                f"{sorted(TRAJECTORY_CONFIG)}"
+                f"unknown trajectory role {role!r}; expected one of {sorted(TRAJECTORY_CONFIG)}"
             )
         settings = TRAJECTORY_CONFIG[role]
         marker = settings.get("marker") or None
@@ -146,9 +145,7 @@ def add_fixed_bev_legend(
         labels.append(str(settings["label"]))
 
     if include_ego:
-        handles.append(
-            Patch(facecolor=EGO_COLOR, edgecolor="black", alpha=0.55, linewidth=1.2)
-        )
+        handles.append(Patch(facecolor=EGO_COLOR, edgecolor="black", alpha=0.55, linewidth=1.2))
         labels.append("ego")
 
     if include_agents:
@@ -208,6 +205,7 @@ def render_prediction_bev(
 
     :return: RGB ``[H, W, 3]`` image, ready for an image logger or media sink.
     """
+
     def _as_map(value, shape):
         """Normalize full T4 segments and compact XY polylines alike.
 
@@ -231,9 +229,7 @@ def render_prediction_bev(
             padded[..., :2] = values
             return padded, False
         if values.shape[-1] < 8:
-            raise ValueError(
-                f"expected map geometry with 2 or >=8 features; got {values.shape}"
-            )
+            raise ValueError(f"expected map geometry with 2 or >=8 features; got {values.shape}")
         padded = np.zeros(shape, dtype=np.float32)
         width = min(values.shape[-1], shape[-1])
         padded[..., :width] = values[..., :width]
@@ -477,8 +473,11 @@ def plot_bev_with_score(
     plt = _pyplot()
     settings = {**BEV_PLOT_CONFIG, **(config or {})}
     figure, (bev_ax, score_ax) = plt.subplots(
-        1, 2, figsize=(settings["figure_size"][0] * 1.55, settings["figure_size"][1]),
-        dpi=settings["dpi"], gridspec_kw={"width_ratios": [2.4, 1.0]},
+        1,
+        2,
+        figsize=(settings["figure_size"][0] * 1.55, settings["figure_size"][1]),
+        dpi=settings["dpi"],
+        gridspec_kw={"width_ratios": [2.4, 1.0]},
     )
 
     trajectories: Dict[str, Any] = {"prediction": trajectory}
@@ -506,7 +505,8 @@ def add_score_panel(
     settings = {**SCORE_PANEL_CONFIG, **(config or {})}
     components = results if isinstance(results, Mapping) else results.values
     names = [
-        name for name in NAVSIM_METRICS
+        name
+        for name in NAVSIM_METRICS
         if name not in {"score", "extended_comfort_available"} and name in components
     ]
     values = [float(components[name]) for name in names]
@@ -534,8 +534,13 @@ def add_score_panel(
     ax.set_xlim(0, 1.05)
     ax.axvline(1.0, color="grey", linewidth=0.6, linestyle=":")
     for position, value in zip(positions, values, strict=True):
-        ax.text(min(value + 0.03, 0.97), position, f"{value:.2f}",
-                va="center", fontsize=settings["text_size"] - 1)
+        ax.text(
+            min(value + 0.03, 0.97),
+            position,
+            f"{value:.2f}",
+            va="center",
+            fontsize=settings["text_size"] - 1,
+        )
 
     score = float(components.get("score", getattr(results, "score", float("nan"))))
     ax.set_title(f"PDM {score:.4f}", fontsize=settings["text_size"] + 2)
@@ -681,7 +686,9 @@ def plot_agent_comparison(
 
     for index, (label, agent) in enumerate(agents.items()):
         add_trajectory_to_bev_ax(
-            ax, _plan(agent, scene), kind="prediction",
+            ax,
+            _plan(agent, scene),
+            kind="prediction",
             config={"color": TAB_10[index % len(TAB_10)], "label": label},
         )
     configure_bev_ax(ax, settings["view_range"], settings)
@@ -742,9 +749,7 @@ def frames_to_gif(frames: Sequence[npt.NDArray[np.uint8]], path, duration_ms: in
     path = Path(path)
     path.parent.mkdir(parents=True, exist_ok=True)
     images = [Image.fromarray(frame) for frame in frames]
-    images[0].save(
-        path, save_all=True, append_images=images[1:], duration=duration_ms, loop=0
-    )
+    images[0].save(path, save_all=True, append_images=images[1:], duration=duration_ms, loop=0)
     return path
 
 

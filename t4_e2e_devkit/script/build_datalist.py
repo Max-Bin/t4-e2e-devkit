@@ -47,7 +47,9 @@ def parse_args(argv: Optional[Sequence[str]] = None) -> argparse.Namespace:
     :param argv: argument vector; ``sys.argv`` by default.
     :return: parsed arguments.
     """
-    parser = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
+    parser = argparse.ArgumentParser(
+        description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter
+    )
     parser.add_argument("--root", required=True, type=Path, help="T4 dataset root")
     parser.add_argument(
         "--glob",
@@ -55,8 +57,12 @@ def parse_args(argv: Optional[Sequence[str]] = None) -> argparse.Namespace:
         help="scene directory glob, relative to --root (default: %(default)s)",
     )
     parser.add_argument("--out", required=True, type=Path, help="output data-list path")
-    parser.add_argument("--date", action="append", default=None, help="keep only these dates; repeatable")
-    parser.add_argument("--vehicle", action="append", default=None, help="keep only these vehicles; repeatable")
+    parser.add_argument(
+        "--date", action="append", default=None, help="keep only these dates; repeatable"
+    )
+    parser.add_argument(
+        "--vehicle", action="append", default=None, help="keep only these vehicles; repeatable"
+    )
     parser.add_argument(
         "--scene-tags-root",
         type=Path,
@@ -95,33 +101,47 @@ def parse_args(argv: Optional[Sequence[str]] = None) -> argparse.Namespace:
         help="keep scenes carrying one of these tag statuses; repeatable",
     )
     parser.add_argument(
-        "--history-frames", type=int, default=PAST_FRAMES,
+        "--history-frames",
+        type=int,
+        default=PAST_FRAMES,
         help="history frames including the current one (default: %(default)s)",
     )
     parser.add_argument(
-        "--future-frames", type=int, default=FUTURE_FRAMES,
+        "--future-frames",
+        type=int,
+        default=FUTURE_FRAMES,
         help="recorded future frames per window (default: %(default)s)",
     )
     parser.add_argument(
-        "--center-stride", type=int, default=DEFAULT_CENTER_STRIDE,
+        "--center-stride",
+        type=int,
+        default=DEFAULT_CENTER_STRIDE,
         help="source frames between consecutive centres (default: %(default)s = 0.5 s)",
     )
     parser.add_argument(
-        "--camera-names", nargs="+", default=list(T4_WIDE5_CAMERA_NAMES),
+        "--camera-names",
+        nargs="+",
+        default=list(T4_WIDE5_CAMERA_NAMES),
         help="camera register a scene must expose (default: the five wide views)",
     )
     parser.add_argument(
-        "--require-cameras", nargs="*", default=None,
+        "--require-cameras",
+        nargs="*",
+        default=None,
         help="cameras a window must have an image for at its centre; "
-             "'none' requires nothing, omitted means --camera-names",
+        "'none' requires nothing, omitted means --camera-names",
     )
     parser.add_argument(
-        "--max-window-gap-frames", type=int, default=None,
+        "--max-window-gap-frames",
+        type=int,
+        default=None,
         help="drop centres whose window misses more than N key frames; "
-             "omit to accept any gap, 0 to require a strictly uniform window",
+        "omit to accept any gap, 0 to require a strictly uniform window",
     )
     parser.add_argument("--max-scenes", type=int, default=None, help="stop after N scenes")
-    parser.add_argument("--limit-per-scene", type=int, default=None, help="keep at most N rows per scene")
+    parser.add_argument(
+        "--limit-per-scene", type=int, default=None, help="keep at most N rows per scene"
+    )
     return parser.parse_args(argv)
 
 

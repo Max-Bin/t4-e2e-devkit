@@ -45,7 +45,8 @@ def _cmd_inspect(argv: Sequence[str]) -> int:
     parser = argparse.ArgumentParser(prog="t4e2e inspect")
     parser.add_argument("data_list", help="path to a data list")
     parser.add_argument(
-        "--no-subtree-check", action="store_true",
+        "--no-subtree-check",
+        action="store_true",
         help="skip the annotation-free subtree guard",
     )
     args = parser.parse_args(argv)
@@ -67,7 +68,8 @@ def _cmd_rigs(argv: Sequence[str]) -> int:
     parser.add_argument("scenes", nargs="*", help="T4 scene directories")
     parser.add_argument("--group", action="store_true", help="group the scenes by rig instead")
     parser.add_argument(
-        "--timing", metavar="LIST",
+        "--timing",
+        metavar="LIST",
         help="check camera timing consistency across a data list's scenes",
     )
     args = parser.parse_args(argv)
@@ -79,11 +81,12 @@ def _cmd_rigs(argv: Sequence[str]) -> int:
         from t4_e2e_devkit.dataset.sync import data_list_timing_report
 
         report = data_list_timing_report(load_data_list(args.timing))
-        print(f"scenes checked: {report['scenes_checked']}   "
-              f"vehicles: {len(report['vehicles'])}")
+        print(f"scenes checked: {report['scenes_checked']}   vehicles: {len(report['vehicles'])}")
         print()
-        print(f"{'channel':<24} {'min_ms':>8} {'max_ms':>8} "
-              f"{'across-veh':>11} {'worst-within':>13} {'vehicles':>9}")
+        print(
+            f"{'channel':<24} {'min_ms':>8} {'max_ms':>8} "
+            f"{'across-veh':>11} {'worst-within':>13} {'vehicles':>9}"
+        )
         for channel, values in report["channels"].items():
             # Across-vehicle spread is a property of the fleet, not a defect.
             # Within-vehicle spread means one rig's timing wandered, which is.
@@ -95,9 +98,11 @@ def _cmd_rigs(argv: Sequence[str]) -> int:
                 f"{values['vehicles']:>9}{flag}"
             )
         print()
-        print("per-vehicle offsets are read from each scene, so the correction is "
-              "exact regardless of this spread; the table is for knowing what a "
-              "training set contains.")
+        print(
+            "per-vehicle offsets are read from each scene, so the correction is "
+            "exact regardless of this spread; the table is for knowing what a "
+            "training set contains."
+        )
         if report["suspect"]:
             print(
                 f"\n{len(report['suspect'])} channel(s) drift by more than "
@@ -144,7 +149,9 @@ def _cmd_visualize(argv: Sequence[str]) -> int:
     parser.add_argument("--center", type=int, default=None, help="centre frame; middle by default")
     parser.add_argument("--out", default="window.png", help="output image path")
     parser.add_argument(
-        "--mode", default="summary", choices=("bev", "cameras", "summary"),
+        "--mode",
+        default="summary",
+        choices=("bev", "cameras", "summary"),
         help="what to render (default: %(default)s)",
     )
     parser.add_argument("--agent", default=None, help="also plan with this registered agent")
@@ -173,9 +180,7 @@ def _cmd_visualize(argv: Sequence[str]) -> int:
 
     needs_cameras = args.mode in ("cameras", "summary")
     sensor_config = (
-        sensor_config_for_scene(scene_dir, lidar=not args.no_lidar)
-        if needs_cameras
-        else None
+        sensor_config_for_scene(scene_dir, lidar=not args.no_lidar) if needs_cameras else None
     )
     builder = T4WindowBuilder(scene_dir, root, sensor_config=sensor_config)
     try:
@@ -375,7 +380,9 @@ def _cmd_merge_evaluation(argv: Sequence[str]) -> int:
 
 def _cmd_dashboard(argv: Sequence[str]) -> int:
     parser = argparse.ArgumentParser(prog="t4e2e dashboard")
-    parser.add_argument("results_dir", nargs="+", help="one or more ignored results/report directories")
+    parser.add_argument(
+        "results_dir", nargs="+", help="one or more ignored results/report directories"
+    )
     parser.add_argument("--out", default=None, help="HTML output path")
     parser.add_argument("--title", default="T4 experiment analysis")
     args = parser.parse_args(argv)
@@ -454,7 +461,9 @@ def main(argv: Optional[List[str]] = None) -> int:
 
     command, *rest = argv
     if command not in COMMANDS:
-        print(f"unknown command {command!r}; expected one of {', '.join(COMMANDS)}", file=sys.stderr)
+        print(
+            f"unknown command {command!r}; expected one of {', '.join(COMMANDS)}", file=sys.stderr
+        )
         return 2
     return COMMANDS[command][0](rest) or 0
 

@@ -146,8 +146,12 @@ def _parse_osm(path: Path) -> _ParsedMap:
     for relation_id, members, tags in relations:
         if tags.get("type") != "lanelet":
             continue
-        left_id = next((ref for kind, role, ref in members if kind == "way" and role == "left"), None)
-        right_id = next((ref for kind, role, ref in members if kind == "way" and role == "right"), None)
+        left_id = next(
+            (ref for kind, role, ref in members if kind == "way" and role == "left"), None
+        )
+        right_id = next(
+            (ref for kind, role, ref in members if kind == "way" and role == "right"), None
+        )
         if left_id is None or right_id is None:
             continue
         left = _way_points(ways.get(left_id, ((), {}))[0], nodes)
@@ -177,8 +181,7 @@ def _parse_osm(path: Path) -> _ParsedMap:
                 regulatory_element_ids=tuple(
                     ref
                     for kind, role, ref in members
-                    if kind == "relation"
-                    or "regulatory" in role.lower()
+                    if kind == "relation" or "regulatory" in role.lower()
                 ),
             )
         )
@@ -245,7 +248,9 @@ def _parse_osm(path: Path) -> _ParsedMap:
     return _ParsedMap(tuple(lanes), tuple(objects))
 
 
-def _way_points(refs: Sequence[str], nodes: Mapping[str, tuple[float, float]]) -> Optional[np.ndarray]:
+def _way_points(
+    refs: Sequence[str], nodes: Mapping[str, tuple[float, float]]
+) -> Optional[np.ndarray]:
     points = [nodes[ref] for ref in refs if ref in nodes]
     if len(points) < 2:
         return None
@@ -313,9 +318,11 @@ def _lanelet_type(tags: Mapping[str, str]) -> str:
 
 
 def _turn_direction(tags: Mapping[str, str]) -> str:
-    value = str(
-        tags.get("turn_direction", tags.get("turn", tags.get("lane_connector_type", "")))
-    ).strip().lower()
+    value = (
+        str(tags.get("turn_direction", tags.get("turn", tags.get("lane_connector_type", ""))))
+        .strip()
+        .lower()
+    )
     if value in {"left", "right", "straight", "uturn", "u_turn", "u-turn"}:
         return "uturn" if value in {"u_turn", "u-turn"} else value
     return "unknown"
@@ -625,7 +632,9 @@ class T4MapAPI:
         raw_type = None if object_type is None else str(object_type).strip().lower()
         normalized = _normalize_object_type(object_type)
         if normalized is None:
-            return tuple(self._lanes) + tuple(sorted(self._objects, key=lambda obj: (obj.object_type, obj.id)))
+            return tuple(self._lanes) + tuple(
+                sorted(self._objects, key=lambda obj: (obj.object_type, obj.id))
+            )
         if normalized == "lanelet":
             return self._lanes
         if normalized == "lane_connector":
@@ -841,9 +850,7 @@ class T4MapAPI:
                 return obj
         return None
 
-    def get_proximal_lanes(
-        self, point: Sequence[float], radius: float
-    ) -> tuple[T4Lanelet, ...]:
+    def get_proximal_lanes(self, point: Sequence[float], radius: float) -> tuple[T4Lanelet, ...]:
         if radius < 0:
             raise ValueError(f"radius must be non-negative, got {radius}")
         if not self._lanes:
@@ -852,7 +859,12 @@ class T4MapAPI:
         tree = self._get_polygon_tree()
         indices = tree.query(query.buffer(float(radius)))
         lanes = [self._lanes[int(index)] for index in indices]
-        return tuple(sorted((lane for lane in lanes if lane.polygon.distance(query) <= radius), key=lambda lane: lane.id))
+        return tuple(
+            sorted(
+                (lane for lane in lanes if lane.polygon.distance(query) <= radius),
+                key=lambda lane: lane.id,
+            )
+        )
 
     def get_nearest_lane(self, point: Sequence[float]) -> Optional[T4Lanelet]:
         if not self._lanes:
@@ -1038,9 +1050,7 @@ class T4MapAPI:
         else:
             requested = tuple(object_types)
         candidates = tuple(
-            obj
-            for object_type in requested
-            for obj in self.get_objects(object_type)
+            obj for object_type in requested for obj in self.get_objects(object_type)
         )
         result: list[MapObjectMatch] = []
         for row_index, row in enumerate(values):
@@ -1073,14 +1083,13 @@ class T4MapAPI:
                 continue
             global_points = _local_to_global(points, pose)
             if normalized_layer in {"polygons", "areas"} and len(global_points) >= 3:
-                query_geometry: BaseGeometry = _repair_polygon(global_points) or LineString(global_points)
+                query_geometry: BaseGeometry = _repair_polygon(global_points) or LineString(
+                    global_points
+                )
             else:
                 query_geometry = LineString(global_points)
             ranked = sorted(
-                (
-                    (obj.id, _geometry_score(query_geometry, obj.geometry))
-                    for obj in candidates
-                ),
+                ((obj.id, _geometry_score(query_geometry, obj.geometry)) for obj in candidates),
                 key=lambda item: (item[1], item[0]),
             )
             candidates_ids = tuple(item[0] for item in ranked[:candidate_limit])
@@ -1152,9 +1161,7 @@ class T4MapAPI:
             source_object_id=source_object_id,
             source_path=self.source_label,
             frame_index=None if frame_index is None else int(frame_index),
-            match_distance_m=(
-                None if match_distance_m is None else float(match_distance_m)
-            ),
+            match_distance_m=(None if match_distance_m is None else float(match_distance_m)),
             candidate_ids=tuple(candidate_ids),
             reason=str(reason),
         )

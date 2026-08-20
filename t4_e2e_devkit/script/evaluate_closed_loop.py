@@ -159,9 +159,7 @@ def evaluate_closed_loop(
     effective_rank = int(rank)
     effective_world_size = int(world_size)
     if effective_world_size < 1 or effective_rank < 0 or effective_rank >= effective_world_size:
-        raise ValueError(
-            f"rank must be in [0, {effective_world_size}); got {effective_rank}"
-        )
+        raise ValueError(f"rank must be in [0, {effective_world_size}); got {effective_rank}")
     if workers < 1:
         raise ValueError("workers must be positive")
     if worker_backend not in {"serial", "thread", "process", "ray"}:
@@ -171,7 +169,9 @@ def evaluate_closed_loop(
 
         active_device = device or ("cuda" if torch.cuda.is_available() else "cpu")
         if str(active_device).lower().startswith("cuda"):
-            raise ValueError("GPU closed-loop runs use one process; use rank/world_size for parallel GPUs")
+            raise ValueError(
+                "GPU closed-loop runs use one process; use rank/world_size for parallel GPUs"
+            )
     if max_retries < 0:
         raise ValueError("max_retries must be non-negative")
     if traffic_policy not in {"replay", "constant_velocity", "idm"}:
@@ -295,7 +295,9 @@ def evaluate_closed_loop(
                 attempts_total += 1
                 try:
                     if agent is None:
-                        agent = _build_agent(agent_name, agent_params or {}, checkpoint_path, device)
+                        agent = _build_agent(
+                            agent_name, agent_params or {}, checkpoint_path, device
+                        )
                     result = run_t4_closed_loop(
                         agent,
                         scene_dir=selected.absolute_scene_dir(scene_relative),
@@ -355,7 +357,9 @@ def evaluate_closed_loop(
             for result in raw_outputs
         ]
 
-    pending_by_token = {token: (row_index, artifact_path) for row_index, _, token, artifact_path in pending}
+    pending_by_token = {
+        token: (row_index, artifact_path) for row_index, _, token, artifact_path in pending
+    }
     for worker_result in worker_outputs:
         row_index, artifact_path = pending_by_token[worker_result.task_id]
         token = worker_result.task_id
@@ -408,14 +412,17 @@ def evaluate_closed_loop(
                 )
             )
 
-    manifest_file = Path(manifest_path) if manifest_path is not None else output_path / f"worker-manifest-rank-{effective_rank}.json"
+    manifest_file = (
+        Path(manifest_path)
+        if manifest_path is not None
+        else output_path / f"worker-manifest-rank-{effective_rank}.json"
+    )
     WorkerManifest(
         run_id=distributed_config.run_id,
         rank=effective_rank,
         world_size=effective_world_size,
         task_ids=tuple(
-            f"{scene_relative}@{start_frame}"
-            for _, (scene_relative, start_frame) in rows
+            f"{scene_relative}@{start_frame}" for _, (scene_relative, start_frame) in rows
         ),
         results=tuple(sorted(manifest_results, key=lambda item: item.task_id)),
     ).write(manifest_file)

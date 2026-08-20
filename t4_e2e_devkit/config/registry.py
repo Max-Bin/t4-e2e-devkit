@@ -83,7 +83,9 @@ def resolve_component(
         return registry.build(str(name), **merged)
     target = str(name)
     if ":" not in target:
-        raise KeyError(f"unknown {registry.name} component {target!r}; available: {registry.names()}")
+        raise KeyError(
+            f"unknown {registry.name} component {target!r}; available: {registry.names()}"
+        )
     module_name, attribute = target.split(":", 1)
     if not module_name or not attribute:
         raise ValueError(f"invalid component target: {target!r}")

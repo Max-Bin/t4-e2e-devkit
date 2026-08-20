@@ -49,9 +49,7 @@ def test_metric_selection_preserves_order_and_adds_only_internal_dependencies():
         "score",
         "ego_progress",
     )
-    assert required_navsim_metric_names("v2", ("score",)) == frozenset(
-        NAVSIM_V2_METRICS
-    )
+    assert required_navsim_metric_names("v2", ("score",)) == frozenset(NAVSIM_V2_METRICS)
 
     config = T4NavSimScorerConfig(
         version="v2",

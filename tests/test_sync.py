@@ -82,6 +82,7 @@ class TestChannelValidation:
     @staticmethod
     def _sync(camera_times, lidar_times, key_frames=None):
         """Build a sync from raw timestamps, without touching disk."""
+
         def channel(name, times, kf):
             return ChannelTimes(
                 channel=name,
@@ -118,7 +119,9 @@ class TestChannelValidation:
     def test_non_key_frames_are_refused(self):
         lidar = [1_000_000 + 100_000 * i for i in range(6)]
         camera = [value + 52_000 for value in lidar]
-        usable, reason = self._sync(camera, lidar, key_frames=[True, False] + [True] * 4).validate_channel("CAM_X")
+        usable, reason = self._sync(
+            camera, lidar, key_frames=[True, False] + [True] * 4
+        ).validate_channel("CAM_X")
         assert not usable
         assert "non-key-frame" in reason
 
@@ -168,9 +171,7 @@ class TestNoHardcodedOffsets:
         # sample_data.json -- there is no path that returns a literal.
         source = inspect.getsource(SensorSync.offset_s)
         assert "timestamp_s" in source
-        assert not any(
-            token in source for token in ("50.1", "51.3", "116.1", "0.05", "0.116")
-        )
+        assert not any(token in source for token in ("50.1", "51.3", "116.1", "0.05", "0.116"))
 
 
 @pytest.mark.data
@@ -229,17 +230,23 @@ class TestAgainstRealScenes:
                 pytest.skip("no boxes at this centre")
 
             channel = next(
-                (name for name in sync.channels
-                 if name != "LIDAR_CONCAT" and sync.validate_channel(name)[0]),
+                (
+                    name
+                    for name in sync.channels
+                    if name != "LIDAR_CONCAT" and sync.validate_channel(name)[0]
+                ),
                 None,
             )
             if channel is None:
                 pytest.skip("no correctable channel")
 
             corrected = sync.corrected_boxes(
-                np.asarray(here.boxes, np.float64), channel, center,
+                np.asarray(here.boxes, np.float64),
+                channel,
+                center,
                 next_boxes=np.asarray(later.boxes, np.float64),
-                next_labels=later.labels, labels=here.labels,
+                next_labels=later.labels,
+                labels=here.labels,
             )
             shift = np.linalg.norm(corrected[:, :2] - np.asarray(here.boxes)[:, :2], axis=1)
             # Sub-metre but not sub-centimetre: a correction of zero would mean
@@ -293,8 +300,11 @@ class TestAgainstRealScenes:
                 assert np.median(shift) > 0.0
             if len(synced) > 1:
                 shifts = [
-                    np.median(np.linalg.norm(
-                        np.asarray(c.annotations.boxes)[:, :2] - frame_boxes[:, :2], axis=1))
+                    np.median(
+                        np.linalg.norm(
+                            np.asarray(c.annotations.boxes)[:, :2] - frame_boxes[:, :2], axis=1
+                        )
+                    )
                     for c in synced
                 ]
                 assert max(shifts) - min(shifts) > 0.01, "channels share one correction"

@@ -76,7 +76,11 @@ def test_scenario_exposes_tracks_sensor_replay_and_map_optional():
     assert len(scenario.get_future_tracked_objects(time_horizon=0.4, num_samples=2)) == 2
     assert scenario.get_sensor_frame_at_iteration(0).frame_index == 2
     assert scenario.get_ego_state_at_iteration(0) is scenario.initial_ego_state
-    assert [frame.frame_index for frame in scenario.get_past_sensor_frames(time_horizon=0.2)] == [0, 1, 2]
+    assert [frame.frame_index for frame in scenario.get_past_sensor_frames(time_horizon=0.2)] == [
+        0,
+        1,
+        2,
+    ]
     assert scenario.get_route_roadblock_ids() == ()
     assert scenario.get_mission_goal() is None
     assert scenario.get_map_api() is None

@@ -54,8 +54,7 @@ def merge_submission_scores(
 
     runs = [_read_run(source) for source in sources]
     signatures = [
-        {key: value for key, value in run.items() if key not in _VOLATILE}
-        for run in runs
+        {key: value for key, value in run.items() if key not in _VOLATILE} for run in runs
     ]
     if any(signature != signatures[0] for signature in signatures[1:]):
         raise ValueError("submission-score rank configurations do not match")
@@ -68,8 +67,7 @@ def merge_submission_scores(
         len(sources) != declared_world_size or set(ranks) != set(range(declared_world_size))
     ):
         raise ValueError(
-            f"incomplete rank set; expected {list(range(declared_world_size))}, "
-            f"got {sorted(ranks)}"
+            f"incomplete rank set; expected {list(range(declared_world_size))}, got {sorted(ranks)}"
         )
 
     records: list[dict[str, Any]] = []
@@ -97,7 +95,9 @@ def merge_submission_scores(
             else:
                 failures.append((token, str(record.get("error", "scoring failed"))))
         if expected_tokens is not None and actual_tokens != expected_tokens:
-            raise ValueError(f"submission score records do not match the worker manifest in {source}")
+            raise ValueError(
+                f"submission score records do not match the worker manifest in {source}"
+            )
 
     records.sort(key=lambda item: str(item["token"]))
     output = Path(output_dir)

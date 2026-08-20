@@ -47,8 +47,7 @@ class T4AgentPlanner(AbstractPlanner):
         _, observation = current_input.history.current_state
         if not isinstance(observation, T4ReplayObservation):
             raise TypeError(
-                "T4AgentPlanner expects T4ReplayObservation, "
-                f"got {type(observation).__name__}"
+                f"T4AgentPlanner expects T4ReplayObservation, got {type(observation).__name__}"
             )
         return self.agent.compute_trajectory(observation.scene.get_agent_input())
 

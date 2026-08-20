@@ -138,7 +138,7 @@ from t4_e2e_devkit.planning.simulation.trajectory.trajectory_sampling import (
 )
 
 TrajectorySampling(num_poses=80, interval_length=0.1)  # 8 seconds
-TrajectorySampling(num_poses=8, interval_length=0.5)   # 4 seconds
+TrajectorySampling(num_poses=8, interval_length=0.5)  # 4 seconds
 ```
 
 Poses use the current ego frame as `(x, y, heading)`: `x` is forward, `y` is

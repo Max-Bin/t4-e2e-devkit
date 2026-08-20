@@ -109,7 +109,9 @@ class TestMapFields:
         m = scene.current_frame.map_tensors
         assert m.lanes.shape == (C.NUM_SEGMENTS_IN_LANE, C.POINTS_PER_LANELET, C.SEGMENT_POINT_DIM)
         assert m.route_lanes.shape == (
-            C.NUM_SEGMENTS_IN_ROUTE, C.POINTS_PER_LANELET, C.SEGMENT_POINT_DIM,
+            C.NUM_SEGMENTS_IN_ROUTE,
+            C.POINTS_PER_LANELET,
+            C.SEGMENT_POINT_DIM,
         )
         assert m.polygons.shape == (C.NUM_POLYGONS, C.POINTS_PER_POLYGON, 3)
         assert m.line_strings.shape == (C.NUM_LINE_STRINGS, C.POINTS_PER_LINE_STRING, 4)
@@ -182,7 +184,8 @@ class TestSensorLaziness:
 
     def test_lidar_points_have_five_columns(self, t4_scene_dir, t4_root):
         builder = T4WindowBuilder(
-            t4_scene_dir, t4_root,
+            t4_scene_dir,
+            t4_root,
             sensor_config=SensorConfig(cameras={}, lidar=[-1]),
         )
         try:

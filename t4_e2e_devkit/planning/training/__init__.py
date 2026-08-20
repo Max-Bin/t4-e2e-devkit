@@ -31,11 +31,23 @@ _LAZY: dict[str, tuple[str, str]] = {
     "TargetBuilder": ("t4_e2e_devkit.planning.training.preprocessing", "TargetBuilder"),
     "Augmentor": ("t4_e2e_devkit.planning.training.data_augmentation", "Augmentor"),
     "ComposeAugmentor": ("t4_e2e_devkit.planning.training.data_augmentation", "ComposeAugmentor"),
-    "RandomSE2Augmentor": ("t4_e2e_devkit.planning.training.data_augmentation", "RandomSE2Augmentor"),
+    "RandomSE2Augmentor": (
+        "t4_e2e_devkit.planning.training.data_augmentation",
+        "RandomSE2Augmentor",
+    ),
     "AbstractObjective": ("t4_e2e_devkit.planning.training.objectives", "AbstractObjective"),
-    "AbstractTrainingMetric": ("t4_e2e_devkit.planning.training.objectives", "AbstractTrainingMetric"),
-    "MeanSquaredTrajectoryObjective": ("t4_e2e_devkit.planning.training.objectives", "MeanSquaredTrajectoryObjective"),
-    "TrajectoryErrorMetric": ("t4_e2e_devkit.planning.training.objectives", "TrajectoryErrorMetric"),
+    "AbstractTrainingMetric": (
+        "t4_e2e_devkit.planning.training.objectives",
+        "AbstractTrainingMetric",
+    ),
+    "MeanSquaredTrajectoryObjective": (
+        "t4_e2e_devkit.planning.training.objectives",
+        "MeanSquaredTrajectoryObjective",
+    ),
+    "TrajectoryErrorMetric": (
+        "t4_e2e_devkit.planning.training.objectives",
+        "TrajectoryErrorMetric",
+    ),
 }
 
 __all__ = sorted(_LAZY)

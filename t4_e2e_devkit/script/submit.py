@@ -52,7 +52,9 @@ def generate_submission(
 
         active_device = device or ("cuda" if torch.cuda.is_available() else "cpu")
         if str(active_device).lower().startswith("cuda"):
-            raise ValueError("GPU submission uses one process; use rank/world_size for parallel GPUs")
+            raise ValueError(
+                "GPU submission uses one process; use rank/world_size for parallel GPUs"
+            )
     if checkpoint_path is not None and not Path(checkpoint_path).is_file():
         raise FileNotFoundError(f"checkpoint not found: {checkpoint_path}")
     assigned = [selected[index] for index in rank_indices(len(selected), rank, world_size)]
@@ -180,7 +182,9 @@ def _predict_one(
     try:
         window = builder.build(int(center))
         if getattr(agent, "requires_scene", False):
-            raise ValueError("submission agents must plan from T4AgentInput, not privileged scene data")
+            raise ValueError(
+                "submission agents must plan from T4AgentInput, not privileged scene data"
+            )
         with torch.inference_mode():
             trajectory = agent.compute_trajectory(window.get_agent_input())
         if not isinstance(trajectory, Trajectory):
@@ -242,7 +246,9 @@ def main(argv: Optional[list[str]] = None) -> int:
     parser.add_argument("--rank", type=int, default=0)
     parser.add_argument("--world-size", type=int, default=1)
     parser.add_argument("--workers", type=int, default=1)
-    parser.add_argument("--worker-backend", choices=("serial", "thread", "process", "ray"), default="serial")
+    parser.add_argument(
+        "--worker-backend", choices=("serial", "thread", "process", "ray"), default="serial"
+    )
     parser.add_argument("--max-retries", type=int, default=0)
     args = parser.parse_args(argv)
     agent_params: Mapping[str, Any] = {}

@@ -17,9 +17,7 @@ The default official version is v2 with the complete metric set.
 ```python
 from t4_e2e_devkit.evaluation import T4NavSimScorer, T4NavSimScorerConfig
 
-scorer = T4NavSimScorer(
-    T4NavSimScorerConfig(version="v2", backend="auto")
-)
+scorer = T4NavSimScorer(T4NavSimScorerConfig(version="v2", backend="auto"))
 result = scorer.score(trajectory, scene)
 print(result.values)  # complete v2 result
 ```

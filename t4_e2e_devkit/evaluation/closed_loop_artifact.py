@@ -160,7 +160,9 @@ def _result_to_payload(result: T4ClosedLoopResult) -> dict[str, Any]:
         "geometry": (
             None
             if result.geometry is None
-            else [None if event is None else _geometry_to_payload(event) for event in result.geometry]
+            else [
+                None if event is None else _geometry_to_payload(event) for event in result.geometry
+            ]
         ),
         "traffic_states": (
             None

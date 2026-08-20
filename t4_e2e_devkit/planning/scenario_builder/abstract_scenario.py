@@ -33,79 +33,63 @@ class AbstractScenario(Protocol):
     """Scenario surface shared by readers, planners and metric runners."""
 
     @property
-    def token(self) -> str:
-        ...
+    def token(self) -> str: ...
 
     @property
-    def database_interval(self) -> float:
-        ...
+    def database_interval(self) -> float: ...
 
-    def get_number_of_iterations(self) -> int:
-        ...
+    def get_number_of_iterations(self) -> int: ...
 
-    def get_ego_status_at_iteration(self, iteration: int) -> EgoStatus:
-        ...
+    def get_ego_status_at_iteration(self, iteration: int) -> EgoStatus: ...
 
-    def get_ego_state_at_iteration(self, iteration: int) -> EgoStatus:
-        ...
+    def get_ego_state_at_iteration(self, iteration: int) -> EgoStatus: ...
 
-    def get_scenario_type(self) -> str:
-        ...
+    def get_scenario_type(self) -> str: ...
 
-    def get_log_name(self) -> str:
-        ...
+    def get_log_name(self) -> str: ...
 
     def get_ego_future_trajectory(
         self,
         iteration: int,
         time_horizon: float,
         num_samples: Optional[int] = None,
-    ) -> Iterable[EgoStatus]:
-        ...
+    ) -> Iterable[EgoStatus]: ...
 
     def get_past_ego_states(
         self,
         iteration: int,
         time_horizon: Optional[float],
         num_samples: Optional[int] = None,
-    ) -> Iterable[EgoStatus]:
-        ...
+    ) -> Iterable[EgoStatus]: ...
 
     def get_future_ego_states(
         self,
         iteration: int,
         time_horizon: Optional[float],
         num_samples: Optional[int] = None,
-    ) -> Iterable[EgoStatus]:
-        ...
+    ) -> Iterable[EgoStatus]: ...
 
-    def get_tracked_objects_at_iteration(self, iteration: int) -> DetectionsTracks:
-        ...
+    def get_tracked_objects_at_iteration(self, iteration: int) -> DetectionsTracks: ...
 
     def get_future_tracked_objects(
         self,
         iteration: int,
         time_horizon: float,
         num_samples: Optional[int] = None,
-    ) -> Iterable[DetectionsTracks]:
-        ...
+    ) -> Iterable[DetectionsTracks]: ...
 
-    def get_map_api(self) -> Optional[T4MapAPI]:
-        ...
+    def get_map_api(self) -> Optional[T4MapAPI]: ...
 
-    def get_route_roadblock_ids(self) -> Iterable[str]:
-        ...
+    def get_route_roadblock_ids(self) -> Iterable[str]: ...
 
-    def get_mission_goal(self) -> Optional[np.ndarray]:
-        ...
+    def get_mission_goal(self) -> Optional[np.ndarray]: ...
 
     def get_past_sensor_data(
         self,
         iteration: int,
         time_horizon: Optional[float],
         num_samples: Optional[int] = None,
-    ) -> Iterable[T4Frame]:
-        ...
+    ) -> Iterable[T4Frame]: ...
 
 
 class T4Scenario:
@@ -155,7 +139,9 @@ class T4Scenario:
     @property
     def scenario_type(self) -> str:
         """:return: semantic tag summary, or ``"t4"`` when untagged."""
-        events = sorted({event for tag in self._scene.scene_metadata.scene_tags for event in tag.events})
+        events = sorted(
+            {event for tag in self._scene.scene_metadata.scene_tags for event in tag.events}
+        )
         return "+".join(events) if events else "t4"
 
     @property
@@ -227,7 +213,9 @@ class T4Scenario:
             len(available) - 1,
             reverse=True,
         )
-        return [available[self._scene.current_frame_index - offset].ego_status for offset in indices]
+        return [
+            available[self._scene.current_frame_index - offset].ego_status for offset in indices
+        ]
 
     def get_future_ego_statuses(
         self,
@@ -318,7 +306,9 @@ class T4Scenario:
         value = int(iteration)
         if value < 0 or value >= self.get_number_of_iterations():
             raise IndexError(f"invalid scenario iteration {iteration} for {self.token}")
-        if self._scene.future_annotations is not None and value < len(self._scene.future_annotations):
+        if self._scene.future_annotations is not None and value < len(
+            self._scene.future_annotations
+        ):
             return self._scene.future_annotations[value]
         if value == 0 and self._scene.current_frame.annotations is not None:
             return self._scene.current_frame.annotations
@@ -380,8 +370,7 @@ class T4Scenario:
         total = self.get_number_of_iterations() - 1 - int(iteration)
         offsets = self._sample_indices(time_horizon, num_samples, total)
         return [
-            self.get_tracked_objects_at_iteration(int(iteration) + offset)
-            for offset in offsets
+            self.get_tracked_objects_at_iteration(int(iteration) + offset) for offset in offsets
         ]
 
     def get_sensor_frame_at_iteration(self, iteration: int = 0) -> T4Frame:
@@ -556,8 +545,7 @@ class T4Scenario:
         if int(iteration) == 0:
             return int(self._scene.current_frame.timestamp_us)
         return int(
-            self._scene.current_frame.timestamp_us
-            + int(iteration) * self._interval_length * 1.0e6
+            self._scene.current_frame.timestamp_us + int(iteration) * self._interval_length * 1.0e6
         )
 
     def _iteration_timestamps(self, count: int) -> np.ndarray:
@@ -605,9 +593,9 @@ class T4Scenario:
             count = min(int(num_samples), horizon_steps + 1)
             if count == 0:
                 return np.zeros((0,), dtype=np.int64)
-            values = np.rint(
-                np.linspace(0, horizon_steps, count, dtype=np.float64)
-            ).astype(np.int64)
+            values = np.rint(np.linspace(0, horizon_steps, count, dtype=np.float64)).astype(
+                np.int64
+            )
             # A coarse source grid can round two requested points to the same
             # frame.  Returning a unique, ordered sequence is less surprising
             # than asking a scenario consumer to process duplicate timestamps.

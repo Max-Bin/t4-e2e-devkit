@@ -9,7 +9,9 @@ from pathlib import Path
 class FileBackedBarrier:
     """Wait until ``world_size`` rank marker files exist."""
 
-    def __init__(self, path: str | Path, rank: int, world_size: int, *, timeout_s: float = 600.0) -> None:
+    def __init__(
+        self, path: str | Path, rank: int, world_size: int, *, timeout_s: float = 600.0
+    ) -> None:
         if world_size < 1 or rank < 0 or rank >= world_size:
             raise ValueError("rank must be in [0, world_size)")
         if timeout_s <= 0.0:

@@ -101,7 +101,10 @@ class Simulation:
             initial_observation=self._first_observation,
             sample_interval=_interval_seconds(self._time_controller),
         )
-        if hasattr(self._ego_controller, "set_state") and getattr(self._ego_controller, "state", None) is None:
+        if (
+            hasattr(self._ego_controller, "set_state")
+            and getattr(self._ego_controller, "state", None) is None
+        ):
             self._ego_controller.set_state(_initial_state(self._scenario))
         return self._setup.planner_initialization or _planner_initialization(self._scenario)
 
@@ -194,7 +197,9 @@ def _controller_state(controller: Any) -> Any:
     raise RuntimeError("ego controller exposes neither state nor get_state()")
 
 
-def _update_controller(controller: Any, current: Any, next_iteration: Any, ego_state: Any, trajectory: Any) -> None:
+def _update_controller(
+    controller: Any, current: Any, next_iteration: Any, ego_state: Any, trajectory: Any
+) -> None:
     update = getattr(controller, "update_state", None)
     if update is None:
         raise TypeError("ego controller must implement update_state")

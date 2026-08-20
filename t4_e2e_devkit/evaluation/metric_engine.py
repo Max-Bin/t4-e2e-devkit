@@ -101,7 +101,9 @@ class MetricRecord:
             family=str(value["family"]),
             token=str(value["token"]),
             values={str(key): float(item) for key, item in values.items()},
-            metadata=(value.get("metadata", {}) if isinstance(value.get("metadata", {}), Mapping) else {}),
+            metadata=(
+                value.get("metadata", {}) if isinstance(value.get("metadata", {}), Mapping) else {}
+            ),
         )
 
 
@@ -193,11 +195,7 @@ class MetricEngine:
             for definition in self.definitions
             if (wanted_names is None or definition.name in wanted_names)
             and (wanted_families is None or definition.family in wanted_families)
-            and (
-                explicit_selection
-                or definition.supports is None
-                or definition.supports(context)
-            )
+            and (explicit_selection or definition.supports is None or definition.supports(context))
         )
         if not definitions:
             raise ValueError("no registered metrics match metric_names/families")
@@ -221,9 +219,11 @@ class MetricEngine:
                     except (KeyError, TypeError, ValueError):
                         pass
             output = definition.compute(context)
-            values = {definition.name: float(output)} if isinstance(output, Real) else {
-                str(key): float(value) for key, value in output.items()
-            }
+            values = (
+                {definition.name: float(output)}
+                if isinstance(output, Real)
+                else {str(key): float(value) for key, value in output.items()}
+            )
             record = MetricRecord(
                 name=definition.name,
                 family=definition.family,
@@ -384,8 +384,9 @@ class MetricEngine:
                 "open_loop",
                 open_loop,
                 family="open_loop",
-                supports=lambda context: context.prediction is not None
-                and context.ground_truth is not None,
+                supports=lambda context: (
+                    context.prediction is not None and context.ground_truth is not None
+                ),
             )
         )
         engine.register(
@@ -402,10 +403,9 @@ class MetricEngine:
                     "pdm",
                     pdm,
                     family="pdm",
-                    supports=lambda context: context.prediction is not None
-                    and (
-                        context.scene is not None
-                        or isinstance(context.ground_truth, T4Scene)
+                    supports=lambda context: (
+                        context.prediction is not None
+                        and (context.scene is not None or isinstance(context.ground_truth, T4Scene))
                     ),
                 )
             )
@@ -434,9 +434,7 @@ def _jsonable(value: Any) -> Any:
     if isinstance(value, (list, tuple)):
         return [_jsonable(item) for item in value]
     if hasattr(value, "__dataclass_fields__"):
-        return _jsonable(
-            {name: getattr(value, name) for name in value.__dataclass_fields__}
-        )
+        return _jsonable({name: getattr(value, name) for name in value.__dataclass_fields__})
     if hasattr(value, "__dict__"):
         return _jsonable(vars(value))
     return str(value)
@@ -468,8 +466,7 @@ def _scene_signature(scene: Optional[T4Scene]) -> Any:
     map_signature = None
     if frame.map_tensors is not None:
         map_signature = {
-            name: _array_signature(value)
-            for name, value in frame.map_tensors.as_dict().items()
+            name: _array_signature(value) for name, value in frame.map_tensors.as_dict().items()
         }
     annotations = frame.annotations
     annotation_signature = None

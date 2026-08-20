@@ -128,9 +128,7 @@ class T4LightningModule(pl.LightningModule):
                 else output
             )
             if not isinstance(values, Mapping):
-                raise TypeError(
-                    f"{type(metric).__name__}.compute must return a scalar or mapping"
-                )
+                raise TypeError(f"{type(metric).__name__}.compute must return a scalar or mapping")
             for name, value in values.items():
                 if not torch.is_tensor(value):
                     value = torch.as_tensor(value, device=self.device, dtype=torch.float32)
@@ -138,7 +136,9 @@ class T4LightningModule(pl.LightningModule):
                     raise ValueError(
                         f"training metric {name!r} must return one scalar, got {tuple(value.shape)}"
                     )
-                self.log(f"{prefix}/{name}", value.reshape(()).detach(), on_step=False, on_epoch=True)
+                self.log(
+                    f"{prefix}/{name}", value.reshape(()).detach(), on_step=False, on_epoch=True
+                )
 
     def training_step(self, batch, batch_idx: int) -> torch.Tensor:
         """

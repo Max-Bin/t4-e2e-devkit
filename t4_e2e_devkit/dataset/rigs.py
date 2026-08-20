@@ -97,8 +97,7 @@ def readable_camera_names(scene_dir: str | Path) -> List[str]:
     readable = [
         name
         for name in register
-        if name.upper() in supported
-        and stored_kinds.get(name.upper()) == "jpeg_dir"
+        if name.upper() in supported and stored_kinds.get(name.upper()) == "jpeg_dir"
     ]
     # A camera stored but absent from the register cannot be used: without a
     # register slot there are no intrinsics or extrinsics for it.
@@ -266,14 +265,10 @@ def sensor_config_for_scene(
     """
     from t4_e2e_devkit.common.dataclasses import SensorConfig
 
-    names = resolve_camera_names(
-        cameras, readable_camera_names(scene_dir), scene_dir=scene_dir
-    )
+    names = resolve_camera_names(cameras, readable_camera_names(scene_dir), scene_dir=scene_dir)
     if history:
         return SensorConfig(cameras={name: True for name in names}, lidar=lidar)
-    return SensorConfig(
-        cameras={name: [-1] for name in names}, lidar=[-1] if lidar else False
-    )
+    return SensorConfig(cameras={name: [-1] for name in names}, lidar=[-1] if lidar else False)
 
 
 def surround_camera_names(available: Sequence[str]) -> List[str]:

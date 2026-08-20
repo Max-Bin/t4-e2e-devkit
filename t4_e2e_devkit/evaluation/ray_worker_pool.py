@@ -71,7 +71,9 @@ class RayWorkerPool:
             raise ValueError("worker tasks contain duplicate task IDs")
         from t4_e2e_devkit.evaluation.executor import rank_indices
 
-        selected = [values[index] for index in rank_indices(len(values), self.rank, self.world_size)]
+        selected = [
+            values[index] for index in rank_indices(len(values), self.rank, self.world_size)
+        ]
         skipped = {str(value) for value in skip_task_ids}
         selected = [task for task in selected if task.task_id not in skipped]
         if not selected:

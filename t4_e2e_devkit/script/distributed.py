@@ -17,9 +17,7 @@ def main(argv: Optional[list[str]] = None) -> int:
         prog="t4e2e distribute",
         description="launch and merge all ranks for an evaluation run",
     )
-    parser.add_argument(
-        "kind", choices=("evaluate", "closed-loop", "submit", "score-submission")
-    )
+    parser.add_argument("kind", choices=("evaluate", "closed-loop", "submit", "score-submission"))
     parser.add_argument("data_list")
     parser.add_argument("--agent", default=None)
     parser.add_argument(
@@ -60,7 +58,9 @@ def main(argv: Optional[list[str]] = None) -> int:
     parser.add_argument("--max-speed-mps", type=float, default=None)
     parser.add_argument("--goal-radius-m", type=float, default=None)
     parser.add_argument("--ttc-horizon-s", type=float, default=None)
-    parser.add_argument("--traffic-policy", choices=("replay", "constant_velocity", "idm"), default="replay")
+    parser.add_argument(
+        "--traffic-policy", choices=("replay", "constant_velocity", "idm"), default="replay"
+    )
     parser.add_argument("--stop-on-collision", action="store_true")
     parser.add_argument("--stop-on-goal", action="store_true")
     args = parser.parse_args(argv)
@@ -89,7 +89,9 @@ def main(argv: Optional[list[str]] = None) -> int:
     if args.world_size > 1 and args.device is not None:
         device_name = str(args.device).lower()
         if device_name.startswith("cuda:"):
-            parser.error("omit an indexed --device for multi-rank runs; one GPU is assigned per rank")
+            parser.error(
+                "omit an indexed --device for multi-rank runs; one GPU is assigned per rank"
+            )
 
     launcher = LocalDistributedLauncher(
         args.output_dir,
@@ -122,6 +124,7 @@ def main(argv: Optional[list[str]] = None) -> int:
 
         def merger(rank_dirs, merged):
             return merge_submission_scores(rank_dirs, merged)
+
     result = launcher.run(command, merger=merger)
     print(json.dumps(result.as_dict(), indent=2, sort_keys=True))
     return 0 if result.succeeded else 1

@@ -142,9 +142,9 @@ def traffic_light_states(segments: npt.NDArray[np.floating]) -> List[str]:
         points = values[index][mask[index]]
         if points.shape[0] < 2:
             continue
-        one_hot = points[
-            :, C.TRAFFIC_LIGHT : C.TRAFFIC_LIGHT + C.TRAFFIC_LIGHT_ONE_HOT_DIM
-        ].sum(axis=0)
+        one_hot = points[:, C.TRAFFIC_LIGHT : C.TRAFFIC_LIGHT + C.TRAFFIC_LIGHT_ONE_HOT_DIM].sum(
+            axis=0
+        )
         states.append(_TRAFFIC_LIGHT_STATES[int(np.argmax(one_hot))])
     return states
 
@@ -347,9 +347,7 @@ def add_map_to_bev_ax(
     # readable.
     if "lanes" in layers:
         if draw_lane_boundaries:
-            for state, polylines in _lane_boundaries_by_traffic_light(
-                map_tensors.lanes
-            ).items():
+            for state, polylines in _lane_boundaries_by_traffic_light(map_tensors.lanes).items():
                 add_polylines_to_bev_ax(
                     ax,
                     polylines,
@@ -373,9 +371,7 @@ def add_map_to_bev_ax(
                 state = states[index] if index < len(states) else "none"
                 grouped.setdefault(state, []).append(polyline)
             for state, lines in grouped.items():
-                add_polylines_to_bev_ax(
-                    ax, lines, {**base, "color": TRAFFIC_LIGHT_COLORS[state]}
-                )
+                add_polylines_to_bev_ax(ax, lines, {**base, "color": TRAFFIC_LIGHT_COLORS[state]})
         else:
             add_polylines_to_bev_ax(ax, route, MAP_CONFIG["route_lanes"])
 
@@ -727,9 +723,7 @@ def _match_future_annotation_positions(
         else current_boxes[:, T4BoxIndex.VELOCITY_2D]
     )
     tracks: List[npt.NDArray[np.float64]] = []
-    for box, label, velocity in zip(
-        current_boxes, current_labels, current_velocities, strict=True
-    ):
+    for box, label, velocity in zip(current_boxes, current_labels, current_velocities, strict=True):
         points: List[npt.NDArray[np.float64]] = []
         for step, future_annotations in enumerate(future, start=1):
             candidates = np.asarray(future_annotations.boxes, dtype=np.float64)

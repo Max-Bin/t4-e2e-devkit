@@ -25,19 +25,40 @@ from t4_e2e_devkit.dataset.rigs import (
 
 # The three registers actually observed, as fixtures.
 PRD_JT_MAIN = [
-    "CAM_BACK_LEFT", "CAM_BACK_LEFT_WIDE", "CAM_BACK_RIGHT", "CAM_BACK_RIGHT_WIDE",
-    "CAM_FRONT", "CAM_FRONT_LEFT", "CAM_FRONT_LEFT_WIDE", "CAM_FRONT_RIGHT",
-    "CAM_FRONT_RIGHT_WIDE", "CAM_FRONT_WIDE", "CAM_TRAFFIC_LIGHT_FAR",
+    "CAM_BACK_LEFT",
+    "CAM_BACK_LEFT_WIDE",
+    "CAM_BACK_RIGHT",
+    "CAM_BACK_RIGHT_WIDE",
+    "CAM_FRONT",
+    "CAM_FRONT_LEFT",
+    "CAM_FRONT_LEFT_WIDE",
+    "CAM_FRONT_RIGHT",
+    "CAM_FRONT_RIGHT_WIDE",
+    "CAM_FRONT_WIDE",
+    "CAM_TRAFFIC_LIGHT_FAR",
 ]
 PRD_JT_VARIANT = [
-    "CAM_BACK_LEFT", "CAM_BACK_RIGHT", "CAM_FRONT", "CAM_FRONT_LEFT",
-    "CAM_FRONT_LEFT_WIDE", "CAM_FRONT_RIGHT", "CAM_FRONT_RIGHT_WIDE",
+    "CAM_BACK_LEFT",
+    "CAM_BACK_RIGHT",
+    "CAM_FRONT",
+    "CAM_FRONT_LEFT",
+    "CAM_FRONT_LEFT_WIDE",
+    "CAM_FRONT_RIGHT",
+    "CAM_FRONT_RIGHT_WIDE",
     "CAM_TRAFFIC_LIGHT_FAR",
 ]
 X2_DEV = [
-    "CAM_BACK", "CAM_BACK_LEFT", "CAM_BACK_RIGHT", "CAM_FRONT", "CAM_FRONT_LEFT",
-    "CAM_FRONT_RIGHT", "CAM_FRONT_WIDE", "CAM_TOP_LEFT_CENTER",
-    "CAM_TOP_RIGHT_CENTER", "CAM_TRAFFIC_LIGHT_FAR", "CAM_TRAFFIC_LIGHT_NEAR",
+    "CAM_BACK",
+    "CAM_BACK_LEFT",
+    "CAM_BACK_RIGHT",
+    "CAM_FRONT",
+    "CAM_FRONT_LEFT",
+    "CAM_FRONT_RIGHT",
+    "CAM_FRONT_WIDE",
+    "CAM_TOP_LEFT_CENTER",
+    "CAM_TOP_RIGHT_CENTER",
+    "CAM_TRAFFIC_LIGHT_FAR",
+    "CAM_TRAFFIC_LIGHT_NEAR",
 ]
 
 
@@ -169,9 +190,7 @@ def _write_jpeg(path, width=64, height=48):
     from PIL import Image
 
     rows, columns = np.meshgrid(np.arange(height), np.arange(width), indexing="ij")
-    pixels = np.stack(
-        [rows * 5, columns * 3, (rows + columns) * 7], axis=-1
-    ).astype(np.uint8)
+    pixels = np.stack([rows * 5, columns * 3, (rows + columns) * 7], axis=-1).astype(np.uint8)
     Image.fromarray(pixels).save(path, quality=95)
     return pixels
 
