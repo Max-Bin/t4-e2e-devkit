@@ -98,3 +98,22 @@ def test_scene_tag_filter_is_recorded_in_manifest(tmp_path):
     assert filtered.manifest["runtime_filter"]["scene_tags"]["rows_after"] == 1
     assert filtered.manifest["runtime_filter"]["scene_tags"]["source"] == "external-scene-tags"
     assert "root" not in filtered.manifest["runtime_filter"]["scene_tags"]
+
+
+def test_write_puts_each_row_on_one_line(tmp_path):
+    rows = [(f"prd_jt/vehicle/2025-12-24/scene-{i}", i) for i in range(3)]
+    data_list = DataList(root=tmp_path, rows=rows)
+    out = data_list.write(tmp_path / "list.json")
+
+    text = out.read_text(encoding="utf-8")
+    row_lines = [ln for ln in text.splitlines() if '["prd_jt/' in ln]
+    assert len(row_lines) == 3, "each row must occupy exactly one line"
+
+    reloaded = json.loads(text)
+    assert reloaded["rows"] == [[s, c] for s, c in rows]
+    assert reloaded["format"] and reloaded["n_rows"] == 3
+
+
+def test_write_empty_rows_is_valid_json(tmp_path):
+    out = DataList(root=tmp_path, rows=[]).write(tmp_path / "empty.json")
+    assert json.loads(out.read_text(encoding="utf-8"))["rows"] == []

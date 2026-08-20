@@ -204,8 +204,15 @@ class DataList:
                 "n_rows": len(self.rows),
             }
         )
-        manifest["rows"] = [[scene, int(center)] for scene, center in self.rows]
-        path.write_text(json.dumps(manifest, indent=2), encoding="utf-8")
+        rows = [[scene, int(center)] for scene, center in self.rows]
+        # keep the header pretty-printed but each row on its own line: with
+        # plain indent=2 every row becomes four lines, and a 60k-row list
+        # balloons to a 240k-line file that diffs and greps badly
+        head = json.dumps(manifest, indent=2)
+        head = head[: head.rfind("}")].rstrip().rstrip(",")
+        body = ",\n    ".join(json.dumps(r) for r in rows)
+        path.write_text(f'{head},\n  "rows": [\n    {body}\n  ]\n}}\n',
+                        encoding="utf-8")
         return path
 
 
