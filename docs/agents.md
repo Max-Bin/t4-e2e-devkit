@@ -15,6 +15,7 @@ from t4_e2e_devkit.agents import (
     MapFeatureBuilder,
     TrajectoryTargetBuilder,
 )
+from t4_e2e_devkit.common.constants import T4_WIDE5_CAMERA_NAMES
 from t4_e2e_devkit.common.dataclasses import SensorConfig
 from t4_e2e_devkit.planning.simulation.trajectory.trajectory_sampling import (
     TrajectorySampling,
@@ -30,7 +31,10 @@ class MyAgent(AbstractT4Agent):
         return "my_agent"
 
     def get_sensor_config(self):
-        return SensorConfig.build_current_frame(lidar=False)
+        # The register is part of the agent's own contract, so it is named here.
+        # x2_dev scenes need T4_X2_SURROUND6_CAMERA_NAMES instead: the rigs share
+        # no camera, so one agent cannot read both without retraining.
+        return SensorConfig.build_current_frame(T4_WIDE5_CAMERA_NAMES, lidar=False)
 
     def get_feature_builders(self):
         return [CameraFeatureBuilder(), MapFeatureBuilder()]

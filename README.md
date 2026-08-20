@@ -35,8 +35,19 @@ logger or dashboard.
 | Read flat training windows | `dataset.training_window` | One numpy dict per `(scene, center)` at a chosen `TemporalSpec` |
 
 LiDAR is opt-in. Map-only and camera-only visualization do not decode it. The
-public camera path currently supports the configured wide, JPEG-backed camera
-channels; narrow and video-backed channels are not part of the input contract.
+public camera path supports the road-facing channels a rig exports as one JPEG
+per frame; video-backed and roof channels are not part of the input contract.
+
+The fleet has no single camera register, so every camera run names one. The
+supported subtrees and their profiles:
+
+| Subtree | Rig | Profile |
+| --- | --- | --- |
+| `prd_jt`, `prd_jt_val` | five wide JPEG views, narrow views HEVC | `wide5` |
+| `x2_dev` | one wide plus a six-camera JPEG surround, real `CAM_BACK` | `x2_surround6` |
+
+The two profiles share no channel, so a checkpoint trained through one cannot be
+evaluated through the other. `t4e2e rigs SCENE` reports what a scene has.
 
 ## Install and verify
 
@@ -69,6 +80,7 @@ ignored `results/` or `reports/` directory.
 uv run t4e2e datalist \
   --root /path/to/t4 \
   --glob 'prd_jt/*/*/*' \
+  --camera-names wide5 \
   --out results/val.datalist.json
 
 uv run t4e2e inspect results/val.datalist.json
