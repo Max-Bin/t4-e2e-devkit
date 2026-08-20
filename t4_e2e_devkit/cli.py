@@ -276,11 +276,18 @@ def _cmd_visualize_video(argv: Sequence[str]) -> int:
         centers = sorted({center for scene, center in data_list.rows if scene == scene_rel})
         scene_dir = data_list.absolute_scene_dir(scene_rel)
         camera = args.camera or front_camera_name(readable_camera_names(scene_dir))
+        # LiDAR is opt-in and a scene may simply not ship a pack (trimmed
+        # sample copies, camera-only exports); render without the overlay
+        # instead of failing the whole video.
+        with_lidar = not args.no_lidar
+        if with_lidar and not (scene_dir / "data" / "LIDAR_CONCAT.pack").is_file():
+            print(f"note: {scene_rel} has no LiDAR pack; rendering without the overlay")
+            with_lidar = False
         builder = T4WindowBuilder(
             scene_dir,
             data_list.root,
             sensor_config=sensor_config_for_scene(
-                scene_dir, cameras=[camera], lidar=not args.no_lidar
+                scene_dir, cameras=[camera], lidar=with_lidar
             ),
         )
         try:
