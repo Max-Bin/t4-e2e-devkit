@@ -35,10 +35,8 @@ from t4_e2e_devkit.evaluation.gpu.scene import (
     extract_window_scene_arrays,
     window_scene_from_arrays,
 )
-from t4_e2e_devkit.evaluation.gpu.simulate import (
-    TorchSimulatorConfig,
-    simulate_proposals_torch,
-)
+from t4_e2e_devkit.evaluation.gpu.precision import simulate_proposals_fp32
+from t4_e2e_devkit.evaluation.gpu.simulate import TorchSimulatorConfig
 from t4_e2e_devkit.planning.simulation.planner.pdm_planner.utils.pdm_enums import (
     StateIndex,
 )
@@ -467,7 +465,7 @@ def _simulate(
         simulated.index_copy_(
             0,
             index_tensor,
-            simulate_proposals_torch(
+            simulate_proposals_fp32(
                 proposal_states.index_select(0, index_tensor),
                 initial_states.index_select(0, index_tensor),
                 TorchSimulatorConfig(
