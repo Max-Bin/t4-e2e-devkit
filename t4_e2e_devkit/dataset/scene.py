@@ -31,7 +31,7 @@ from pathlib import Path
 from typing import Any, Dict, List, Mapping, Optional, Sequence, Tuple
 
 import numpy as np
-from t4_e2e_devkit.common.constants import T4_ALL_CAMERA_NAMES, T4_WIDE5_CAMERA_NAMES
+from t4_e2e_devkit.common.constants import T4_ALL_CAMERA_NAMES
 
 T4_FRAME_CACHE_VERSION = 1
 
@@ -50,7 +50,14 @@ def normalize_t4_camera_names(
     """
 
     if camera_names is None:
-        values: list[str] = list(T4_WIDE5_CAMERA_NAMES)
+        # No fleet-wide default: wide5 resolves on the main prd_jt rig and on no
+        # x2_dev scene, so defaulting here would put a prd_jt register into every
+        # run that forgot to name one.
+        raise ValueError(
+            "T4 camera_names must be given; there is no fleet-wide default "
+            "register. Name a profile, or resolve one per scene with "
+            "dataset.rigs.resolve_camera_names."
+        )
     elif isinstance(camera_names, str):
         values = [value for value in camera_names.replace(":", ",").split(",")]
     else:

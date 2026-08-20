@@ -22,7 +22,6 @@ from t4_e2e_devkit.common.constants import (
     T4_INTERVAL_LENGTH,
     T4_LIDAR_POINT_DIM,
     T4_SUPPORTED_CAMERA_NAMES,
-    T4_WIDE5_CAMERA_NAMES,
     TRAJECTORY_INTERVAL,
     TRAJECTORY_POSES,
 )
@@ -188,8 +187,16 @@ class Cameras:
         return np.stack(images, axis=0)
 
     @classmethod
-    def empty(cls, names: Sequence[str] = T4_WIDE5_CAMERA_NAMES) -> Cameras:
-        """:return: a register with every named slot present but unfilled."""
+    def empty(cls, names: Sequence[str]) -> Cameras:
+        """A register with every named slot present but unfilled.
+
+        ``names`` is required: no register is the fleet default, and a
+        wide-five default here silently produced a prd_jt-shaped placeholder on
+        every rig.
+
+        :param names: the register to create slots for, in order.
+        :return: the empty register.
+        """
         return cls({name: Camera(name=name) for name in names})
 
 
@@ -866,9 +873,11 @@ class SensorConfig:
 
     Values are ``bool`` (all history steps or none) or ``list[int]`` (specific
     history step indices, where ``-1`` is the current frame).  ``cameras`` is
-    keyed by camera name; the public input boundary currently accepts only the
-    JPEG-backed wide channels, while the full on-disk register remains available
-    to schema inspection.
+    keyed by camera name; the public input boundary accepts the road-facing
+    channels some rig exports as JPEG, while the full on-disk register remains
+    available to schema inspection.  Whether a *given scene* can serve a named
+    channel is a rig question, answered by
+    :func:`t4_e2e_devkit.dataset.rigs.resolve_camera_names`.
     """
 
     cameras: Dict[str, Union[bool, List[int]]] = field(default_factory=dict)
@@ -880,7 +889,7 @@ class SensorConfig:
         if unsupported:
             raise ValueError(
                 f"unsupported T4 cameras: {unsupported}. "
-                "Only JPEG-backed wide cameras are supported."
+                f"Supported channels: {list(T4_SUPPORTED_CAMERA_NAMES)}."
             )
 
     def camera_names_at(self, iteration: int) -> List[str]:
@@ -921,33 +930,35 @@ class SensorConfig:
     @classmethod
     def build_current_frame(
         cls,
-        camera_names: Optional[Sequence[str]] = None,
+        camera_names: Sequence[str] = (),
         lidar: bool = False,
     ) -> SensorConfig:
         """Current frame only -- the common case for single-timestep models.
 
-        :param camera_names: cameras to decode, in register order.  ``None``
-            falls back to the wide-five profile; to take whatever a given scene
-            actually stores, use
-            :func:`t4_e2e_devkit.dataset.rigs.sensor_config_for_scene` instead,
-            since no single register fits every rig in the fleet.
+        :param camera_names: cameras to decode, in register order.  There is no
+            fleet-wide default: ``wide5`` resolves on 96% of prd_jt and on no
+            x2_dev scene, so a default here would be a prd_jt assumption wearing
+            a neutral name.  Name a profile from
+            :data:`t4_e2e_devkit.common.constants.T4_CAMERA_PROFILES`, or use
+            :func:`t4_e2e_devkit.dataset.rigs.sensor_config_for_scene` to take
+            whatever a given scene actually stores.  Empty means no camera.
         :param lidar: whether to decode the current LiDAR sweep.
         :return: sensor configuration dataclass.
         """
-        names = T4_WIDE5_CAMERA_NAMES if camera_names is None else camera_names
         return cls(
-            cameras={name: [-1] for name in names},
+            cameras={name: [-1] for name in camera_names},
             lidar=[-1] if lidar else False,
         )
 
     @classmethod
-    def build_all_sensors(cls, camera_names: Optional[Sequence[str]] = None) -> SensorConfig:
+    def build_all_sensors(cls, camera_names: Sequence[str] = ()) -> SensorConfig:
         """
-        :param camera_names: cameras to decode; the wide-five profile by default.
+        :param camera_names: cameras to decode, in register order; empty means
+            none.  As in :meth:`build_current_frame`, no register is a fleet
+            default.
         :return: every named camera and LiDAR at every history step.
         """
-        names = T4_WIDE5_CAMERA_NAMES if camera_names is None else camera_names
-        return cls(cameras={name: True for name in names}, lidar=True)
+        return cls(cameras={name: True for name in camera_names}, lidar=True)
 
 
 @dataclass

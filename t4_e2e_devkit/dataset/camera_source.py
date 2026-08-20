@@ -1,4 +1,4 @@
-"""Read the JPEG-backed wide cameras exposed by the public T4 contract."""
+"""Read the JPEG-backed cameras exposed by the public T4 contract."""
 
 from __future__ import annotations
 
@@ -203,6 +203,9 @@ def available_cameras(scene_dir: str | Path) -> Dict[str, str]:
     This is deliberately separate from ``derived/cam_names.json``, which is the
     *calibration* register. The two disagree in practice: a ``prd_jt`` scene
     calibrates eleven cameras while exporting five wide views as JPEG and the
+    rest as HEVC, and an ``x2_dev`` scene calibrates eleven while exporting nine
+    JPEG directories.
+
     :param scene_dir: the T4 scene directory.
     :return: camera name -> ``"jpeg_dir"``.
     """
@@ -237,12 +240,21 @@ def open_camera_source(
     supported = {name.upper() for name in T4_SUPPORTED_CAMERA_NAMES}
     if name.upper() not in supported:
         raise CameraSourceError(
-            f"camera {name!r} is not supported yet; only JPEG-backed wide cameras "
-            f"are supported ({list(T4_SUPPORTED_CAMERA_NAMES)})"
+            f"camera {name!r} is not supported yet; supported channels are "
+            f"{list(T4_SUPPORTED_CAMERA_NAMES)}"
         )
     storage = available_cameras(scene_dir)
     if storage.get(name) == "jpeg_dir":
         return JpegDirectorySource(name, scene_dir / "data" / name, image_size_hw)
+    # Distinguish the two ways a supported channel can still be unreadable: this
+    # rig ships it as video, or the scene never exported it.  The same name is
+    # HEVC on prd_jt and a JPEG directory on x2_dev, so "not on disk" would send
+    # the reader looking for a converter bug that is not there.
+    if (scene_dir / "data" / f"{name}.mp4").is_file():
+        raise CameraSourceError(
+            f"{scene_dir}: camera {name!r} is stored as video on this rig, which "
+            "this reader does not decode. Only JPEG-backed channels are readable."
+        )
     raise CameraSourceError(
         f"{scene_dir}: camera {name!r} has no frames on disk. "
         f"JPEG cameras: {sorted(storage)}. "

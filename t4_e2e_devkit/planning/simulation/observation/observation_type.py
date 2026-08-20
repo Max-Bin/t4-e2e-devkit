@@ -33,6 +33,8 @@ class CameraChannel(Enum):
     CAM_FRONT_LEFT_WIDE = "CAM_FRONT_LEFT_WIDE"
     CAM_FRONT_RIGHT = "CAM_FRONT_RIGHT"
     CAM_FRONT_RIGHT_WIDE = "CAM_FRONT_RIGHT_WIDE"
+    # x2_dev carries a centred rear camera; the prd_jt rigs do not.
+    CAM_BACK = "CAM_BACK"
     CAM_BACK_LEFT = "CAM_BACK_LEFT"
     CAM_BACK_LEFT_WIDE = "CAM_BACK_LEFT_WIDE"
     CAM_BACK_RIGHT = "CAM_BACK_RIGHT"

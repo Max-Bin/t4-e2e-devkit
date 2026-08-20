@@ -1,29 +1,32 @@
 """Resolving a camera register against the rig a scene actually has.
 
 There is no single T4 camera register, and treating one as universal is a
-failure that shows up as scenes silently refusing to load. The current public
-reader supports only JPEG-backed wide views; narrow, roof and traffic-light
-channels are not selected or decoded.
+failure that shows up as scenes silently refusing to load. The reader decodes a
+channel when its rig exports it as one JPEG per frame and it faces the road;
+video-backed, roof and traffic-light channels are not selected or decoded.
 
 ============================  =====  ==============================================
 subtree                       share  register
 ============================  =====  ==============================================
-``prd_jt`` / ``prd_jt_val``     96%  11 cams, five wide views, **no** centred ``CAM_BACK``
+``prd_jt`` / ``prd_jt_val``     96%  11 cams, five wide views as JPEG, narrow views HEVC
 ``prd_jt`` / ``prd_jt_val``      4%   8 cams, no ``CAM_FRONT_WIDE``, no rear wide views
-``x2_dev``                     100%  11 cams, one wide view, **with** a real ``CAM_BACK``
+``x2_dev``                     100%  11 cams, nine JPEG views: one wide, six surround, two roof
 ============================  =====  ==============================================
 
-The fixed five-wide profile resolves on the main ``prd_jt`` rig. For inspection
-on other rigs, ``auto`` returns only the wide channels that are actually stored
-as JPEG; it never substitutes a narrow or video-backed camera.
+So the same channel name is supported on one rig and not on another:
+``CAM_FRONT`` is HEVC on ``prd_jt`` and a JPEG directory on ``x2_dev``. This is
+why support is decided per scene rather than from a global list. Each rig gets
+one profile -- ``wide5`` for the main ``prd_jt`` rig, ``x2_surround6`` for
+``x2_dev`` -- and the two are disjoint, so no register spans both.
 
 This module makes the register a *resolution* against the scene's own
 ``derived/cam_names.json``:
 
-* an explicit list is accepted only when every name is a supported wide channel;
-* the ``"wide5"`` profile is checked against the rig;
-* ``"auto"`` uses ``wide5`` when possible, otherwise returns the available wide
-  JPEG channels without changing their register order.
+* an explicit list is accepted only when every name is a supported channel that
+  this scene stores as JPEG;
+* a profile name is checked against the rig;
+* ``"auto"`` uses the first profile that fits, otherwise returns the supported
+  JPEG channels the scene has, without changing their register order.
 
 ``"auto"`` is deliberately **not** the default for training. The register order is
 part of the learned camera contract, so a checkpoint trained on one rig cannot be
@@ -71,9 +74,10 @@ def read_scene_camera_names(scene_dir: str | Path) -> List[str]:
 def readable_camera_names(scene_dir: str | Path) -> List[str]:
     """Supported cameras a scene calibrates and stores as JPEG frames.
 
-    This function applies the current product boundary: only supported wide
-    channels backed by JPEG are returned. Narrow and compressed channels are not
-    part of the reader contract.
+    This function applies the current product boundary: a channel is returned
+    when it is a supported road-facing view *and this scene* stores it as a JPEG
+    directory. Video-backed channels are not part of the reader contract, which
+    is why the same name resolves on x2_dev and not on prd_jt.
 
     Order follows the calibration register, since that order is the part of the
     contract a model learns.
@@ -151,8 +155,8 @@ def matching_profiles(available: Sequence[str]) -> List[str]:
     ]
 
 
-def supported_wide_camera_names(available: Sequence[str]) -> List[str]:
-    """Return supported wide channels in the supplied register order."""
+def supported_camera_names(available: Sequence[str]) -> List[str]:
+    """Return supported channels in the supplied register order."""
 
     supported = {name.upper() for name in T4_SUPPORTED_CAMERA_NAMES}
     return [name for name in available if name.upper() in supported]
@@ -187,10 +191,10 @@ def resolve_camera_names(
         if candidates:
             resolved = list(T4_CAMERA_PROFILES[candidates[0]])
         else:
-            resolved = supported_wide_camera_names(available)
+            resolved = supported_camera_names(available)
         if not resolved:
             raise RigMismatch(
-                f"{where}no supported JPEG wide camera is available. "
+                f"{where}no supported JPEG camera is available. "
                 f"Available: {sorted(available)}. Supported: {list(T4_SUPPORTED_CAMERA_NAMES)}"
             )
     elif len(parsed) == 1 and parsed[0] in T4_CAMERA_PROFILES:
@@ -214,7 +218,8 @@ def resolve_camera_names(
         if unsupported:
             raise RigMismatch(
                 f"{where}requested cameras are not supported yet: {unsupported}. "
-                "Only JPEG-backed wide cameras are supported."
+                f"Supported channels: {list(T4_SUPPORTED_CAMERA_NAMES)}; a channel a rig "
+                "stores as video is not among them."
             )
         missing = [name for name in resolved if name.upper() not in present]
         if missing:
@@ -292,11 +297,11 @@ def describe_rig(available: Sequence[str]) -> str:
     :return: a short multi-line report.
     """
     profiles = matching_profiles(available)
-    supported = supported_wide_camera_names(available)
+    supported = supported_camera_names(available)
     lines = [
         f"cameras   : {len(available)}",
         f"register  : {', '.join(available)}",
-        f"wide JPEG : {', '.join(supported) if supported else '(none)'}",
+        f"supported : {', '.join(supported) if supported else '(none)'}",
         f"profiles  : {', '.join(profiles) if profiles else '(none fit)'}",
         f"CAM_BACK  : {'yes' if any(n.upper() == 'CAM_BACK' for n in available) else 'no'}",
     ]

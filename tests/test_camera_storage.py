@@ -1,4 +1,4 @@
-"""Camera rig resolution and the public JPEG-wide input boundary."""
+"""Camera rig resolution and the public JPEG input boundary."""
 
 from __future__ import annotations
 
@@ -61,6 +61,33 @@ X2_DEV = [
     "CAM_TRAFFIC_LIGHT_NEAR",
 ]
 
+# What each rig stores as JPEG directories -- the set a register resolves
+# against.  The difference from the calibration registers above is the whole
+# point: prd_jt ships its narrow views as HEVC, x2_dev ships the same names as
+# JPEG, so the same channel name is readable on one rig and not the other.
+PRD_JT_MAIN_JPEG = [
+    "CAM_BACK_LEFT_WIDE",
+    "CAM_BACK_RIGHT_WIDE",
+    "CAM_FRONT_LEFT_WIDE",
+    "CAM_FRONT_RIGHT_WIDE",
+    "CAM_FRONT_WIDE",
+]
+PRD_JT_VARIANT_JPEG = [
+    "CAM_FRONT_LEFT_WIDE",
+    "CAM_FRONT_RIGHT_WIDE",
+]
+X2_DEV_JPEG = [
+    "CAM_BACK",
+    "CAM_BACK_LEFT",
+    "CAM_BACK_RIGHT",
+    "CAM_FRONT",
+    "CAM_FRONT_LEFT",
+    "CAM_FRONT_RIGHT",
+    "CAM_FRONT_WIDE",
+    "CAM_TOP_LEFT_CENTER",
+    "CAM_TOP_RIGHT_CENTER",
+]
+
 
 class TestProfileResolution:
     def test_wide_five_fits_the_main_prd_jt_rig(self):
@@ -76,16 +103,28 @@ class TestProfileResolution:
         with pytest.raises(RigMismatch, match="CAM_FRONT_WIDE"):
             resolve_camera_names("wide5", PRD_JT_VARIANT)
 
-    def test_narrow_profile_is_rejected(self):
+    def test_x2_surround_six_fits_x2_dev(self):
+        assert resolve_camera_names("x2_surround6", X2_DEV_JPEG) == list(
+            C.T4_X2_SURROUND6_CAMERA_NAMES
+        )
+
+    def test_x2_surround_six_is_refused_on_prd_jt(self):
+        # The names are calibrated there, but prd_jt stores them as HEVC, so they
+        # never reach the readable set.  A register that resolved anyway would
+        # train on frames this reader cannot decode.
+        with pytest.raises(RigMismatch, match="CAM_BACK"):
+            resolve_camera_names("x2_surround6", PRD_JT_MAIN_JPEG)
+
+    def test_unknown_profile_name_is_rejected(self):
         with pytest.raises(RigMismatch, match="not supported"):
             resolve_camera_names("surround6", X2_DEV)
 
-    def test_auto_picks_wide_only(self):
-        assert resolve_camera_names(None, PRD_JT_MAIN) == list(C.T4_WIDE5_CAMERA_NAMES)
-        assert resolve_camera_names(None, X2_DEV) == ["CAM_FRONT_WIDE"]
+    def test_auto_picks_the_profile_that_fits_the_rig(self):
+        assert resolve_camera_names(None, PRD_JT_MAIN_JPEG) == list(C.T4_WIDE5_CAMERA_NAMES)
+        assert resolve_camera_names(None, X2_DEV_JPEG) == list(C.T4_X2_SURROUND6_CAMERA_NAMES)
 
     def test_auto_uses_available_wide_subset_for_variant(self):
-        assert resolve_camera_names(None, PRD_JT_VARIANT) == [
+        assert resolve_camera_names(None, PRD_JT_VARIANT_JPEG) == [
             "CAM_FRONT_LEFT_WIDE",
             "CAM_FRONT_RIGHT_WIDE",
         ]
@@ -94,9 +133,21 @@ class TestProfileResolution:
         with pytest.raises(RigMismatch, match="absent"):
             resolve_camera_names(["CAM_BACK_WIDE"], PRD_JT_MAIN)
 
-    def test_explicit_narrow_camera_is_rejected(self):
+    def test_a_narrow_channel_resolves_where_it_is_jpeg(self):
+        assert resolve_camera_names(["CAM_FRONT", "CAM_BACK"], X2_DEV_JPEG) == [
+            "CAM_FRONT",
+            "CAM_BACK",
+        ]
+
+    def test_a_narrow_channel_is_refused_where_it_is_video(self):
+        with pytest.raises(RigMismatch, match="absent"):
+            resolve_camera_names(["CAM_FRONT"], PRD_JT_MAIN_JPEG)
+
+    def test_roof_views_stay_unsupported_even_as_jpeg(self):
+        # x2_dev stores them as JPEG directories, but they point at signal heads
+        # rather than the road, so they do not compose with a surround register.
         with pytest.raises(RigMismatch, match="not supported"):
-            resolve_camera_names(["CAM_FRONT"], PRD_JT_MAIN)
+            resolve_camera_names(["CAM_TOP_LEFT_CENTER"], X2_DEV_JPEG)
 
     def test_resolution_preserves_requested_order(self):
         # Register order is part of the learned camera contract, so it must never
@@ -109,7 +160,7 @@ class TestProfileResolution:
             resolve_camera_names("wide5", PRD_JT_MAIN, require_count=6)
 
     def test_no_profile_fits_reports_every_requirement(self):
-        with pytest.raises(RigMismatch, match="no supported JPEG wide camera"):
+        with pytest.raises(RigMismatch, match="no supported JPEG camera"):
             resolve_camera_names(None, ["CAM_TRAFFIC_LIGHT_FAR"])
 
 
@@ -149,8 +200,12 @@ class TestRigDescription:
         assert "CAM_BACK  : yes" in describe_rig(X2_DEV)
         assert "CAM_BACK  : no" in describe_rig(PRD_JT_MAIN)
 
-    def test_matching_profiles_are_ordered_by_preference(self):
-        assert matching_profiles(X2_DEV) == []
+    def test_each_rig_matches_its_own_profile(self):
+        # One profile per rig, and the two are disjoint: no register spans both,
+        # so a checkpoint cannot be moved between them by resolution alone.
+        assert matching_profiles(PRD_JT_MAIN_JPEG) == ["wide5"]
+        assert matching_profiles(X2_DEV_JPEG) == ["x2_surround6"]
+        assert matching_profiles(PRD_JT_VARIANT_JPEG) == []
 
 
 class TestStorageDiscovery:
@@ -278,45 +333,46 @@ class TestUndecodedFrames:
 class TestRealSceneStorage:
     """Against the dataset: the register and the readable set differ."""
 
-    def test_readable_is_a_subset_of_calibrated(self, t4_scene_dir):
+    def test_readable_is_a_subset_of_calibrated(self, rig_scene_dir):
         from t4_e2e_devkit.dataset.rigs import read_scene_camera_names
 
-        calibrated = set(read_scene_camera_names(t4_scene_dir))
-        readable = set(readable_camera_names(t4_scene_dir))
+        calibrated = set(read_scene_camera_names(rig_scene_dir))
+        readable = set(readable_camera_names(rig_scene_dir))
         assert readable <= calibrated
 
-    def test_some_cameras_are_calibrated_but_not_exported(self, t4_scene_dir):
+    def test_some_cameras_are_calibrated_but_not_exported(self, rig_scene_dir):
         from t4_e2e_devkit.dataset.rigs import read_scene_camera_names
 
-        calibrated = set(read_scene_camera_names(t4_scene_dir))
-        stored = set(available_cameras(t4_scene_dir))
-        # Every prd_jt scene calibrates eleven cameras; none stores eleven JPEG
-        # directories. If this ever becomes empty the export changed, and the
-        # readable/calibrated distinction should be re-checked rather than assumed.
+        calibrated = set(read_scene_camera_names(rig_scene_dir))
+        stored = set(available_cameras(rig_scene_dir))
+        # Both rigs calibrate eleven cameras and neither stores eleven JPEG
+        # directories: prd_jt exports five, x2_dev nine. If this ever becomes
+        # empty the export changed, and the readable/calibrated distinction
+        # should be re-checked rather than assumed.
         assert calibrated - stored or len(stored) == len(calibrated)
 
-    def test_auto_resolves_on_a_real_scene(self, t4_scene_dir):
-        resolved = resolve_camera_names(None, readable_camera_names(t4_scene_dir))
+    def test_auto_resolves_on_a_real_scene(self, rig_scene_dir):
+        resolved = resolve_camera_names(None, readable_camera_names(rig_scene_dir))
         if not resolved:
-            pytest.skip("scene has no supported wide JPEG camera")
+            pytest.skip("scene has no supported JPEG camera")
         assert resolved
-        stored = available_cameras(t4_scene_dir)
+        stored = available_cameras(rig_scene_dir)
         assert all(name in stored for name in resolved)
 
-    def test_jpeg_sources_emit_the_configured_shape(self, t4_scene_dir):
+    def test_jpeg_sources_emit_the_configured_shape(self, rig_scene_dir):
         stored = {
             name: kind
-            for name, kind in available_cameras(t4_scene_dir).items()
+            for name, kind in available_cameras(rig_scene_dir).items()
             if name.upper() in {value.upper() for value in C.T4_SUPPORTED_CAMERA_NAMES}
             and kind == "jpeg_dir"
         }
         if not stored:
-            pytest.skip("scene has no supported wide JPEG camera")
+            pytest.skip("scene has no supported JPEG camera")
         shapes = set()
         for name in stored:
             if name.startswith("CAM_TRAFFIC"):
                 continue
-            source = open_camera_source(t4_scene_dir, name, (672, 1148))
+            source = open_camera_source(rig_scene_dir, name, (672, 1148))
             try:
                 frame = source.read(40)
                 if frame is not None:
@@ -347,7 +403,7 @@ class TestRealSceneStorage:
             and not name.startswith("CAM_TRAFFIC")
         ]
         if not names:
-            pytest.skip("scene has no supported wide JPEG camera")
+            pytest.skip("scene has no supported JPEG camera")
         source = open_camera_source(t4_scene_dir, names[0], (672, 1148))
         try:
             blob = source.read_encoded(40)
@@ -361,3 +417,54 @@ class TestRealSceneStorage:
             assert np.array_equal(from_bytes, source.read(40))
         finally:
             source.close()
+
+
+@pytest.mark.data
+class TestRealRigRegisters:
+    """The rigs, as the dataset actually ships them.
+
+    The synthetic registers above encode what was measured once; these assert it
+    against the scenes on disk, so an export change shows up as a failing test
+    rather than as a training run reading one camera where it wanted six.
+    """
+
+    def test_x2_dev_resolves_its_surround_profile(self, x2_scene_dir):
+        readable = readable_camera_names(x2_scene_dir)
+        assert resolve_camera_names("x2_surround6", readable, scene_dir=x2_scene_dir) == list(
+            C.T4_X2_SURROUND6_CAMERA_NAMES
+        )
+
+    def test_wide_five_is_refused_on_a_real_x2_dev_scene(self, x2_scene_dir):
+        # The single wide view is CAM_FRONT_WIDE; the four other wide channels do
+        # not exist on this rig at all, and the refusal names the one that does
+        # fit so the caller is not left guessing.
+        with pytest.raises(RigMismatch, match="x2_surround6"):
+            resolve_camera_names(
+                "wide5", readable_camera_names(x2_scene_dir), scene_dir=x2_scene_dir
+            )
+
+    def test_x2_dev_narrow_views_decode(self, x2_scene_dir):
+        source = open_camera_source(x2_scene_dir, "CAM_BACK", (672, 1148))
+        try:
+            frame = source.read(40)
+            if frame is None:
+                pytest.skip("CAM_BACK has no frame 40")
+            assert frame.shape == (672, 1148, 3)
+        finally:
+            source.close()
+
+    def test_prd_jt_narrow_views_are_video_and_say_so(self, t4_scene_dir):
+        from t4_e2e_devkit.dataset.rigs import read_scene_camera_names
+
+        if "CAM_FRONT" not in read_scene_camera_names(t4_scene_dir):
+            pytest.skip("scene does not calibrate CAM_FRONT")
+        assert "CAM_FRONT" not in readable_camera_names(t4_scene_dir)
+        # Supported as a channel, unreadable on this rig: the message has to name
+        # the storage, or the reader looks like it lost a converted camera.
+        with pytest.raises(CameraSourceError, match="stored as video"):
+            open_camera_source(t4_scene_dir, "CAM_FRONT", (672, 1148))
+
+    def test_the_two_rigs_do_not_share_a_register(self, t4_scene_dir, x2_scene_dir):
+        prd_jt = resolve_camera_names(None, readable_camera_names(t4_scene_dir))
+        x2_dev = resolve_camera_names(None, readable_camera_names(x2_scene_dir))
+        assert set(prd_jt).isdisjoint(x2_dev)

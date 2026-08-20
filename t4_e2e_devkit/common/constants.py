@@ -122,18 +122,17 @@ EGO_SHAPE_IDX_WIDTH = 2
 # --------------------------------------------------------------------------- #
 
 # There is no single camera register across the T4 fleet, and assuming one is a
-# real failure rather than a theoretical one.  The current reader deliberately
-# supports only JPEG-backed wide views; narrow, roof and traffic-light channels
-# are kept in ``T4_ALL_CAMERA_NAMES`` for schema decoding but are not model input.
-# Measured over sampled scenes:
+# real failure rather than a theoretical one.  Measured over sampled scenes:
 #
-#   prd_jt / prd_jt_val, 96%   11 cams, five wide views, NO centred CAM_BACK
+#   prd_jt / prd_jt_val, 96%   11 cams, five wide views as JPEG, narrow as HEVC
 #   prd_jt / prd_jt_val,  4%    8 cams, no CAM_FRONT_WIDE, no rear wide views
-#   x2_dev,             100%   11 cams, ONE wide view, but a real CAM_BACK
+#   x2_dev,             100%   11 cams, ONE wide view, a real CAM_BACK, and nine
+#                              JPEG directories rather than five
 #
-# So a fixed five-wide training profile resolves on 96% of prd_jt.  Other scenes
-# can still be inspected through the wide views they actually export; they do not
-# fall back to unsupported channels.
+# So a fixed five-wide training profile resolves on 96% of prd_jt and on no
+# x2_dev scene at all; x2_dev has its own six-camera surround profile below.
+# Roof and traffic-light channels are kept in ``T4_ALL_CAMERA_NAMES`` for schema
+# decoding but are never model input.
 
 #: Five wide views: the reference camera profile for the main prd_jt rig.  The
 #: reference papers use front, front-left, front-right and a rear camera; this
@@ -147,23 +146,46 @@ T4_WIDE5_CAMERA_NAMES: tuple[str, ...] = (
     "CAM_BACK_RIGHT_WIDE",
 )
 
-# All wide channels observed in the T4 exports.  ``CAM_BACK_WIDE`` occurs only
-# in a small subset; it is allowed when a scene actually has it, but it
-# is not part of the fixed five-camera training register.
+#: The x2_dev surround register.  x2_dev exports a single wide view, so ``wide5``
+#: cannot resolve there, but it exports six road-facing narrow views as JPEG
+#: directories -- 2880x1860, one file per frame, zero distortion coefficients --
+#: which is the same storage the wide views use on prd_jt.  The order mirrors
+#: ``wide5``'s centre-first convention, front row then rear row, and is part of
+#: the learned camera contract: changing it invalidates every checkpoint trained
+#: through this profile.
+T4_X2_SURROUND6_CAMERA_NAMES: tuple[str, ...] = (
+    "CAM_FRONT",
+    "CAM_FRONT_LEFT",
+    "CAM_FRONT_RIGHT",
+    "CAM_BACK",
+    "CAM_BACK_LEFT",
+    "CAM_BACK_RIGHT",
+)
+
+# Channels the reader will decode.  The gate is storage and direction, not focal
+# length: a channel is supported when its rig exports it as one JPEG per frame
+# and it faces the road.  The same narrow names are HEVC on prd_jt and JPEG on
+# x2_dev, so support is decided per scene by what is actually on disk -- see
+# ``dataset.rigs.readable_camera_names``.  ``CAM_BACK_WIDE`` occurs in a small
+# subset only; the roof-centre views are excluded by direction, not storage.
 T4_SUPPORTED_CAMERA_NAMES: tuple[str, ...] = (
     *T4_WIDE5_CAMERA_NAMES,
     "CAM_BACK_WIDE",
+    *T4_X2_SURROUND6_CAMERA_NAMES,
 )
 
-#: Named profiles, resolvable by name from a config.  Narrow profiles are
-#: intentionally not exposed until their storage format is supported.
+#: Named profiles, resolvable by name from a config.  One profile per rig: a
+#: profile that silently spanned two registers would train one model on two
+#: input layouts.
 T4_CAMERA_PROFILES: dict[str, tuple[str, ...]] = {
     "wide5": T4_WIDE5_CAMERA_NAMES,
+    "x2_surround6": T4_X2_SURROUND6_CAMERA_NAMES,
 }
 
 #: Preference order used by ``resolve_camera_names`` when a run says ``"auto"``.
-#: There is deliberately no narrow/video fallback.
-T4_CAMERA_PROFILE_PREFERENCE: tuple[str, ...] = ("wide5",)
+#: The two profiles are disjoint, so no rig satisfies both; the order only fixes
+#: which one an inspection reports first.  There is no video fallback.
+T4_CAMERA_PROFILE_PREFERENCE: tuple[str, ...] = ("wide5", "x2_surround6")
 
 #: Every camera channel observed across prd_jt, prd_jt_val and x2_dev.  Not a
 #: profile -- no single scene carries all of these.

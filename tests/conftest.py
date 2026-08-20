@@ -16,6 +16,7 @@ from __future__ import annotations
 
 import os
 from pathlib import Path
+from typing import Optional
 
 import pytest
 
@@ -44,18 +45,60 @@ def t4_root() -> Path:
     return root
 
 
-@pytest.fixture(scope="session")
-def t4_scene_dir(t4_root: Path) -> Path:
+def _first_converted_scene(t4_root: Path, subtree: str) -> Optional[Path]:
     """
-    :return: any readable T4 scene directory under the root.
-    :raises pytest.skip: when the root holds no complete scene.
+    :param t4_root: the T4 dataset root.
+    :param subtree: an E2E subtree name, e.g. ``prd_jt``.
+    :return: the first scene there with converted ``derived/`` output, or
+        ``None`` when the subtree holds none.
     """
-    for candidate in sorted(t4_root.glob("prd_jt/*/*/*")):
+    for candidate in sorted(t4_root.glob(f"{subtree}/*/*/*")):
         if (candidate / "derived" / "meta.json").is_file() and (
             candidate / "derived" / "cam_names.json"
         ).is_file():
             return candidate
-    pytest.skip(f"no complete T4 scene under {t4_root}")
+    return None
+
+
+@pytest.fixture(scope="session")
+def t4_scene_dir(t4_root: Path) -> Path:
+    """
+    :return: any readable ``prd_jt`` scene directory under the root.
+    :raises pytest.skip: when the root holds no complete scene.
+    """
+    scene = _first_converted_scene(t4_root, "prd_jt")
+    if scene is None:
+        pytest.skip(f"no complete prd_jt scene under {t4_root}")
+    return scene
+
+
+@pytest.fixture(scope="session")
+def x2_scene_dir(t4_root: Path) -> Path:
+    """
+    :return: any readable ``x2_dev`` scene directory under the root.
+    :raises pytest.skip: when the root holds no complete scene.
+    """
+    scene = _first_converted_scene(t4_root, "x2_dev")
+    if scene is None:
+        pytest.skip(f"no complete x2_dev scene under {t4_root}")
+    return scene
+
+
+@pytest.fixture(scope="session", params=["prd_jt", "x2_dev"])
+def rig_scene_dir(request, t4_root: Path) -> Path:
+    """One scene per rig, for tests whose subject is what the rigs disagree on.
+
+    The fleet's registers differ -- five wide JPEG views on prd_jt, a six-camera
+    narrow surround plus one wide view on x2_dev -- so a camera test that only
+    ever runs on prd_jt cannot see the case it is meant to cover.
+
+    :return: a converted scene directory from the parametrized subtree.
+    :raises pytest.skip: when that subtree holds no complete scene.
+    """
+    scene = _first_converted_scene(t4_root, request.param)
+    if scene is None:
+        pytest.skip(f"no complete {request.param} scene under {t4_root}")
+    return scene
 
 
 @pytest.fixture
