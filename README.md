@@ -9,6 +9,13 @@ T4 scene files -> data list -> T4Scene -> model -> prediction manifest
                                       └── evaluator / visualizer
 ```
 
+The dataset layer serves two consumers through one set of readers: the rich
+`T4Scene` object for agents and evaluation, and the flat numpy training window
+(`dataset.training_window`) a training loader consumes. A window's history
+span, future span and model rate are one `TemporalSpec`
+(`common.temporal`) — `hz` must divide the 10 Hz source rate, and sampling is
+stride-based, never interpolated.
+
 The repository supports the T4 scene format only. It does not require a
 NuPlan database or an experiment-tracking service. Evaluation returns ordinary
 Python dictionaries and local files, so a caller may send the results to any
@@ -25,6 +32,7 @@ logger or dashboard.
 | Run a registered agent | `t4e2e evaluate` | Open-loop and PDM reports |
 | Run sensor-replay closed loop | `t4e2e evaluate-closed-loop` | Kinematic rollout and metrics |
 | Score during training | `OfficialDevkitScoreCallback` | Distributed GPU scoring and generic logger output |
+| Read flat training windows | `dataset.training_window` | One numpy dict per `(scene, center)` at a chosen `TemporalSpec` |
 
 LiDAR is opt-in. Map-only and camera-only visualization do not decode it. The
 public camera path currently supports the configured wide, JPEG-backed camera
