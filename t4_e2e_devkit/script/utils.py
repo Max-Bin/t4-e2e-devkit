@@ -15,12 +15,12 @@ from __future__ import annotations
 import hashlib
 import json
 import logging
-import os
 from pathlib import Path
 from typing import Any, Dict, Mapping, Optional, Set
 
 from omegaconf import DictConfig, OmegaConf
 
+from t4_e2e_devkit.common.artifact_io import write_json_atomic
 from t4_e2e_devkit.evaluation.navsim_score import T4NavSimScorerConfig
 from t4_e2e_devkit.evaluation.prediction_manifest import file_sha256
 
@@ -84,12 +84,7 @@ def write_json(path: str | Path, value: Any) -> Path:
     :param value: any JSON-serializable value.
     :return: the written path.
     """
-    path = Path(path)
-    path.parent.mkdir(parents=True, exist_ok=True)
-    temporary = path.with_name(f".{path.name}.{os.getpid()}.tmp")
-    temporary.write_text(json.dumps(value, indent=2, sort_keys=True) + "\n", encoding="utf-8")
-    os.replace(temporary, path)
-    return path
+    return write_json_atomic(path, value)
 
 
 def value_fingerprint(value: Any) -> str:

@@ -3,12 +3,11 @@
 from __future__ import annotations
 
 import json
-import os
-import tempfile
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any, Iterable, Optional, Sequence
 
+from t4_e2e_devkit.common.artifact_io import write_json_atomic
 from t4_e2e_devkit.evaluation.worker_pool import (
     WorkerPool,
     WorkerResult,
@@ -69,22 +68,8 @@ class WorkerManifest:
         }
 
     def write(self, path: str | Path) -> Path:
-        output = Path(path)
-        output.parent.mkdir(parents=True, exist_ok=True)
-        descriptor, temporary = tempfile.mkstemp(prefix=f".{output.name}.", dir=str(output.parent))
-        try:
-            with os.fdopen(descriptor, "w", encoding="utf-8") as stream:
-                json.dump(self.as_dict(), stream, indent=2, sort_keys=True)
-                stream.write("\n")
-                stream.flush()
-                os.fsync(stream.fileno())
-            os.replace(temporary, output)
-        finally:
-            try:
-                Path(temporary).unlink()
-            except FileNotFoundError:
-                pass
-        return output
+        """Write the manifest where a merger will look for it."""
+        return write_json_atomic(path, self.as_dict())
 
     @classmethod
     def read(cls, path: str | Path) -> "WorkerManifest":

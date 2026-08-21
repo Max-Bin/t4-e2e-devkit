@@ -22,6 +22,8 @@ from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any, Callable, Mapping, Optional, Sequence
 
+from t4_e2e_devkit.common.artifact_io import write_json_atomic
+
 ORCHESTRATION_FORMAT = "t4.orchestration.run"
 ORCHESTRATION_VERSION = 1
 
@@ -475,10 +477,7 @@ class LocalDistributedLauncher:
 
     @staticmethod
     def _write_json(path: Path, value: Mapping[str, Any]) -> None:
-        path.parent.mkdir(parents=True, exist_ok=True)
-        temporary = path.with_name(f".{path.name}.{os.getpid()}.tmp")
-        temporary.write_text(json.dumps(value, indent=2, sort_keys=True) + "\n", encoding="utf-8")
-        os.replace(temporary, path)
+        write_json_atomic(path, value)
 
 
 def _stop_process(process: subprocess.Popen[str], signum: signal.Signals) -> None:
