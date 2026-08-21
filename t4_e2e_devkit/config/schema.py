@@ -8,6 +8,8 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any, Mapping, Optional, Sequence
 
+from t4_e2e_devkit.common.artifact_io import json_value
+
 
 @dataclass(frozen=True)
 class DatasetConfig:
@@ -128,13 +130,13 @@ class ExperimentConfig:
         return {
             "agent": self.agent,
             "mode": self.mode,
-            "agent_params": _jsonable(self.agent_params),
+            "agent_params": json_value(self.agent_params, what="configuration value"),
             "dataset": _dataclass_dict(self.dataset),
             "evaluation": _dataclass_dict(self.evaluation),
             "simulation": _dataclass_dict(self.simulation),
             "workers": _dataclass_dict(self.workers),
             "output": _dataclass_dict(self.output),
-            "metadata": _jsonable(self.metadata),
+            "metadata": json_value(self.metadata, what="configuration value"),
         }
 
     @property
@@ -198,19 +200,10 @@ def _build_dataclass(cls, value: Any):
 def _dataclass_dict(value: Any) -> dict[str, Any]:
     from dataclasses import fields
 
-    return {field.name: _jsonable(getattr(value, field.name)) for field in fields(value)}
-
-
-def _jsonable(value: Any) -> Any:
-    if value is None or isinstance(value, (str, bool, int, float)):
-        return value
-    if isinstance(value, Mapping):
-        return {str(key): _jsonable(item) for key, item in value.items()}
-    if isinstance(value, (list, tuple)):
-        return [_jsonable(item) for item in value]
-    if hasattr(value, "tolist"):
-        return _jsonable(value.tolist())
-    raise TypeError(f"configuration value is not JSON serializable: {type(value).__name__}")
+    return {
+        field.name: json_value(getattr(value, field.name), what="configuration value")
+        for field in fields(value)
+    }
 
 
 __all__ = [

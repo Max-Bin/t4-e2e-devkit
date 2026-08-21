@@ -18,6 +18,7 @@ from typing import Any, Iterable, Mapping, Optional, Sequence
 
 import numpy as np
 
+from t4_e2e_devkit.common.artifact_io import json_value
 from t4_e2e_devkit.common.dataclasses import Trajectory
 from t4_e2e_devkit.planning.simulation.trajectory.trajectory_sampling import (
     TrajectorySampling,
@@ -63,7 +64,7 @@ class TrajectorySubmission:
                 "time_horizon": float(sampling.time_horizon),
                 "interval_length": float(sampling.interval_length),
             },
-            "metadata": _jsonable(self.metadata),
+            "metadata": json_value(self.metadata, what="submission metadata", require_finite=True),
         }
 
     @classmethod
@@ -213,7 +214,7 @@ class SubmissionPackage:
             "num_entries": len(self.entries),
             "tokens_sha256": _tokens_digest(self.tokens),
             "predictions_sha256": hashlib.sha256(prediction_bytes).hexdigest(),
-            "metadata": _jsonable(self.metadata),
+            "metadata": json_value(self.metadata, what="submission metadata", require_finite=True),
         }
         _atomic_bytes(output / PREDICTIONS_NAME, prediction_bytes)
         _atomic_bytes(
@@ -300,20 +301,6 @@ def _atomic_bytes(path: Path, payload: bytes) -> None:
             Path(temporary).unlink()
         except FileNotFoundError:
             pass
-
-
-def _jsonable(value: Any) -> Any:
-    if value is None or isinstance(value, (str, bool, int, float)):
-        if isinstance(value, float) and not np.isfinite(value):
-            raise ValueError("submission metadata must not contain non-finite floats")
-        return value
-    if isinstance(value, Mapping):
-        return {str(key): _jsonable(item) for key, item in value.items()}
-    if isinstance(value, (list, tuple)):
-        return [_jsonable(item) for item in value]
-    if hasattr(value, "tolist"):
-        return _jsonable(value.tolist())
-    raise TypeError(f"submission metadata is not JSON serializable: {type(value).__name__}")
 
 
 __all__ = [

@@ -29,6 +29,8 @@ import tempfile
 from pathlib import Path
 from typing import Any, Dict, List, Mapping, Optional
 
+import numpy as np
+
 
 def write_json_atomic(
     path: str | Path, value: Any, *, allow_nan: bool = True, sort_keys: bool = True
@@ -96,4 +98,74 @@ def read_csv_rows(path: str | Path) -> List[Dict[str, str]]:
         return []
 
 
-__all__ = ["read_csv_rows", "read_mapping", "write_json_atomic"]
+def portable_value(value: Any) -> Any:
+    """Coerce anything into JSON data, tolerantly.
+
+    For the records a run writes about itself -- worker results, simulation
+    logs, completion reports -- where the value may be an array, a dataclass, a
+    config node or an enum, and a record that omits a field is worse than a
+    record that stringifies one.  Hence the ``str`` tail: this is provenance,
+    not a contract a reader parses back into objects.
+
+    Use :func:`json_value` where an unknown type is a bug rather than something
+    to describe.
+
+    :param value: any value.
+    :return: JSON data.
+    """
+    if value is None or isinstance(value, (str, bool, int, float)):
+        return value
+    if isinstance(value, np.ndarray):
+        return value.tolist()
+    if isinstance(value, Mapping):
+        return {str(key): portable_value(item) for key, item in value.items()}
+    if isinstance(value, (list, tuple)):
+        return [portable_value(item) for item in value]
+    if hasattr(value, "tolist"):
+        return portable_value(value.tolist())
+    if hasattr(value, "as_dict"):
+        return portable_value(value.as_dict())
+    if hasattr(value, "__dict__"):
+        return portable_value(vars(value))
+    return str(value)
+
+
+def json_value(value: Any, *, what: str, require_finite: bool = False) -> Any:
+    """Coerce a value into JSON data, refusing anything unexpected.
+
+    The counterpart to :func:`portable_value`: for a config record or a
+    submission manifest, a type nobody planned for is a bug, and stringifying it
+    would ship a document that looks complete and is not.
+
+    :param value: the value to coerce.
+    :param what: what to call the value in an error message, e.g.
+        ``"configuration value"``.
+    :param require_finite: reject ``NaN``/``Infinity``, which a submission must
+        not carry even though a metric legitimately may.
+    :return: JSON data.
+    :raises TypeError: on a type this cannot represent.
+    :raises ValueError: on a non-finite float when ``require_finite``.
+    """
+    if value is None or isinstance(value, (str, bool, int, float)):
+        if require_finite and isinstance(value, float) and not np.isfinite(value):
+            raise ValueError(f"{what} must not contain non-finite floats")
+        return value
+    if isinstance(value, Mapping):
+        return {
+            str(key): json_value(item, what=what, require_finite=require_finite)
+            for key, item in value.items()
+        }
+    if isinstance(value, (list, tuple)):
+        return [json_value(item, what=what, require_finite=require_finite) for item in value]
+    if hasattr(value, "tolist"):
+        return json_value(value.tolist(), what=what, require_finite=require_finite)
+    raise TypeError(f"{what} is not JSON serializable: {type(value).__name__}")
+
+
+__all__ = [
+    "json_value",
+    "portable_value",
+    "read_csv_rows",
+    "read_mapping",
+    "write_json_atomic",
+]

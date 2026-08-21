@@ -7,7 +7,7 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Any, Iterable, Optional, Sequence
 
-from t4_e2e_devkit.common.artifact_io import write_json_atomic
+from t4_e2e_devkit.common.artifact_io import portable_value, write_json_atomic
 from t4_e2e_devkit.evaluation.worker_pool import (
     WorkerPool,
     WorkerResult,
@@ -57,7 +57,7 @@ class WorkerManifest:
             "results": [
                 {
                     "task_id": result.task_id,
-                    "value": _portable(result.value),
+                    "value": portable_value(result.value),
                     "rank": result.rank,
                     "worker_index": result.worker_index,
                     "duration_s": result.duration_s,
@@ -192,20 +192,6 @@ class DistributedExecutor:
         )
 
 
-def _portable(value: Any) -> Any:
-    if value is None or isinstance(value, (str, bool, int, float)):
-        return value
-    if isinstance(value, dict):
-        return {str(key): _portable(item) for key, item in value.items()}
-    if isinstance(value, (list, tuple)):
-        return [_portable(item) for item in value]
-    if hasattr(value, "tolist"):
-        return value.tolist()
-    if hasattr(value, "as_dict"):
-        return _portable(value.as_dict())
-    return str(value)
-
-
 def merge_worker_manifests(
     paths: Sequence[str | Path],
     *,
@@ -240,7 +226,7 @@ def merge_worker_manifests(
             "results": [
                 {
                     "task_id": result.task_id,
-                    "value": _portable(result.value),
+                    "value": portable_value(result.value),
                     "rank": result.rank,
                     "worker_index": result.worker_index,
                     "duration_s": result.duration_s,

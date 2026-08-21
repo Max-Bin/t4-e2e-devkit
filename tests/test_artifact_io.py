@@ -11,7 +11,13 @@ import json
 
 import pytest
 
-from t4_e2e_devkit.common.artifact_io import read_csv_rows, read_mapping, write_json_atomic
+from t4_e2e_devkit.common.artifact_io import (
+    json_value,
+    portable_value,
+    read_csv_rows,
+    read_mapping,
+    write_json_atomic,
+)
 
 
 class TestWriteJsonAtomic:
@@ -109,3 +115,58 @@ class TestReadCsvRows:
         path = tmp_path / "per_window.csv"
         path.write_text("token,score\n", encoding="utf-8")
         assert read_csv_rows(path) == []
+
+
+class TestPortableValue:
+    """The tolerant coercion, for records a run writes about itself."""
+
+    def test_arrays_and_nested_containers_become_data(self):
+        import numpy as np
+
+        value = {"poses": np.zeros((2, 2)), "labels": ("a", "b"), "n": 3}
+        assert portable_value(value) == {
+            "poses": [[0.0, 0.0], [0.0, 0.0]],
+            "labels": ["a", "b"],
+            "n": 3,
+        }
+
+    def test_an_object_with_as_dict_is_asked(self):
+        class Report:
+            def as_dict(self):
+                return {"status": "completed"}
+
+        assert portable_value(Report()) == {"status": "completed"}
+
+    def test_a_plain_object_is_walked(self):
+        class State:
+            def __init__(self):
+                self.x = 1.0
+
+        assert portable_value(State()) == {"x": 1.0}
+
+    def test_an_unknown_type_is_described_not_dropped(self):
+        # A set of task ids is the realistic case: JSON has no set, and a record
+        # that stringifies the field beats one that omits it.
+        assert portable_value({"a"}) == str({"a"})
+
+
+class TestJsonValue:
+    """The strict coercion, for documents a reader parses back."""
+
+    def test_nested_containers_pass_through(self):
+        assert json_value({"a": [1, 2]}, what="configuration value") == {"a": [1, 2]}
+
+    def test_an_unknown_type_is_an_error_naming_the_caller(self):
+        with pytest.raises(TypeError, match="configuration value is not JSON serializable"):
+            json_value(object(), what="configuration value")
+
+    def test_non_finite_floats_pass_unless_refused(self):
+        assert json_value(float("inf"), what="metric") == float("inf")
+        with pytest.raises(ValueError, match="submission metadata must not"):
+            json_value(float("nan"), what="submission metadata", require_finite=True)
+
+    def test_the_refusal_reaches_into_containers(self):
+        with pytest.raises(ValueError, match="must not contain non-finite"):
+            json_value(
+                {"scores": [1.0, float("nan")]}, what="submission metadata", require_finite=True
+            )
