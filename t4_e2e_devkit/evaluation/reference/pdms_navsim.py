@@ -374,13 +374,7 @@ def comfort_score(
     is assumed to start at the plan's own initial speed.
     """
     if simulate:
-        # From the submodule: this package's ``__init__`` re-exports nothing, so
-        # the package-level spelling raised ImportError. It never surfaced because
-        # nothing asked for extended comfort -- score_prediction_manifest passed no
-        # previous plan, leaving this branch unreachable.
-        from t4_e2e_devkit.planning.simulation.pdm_sim.simulator import (
-            simulate_proposals,
-        )
+        from t4_e2e_devkit.planning.simulation.pdm_sim import simulate_proposals
 
         p = np.asarray(poses, dtype=np.float64)
         lead, T = p.shape[:-2], p.shape[-2]
@@ -1472,13 +1466,7 @@ def extended_comfort_navsim(
     ``extended_comfort`` below) makes this a noise detector — measured: GT
     consecutive plans score 1.000 there too, but any waypoint jitter kills it.
     """
-    # From the submodule: this package's ``__init__`` re-exports nothing, so
-    # the package-level spelling raised ImportError. It never surfaced because
-    # nothing asked for extended comfort -- score_prediction_manifest passed no
-    # previous plan, leaving this branch unreachable.
-    from t4_e2e_devkit.planning.simulation.pdm_sim.simulator import (
-        simulate_proposals,
-    )
+    from t4_e2e_devkit.planning.simulation.pdm_sim import simulate_proposals
 
     k = int(round(observation_interval / dt))
     if k <= 0 or k >= prev_poses.shape[0]:

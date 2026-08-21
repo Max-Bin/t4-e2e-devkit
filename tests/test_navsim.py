@@ -143,3 +143,48 @@ def test_scorer_rejects_gpu_without_cuda():
         pytest.skip("this guard is for hosts without CUDA")
     with pytest.raises(ValueError, match="CUDA"):
         T4NavSimScorer(T4NavSimScorerConfig(backend="gpu"))
+
+
+def test_the_batch_simulator_is_importable_from_its_package():
+    """The vendored scorer imports ``simulate_proposals`` from the package.
+
+    ``pdm_sim/__init__.py`` was empty, so that spelling raised ImportError --
+    and it never surfaced because nothing asked for extended comfort. The
+    re-export lives in the init because the submodule is vendored and its drift
+    cannot be detected by ``tools/vendor.py check``.
+    """
+    from t4_e2e_devkit.planning.simulation.pdm_sim import simulate_proposals
+    from t4_e2e_devkit.planning.simulation.pdm_sim.simulator import (
+        simulate_proposals as from_submodule,
+    )
+
+    assert simulate_proposals is from_submodule
+
+
+def test_extended_comfort_scores_a_pair_of_consecutive_plans():
+    """The branch that had been unreachable, exercised end to end.
+
+    Two identical plans one cycle apart are perfectly consistent, so the score
+    is 1; a plan that swings sideways against its predecessor is not.
+    """
+    import numpy as np
+
+    from t4_e2e_devkit.evaluation.reference.pdms_navsim import extended_comfort_navsim
+
+    dt = 0.1
+    steps = 40
+
+    def poses(x, y, heading):
+        # The reference takes [x, y, cos, sin], not (x, y, heading).
+        return np.column_stack([x, y, np.cos(heading), np.sin(heading)])
+
+    x = np.linspace(0.5, 20.0, steps)
+    straight = poses(x, np.zeros(steps), np.zeros(steps))
+    same = extended_comfort_navsim(straight, straight, dt=dt, observation_interval=0.5)
+    assert same == pytest.approx(1.0)
+
+    lateral = np.linspace(0.0, 6.0, steps) ** 2 / 6.0
+    swerve = poses(x, lateral, np.gradient(lateral, x))
+    differing = extended_comfort_navsim(straight, swerve, dt=dt, observation_interval=0.5)
+    assert 0.0 <= differing <= 1.0
+    assert differing < same

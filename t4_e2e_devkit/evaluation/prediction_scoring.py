@@ -27,6 +27,9 @@ METRIC_TO_REPORT = {
 }
 REPORT_METRIC_KEYS = tuple(dict.fromkeys(METRIC_TO_REPORT.values()))
 
+#: Source frame rate of a T4 scene; a data-list centre indexes this stream.
+T4_FRAME_RATE_HZ = 10.0
+
 
 def _metric_name_order(name: str) -> tuple[int, str]:
     """Sort key putting the report's own metric order first, extras after it."""
@@ -231,7 +234,14 @@ def score_prediction_manifest(
     # Without passing it, ``_aggregate`` drops the extended-comfort term and
     # renormalises over the remaining weights (14 of 16) instead of failing, so
     # the report reads as a full EPDMS while being a partial-weight one.
-    cycle_frames = int(round(float(scorer.config.observation_interval_s) / interval_seconds))
+    # In SOURCE frames, not plan samples. A data-list centre indexes the 10 Hz
+    # source stream, while ``interval_seconds`` is the manifest's spacing between
+    # poses -- 0.5 s for the standard eight-pose plan. Dividing by that gave a
+    # cycle of 1, so the pairing only ever fired on a stride-1 list and, when it
+    # did, paired a plan against one made 0.1 s earlier while
+    # ``extended_comfort`` shifts by 0.5 s. The cycle is a duration; the source
+    # rate is what converts it to centres.
+    cycle_frames = int(round(float(scorer.config.observation_interval_s) * T4_FRAME_RATE_HZ))
 
     def _previous_index(position: int) -> int | None:
         if position <= 0 or cycle_frames <= 0:
@@ -317,6 +327,11 @@ def score_prediction_manifest(
                 {name for result in results for name in result.metric_names},
                 key=_metric_name_order,
             ),
+            # How many windows actually had a predecessor one cycle earlier. A
+            # reader cannot otherwise tell a full-weight EPDMS from one whose
+            # extended-comfort term was unavailable for most rows.
+            "extended_comfort_pairs": paired,
+            "extended_comfort_cycle_frames": cycle_frames,
             "backend": scorer.config.backend,
             "data_list_sha256": actual_hash,
             "prediction_manifest_sha256": devkit["file_sha256"](predictions_path),
