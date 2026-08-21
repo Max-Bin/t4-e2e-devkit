@@ -203,12 +203,17 @@ class SceneCameraReader:
         self.translation = extrinsic[:3, 3]
         directory = scene_dir / "data" / self.name
         self._paths = {
-            int(path.stem): path
-            for path in directory.glob("*.jpg")
-            if path.stem.isdigit()
+            int(path.stem): path for path in directory.glob("*.jpg") if path.stem.isdigit()
         }
         if not self._paths:
             raise FileNotFoundError(f"{directory}: no stored frames for {self.name}")
+        # Probed once from the JPEG header, not decoded: a window whose frame is
+        # missing still has to produce a panel of the video's fixed size, and
+        # that size follows the channel's stored resolution.
+        from PIL import Image
+
+        with Image.open(self._paths[min(self._paths)]) as probe:
+            self.native_size: Tuple[int, int] = (probe.width, probe.height)
 
     def read(self, frame_index: int) -> Camera:
         """
@@ -233,9 +238,7 @@ class SceneCameraReader:
 # --------------------------------------------------------------------------- #
 
 
-def manifest_trajectory(
-    manifest: PredictionManifest, scene: T4Scene
-) -> Optional[Trajectory]:
+def manifest_trajectory(manifest: PredictionManifest, scene: T4Scene) -> Optional[Trajectory]:
     """The manifest's plan for one window, on the manifest's own time grid.
 
     Manifest records are keyed exactly like data-list rows, so the lookup key
@@ -335,9 +338,12 @@ def _bev_panel(
     points = None if lidar is None else lidar.lidar_pc
     if points is not None and len(points):
         inside = (
-            (points[:, 0] > x_range[0]) & (points[:, 0] < x_range[1])
-            & (points[:, 1] > y_range[0]) & (points[:, 1] < y_range[1])
-            & (points[:, 2] > BEV_Z_RANGE[0]) & (points[:, 2] < BEV_Z_RANGE[1])
+            (points[:, 0] > x_range[0])
+            & (points[:, 0] < x_range[1])
+            & (points[:, 1] > y_range[0])
+            & (points[:, 1] < y_range[1])
+            & (points[:, 2] > BEV_Z_RANGE[0])
+            & (points[:, 2] < BEV_Z_RANGE[1])
         )
         pixels = to_px(points[inside, :2])
         panel[pixels[:, 1], pixels[:, 0]] = BEV_POINT_COLOR
@@ -349,7 +355,9 @@ def _bev_panel(
                 panel,
                 tuple(int(v) for v in pixels[a]),
                 tuple(int(v) for v in pixels[a + 1]),
-                color, thickness, cv2.LINE_AA,
+                color,
+                thickness,
+                cv2.LINE_AA,
             )
         if dots:
             for pixel in pixels:
@@ -375,7 +383,9 @@ def _bev_panel(
                     panel,
                     tuple(int(v) for v in pixels[a]),
                     tuple(int(v) for v in pixels[a + 1]),
-                    colors[a + 1], 4, cv2.LINE_AA,
+                    colors[a + 1],
+                    4,
+                    cv2.LINE_AA,
                 )
     else:
         for trajectory, color in present:
@@ -386,7 +396,8 @@ def _bev_panel(
         panel,
         (int(ego[0]) - 5, int(ego[1]) - 9),
         (int(ego[0]) + 5, int(ego[1]) + 9),
-        EGO_COLOR, 2,
+        EGO_COLOR,
+        2,
     )
 
     if len(predictions) > 1:
@@ -394,8 +405,9 @@ def _bev_panel(
         for row, (text, color) in enumerate(entries):
             y = 58 + row * 26  # below the header line drawn by the caller
             cv2.line(panel, (14, y - 5), (40, y - 5), color, 3, cv2.LINE_AA)
-            cv2.putText(panel, text, (48, y), cv2.FONT_HERSHEY_SIMPLEX, 0.55,
-                        GT_COLOR, 1, cv2.LINE_AA)
+            cv2.putText(
+                panel, text, (48, y), cv2.FONT_HERSHEY_SIMPLEX, 0.55, GT_COLOR, 1, cv2.LINE_AA
+            )
     return panel
 
 
@@ -412,32 +424,26 @@ def _draw_camera_ground_truth(panel, camera: Camera, poses, scale: float) -> Non
                 panel,
                 tuple(int(v) for v in pixels[a]),
                 tuple(int(v) for v in pixels[a + 1]),
-                GT_COLOR, 2, cv2.LINE_AA,
+                GT_COLOR,
+                2,
+                cv2.LINE_AA,
             )
     for pixel, in_front in zip(pixels, valid, strict=True):
         if in_front:
             cv2.circle(panel, tuple(int(v) for v in pixel), 4, GT_COLOR, -1, cv2.LINE_AA)
 
 
-def _draw_camera_ribbon(
-    panel, camera: Camera, poses, scale: float, vehicle_width: float
-) -> None:
+def _draw_camera_ribbon(panel, camera: Camera, poses, scale: float, vehicle_width: float) -> None:
     """A model plan as a vehicle-width ribbon with the temporal gradient."""
     cv2 = _cv2()
     poses = np.asarray(poses, dtype=np.float64)
     xy = _with_origin(poses)
     headings = np.concatenate([[0.0], poses[:, 2]])
     count = len(xy)
-    perpendicular = (
-        np.column_stack([-np.sin(headings), np.cos(headings)]) * (vehicle_width / 2)
-    )
+    perpendicular = np.column_stack([-np.sin(headings), np.cos(headings)]) * (vehicle_width / 2)
     ground = np.zeros(count)
-    left, left_ok = project_ego_points(
-        camera, np.column_stack([xy + perpendicular, ground])
-    )
-    right, right_ok = project_ego_points(
-        camera, np.column_stack([xy - perpendicular, ground])
-    )
+    left, left_ok = project_ego_points(camera, np.column_stack([xy + perpendicular, ground]))
+    right, right_ok = project_ego_points(camera, np.column_stack([xy - perpendicular, ground]))
     left = (left * scale).astype(int)
     right = (right * scale).astype(int)
 
@@ -459,15 +465,35 @@ def _camera_panel(
     panel_height: int,
     vehicle_width: float,
     caption: Optional[str],
+    missing_size: Optional[Tuple[int, int]] = None,
 ) -> npt.NDArray[np.uint8]:
-    """One camera panel: image, projected trajectories, bottom caption."""
+    """One camera panel: image, projected trajectories, bottom caption.
+
+    ``missing_size`` is the channel's stored ``(width, height)``, used only when
+    this window has no frame.  A missing frame is a fact about the data, not a
+    crash -- but the placeholder has to be the size the decoded panels are, or
+    the encoder refuses the frame and one dropped frame kills the whole video.
+    """
     cv2 = _cv2()
     if camera.image is None:
-        # A missing frame is a fact about the data, not a crash: hold a black
-        # panel at a plausible aspect so the video geometry stays constant.
-        panel = np.zeros((panel_height, panel_height * 16 // 9 // 2 * 2, 3), np.uint8)
-        cv2.putText(panel, "no image", (panel.shape[1] // 2 - 60, panel_height // 2),
-                    cv2.FONT_HERSHEY_SIMPLEX, 0.9, GT_COLOR, 2, cv2.LINE_AA)
+        if missing_size is not None:
+            width, height = (int(value) for value in missing_size)
+            panel_width = int(round(width * panel_height / height)) // 2 * 2
+        else:
+            # No stored resolution to follow: a plausible aspect keeps a
+            # hand-built single frame renderable.
+            panel_width = panel_height * 16 // 9 // 2 * 2
+        panel = np.zeros((panel_height, panel_width, 3), np.uint8)
+        cv2.putText(
+            panel,
+            "no image",
+            (panel.shape[1] // 2 - 60, panel_height // 2),
+            cv2.FONT_HERSHEY_SIMPLEX,
+            0.9,
+            GT_COLOR,
+            2,
+            cv2.LINE_AA,
+        )
     else:
         height, width = camera.image.shape[:2]
         scale = panel_height / height
@@ -478,12 +504,18 @@ def _camera_panel(
             if ground_truth is not None:
                 _draw_camera_ground_truth(panel, camera, ground_truth.poses, scale)
             if prediction is not None:
-                _draw_camera_ribbon(
-                    panel, camera, prediction.poses, scale, vehicle_width
-                )
+                _draw_camera_ribbon(panel, camera, prediction.poses, scale, vehicle_width)
     if caption:
-        cv2.putText(panel, caption, (14, panel_height - 18),
-                    cv2.FONT_HERSHEY_SIMPLEX, 0.8, GT_COLOR, 2, cv2.LINE_AA)
+        cv2.putText(
+            panel,
+            caption,
+            (14, panel_height - 18),
+            cv2.FONT_HERSHEY_SIMPLEX,
+            0.8,
+            GT_COLOR,
+            2,
+            cv2.LINE_AA,
+        )
     return panel
 
 
@@ -498,6 +530,7 @@ def render_planning_frame(
     camera: Optional[str] = None,
     panel_height: int = PANEL_HEIGHT,
     view_range: Optional[float] = None,
+    camera_size: Optional[Tuple[int, int]] = None,
 ) -> npt.NDArray[np.uint8]:
     """Render one window as one video frame: BEV left, camera panels right.
 
@@ -514,6 +547,9 @@ def render_planning_frame(
     :param panel_height: pixel height of the frame; the BEV is this square.
     :param view_range: symmetric BEV half-extent in metres, overriding the
         forward-biased default of :data:`BEV_X_RANGE` / :data:`BEV_Y_RANGE`.
+    :param camera_size: the display channel's stored ``(width, height)``.  Only
+        used when this window has no frame, to keep the placeholder panel the
+        size the decoded panels are; see :func:`render_planning_video`.
     :return: ``[H, W, 3]`` uint8 RGB.
     :raises ValueError: when no camera view is present, or the named one is not.
     """
@@ -527,8 +563,7 @@ def render_planning_frame(
     name = camera if camera is not None else front_camera_name(frame.cameras.names)
     if name not in frame.cameras:
         raise ValueError(
-            f"camera {name!r} was not decoded for this window; "
-            f"decoded: {frame.cameras.names}"
+            f"camera {name!r} was not decoded for this window; decoded: {frame.cameras.names}"
         )
     view = frame.cameras[name]
 
@@ -551,7 +586,7 @@ def render_planning_frame(
     panels = []
     if not entries:
         panels.append(
-            _camera_panel(view, ground_truth, None, panel_height, vehicle_width, None)
+            _camera_panel(view, ground_truth, None, panel_height, vehicle_width, None, camera_size)
         )
     for label, trajectory, _ in entries:
         # A model that skipped this centre keeps its panel -- one panel per
@@ -564,17 +599,29 @@ def render_planning_frame(
             caption = label if error is None else f"{label}   FDE {error:.2f}m"
         panels.append(
             _camera_panel(
-                view, ground_truth, trajectory, panel_height, vehicle_width, caption
+                view,
+                ground_truth,
+                trajectory,
+                panel_height,
+                vehicle_width,
+                caption,
+                camera_size,
             )
         )
 
     image = np.hstack([bev, *panels])
     header = f"{scene.scene_metadata.scene_id[:8]}  GT=white"
-    cv2.putText(image, header, (12, 30),
-                cv2.FONT_HERSHEY_SIMPLEX, 0.8, GT_COLOR, 2, cv2.LINE_AA)
-    cv2.putText(image, f"frame {scene.scene_metadata.center_frame:04d}",
-                (12, panel_height - 16),
-                cv2.FONT_HERSHEY_SIMPLEX, 0.9, FRAME_COUNTER_COLOR, 2, cv2.LINE_AA)
+    cv2.putText(image, header, (12, 30), cv2.FONT_HERSHEY_SIMPLEX, 0.8, GT_COLOR, 2, cv2.LINE_AA)
+    cv2.putText(
+        image,
+        f"frame {scene.scene_metadata.center_frame:04d}",
+        (12, panel_height - 16),
+        cv2.FONT_HERSHEY_SIMPLEX,
+        0.9,
+        FRAME_COUNTER_COLOR,
+        2,
+        cv2.LINE_AA,
+    )
     return image
 
 
@@ -598,8 +645,7 @@ class FFmpegVideoWriter:
         """
         if shutil.which("ffmpeg") is None:
             raise FileNotFoundError(
-                "ffmpeg is not on PATH; planning videos are encoded through the "
-                "ffmpeg binary"
+                "ffmpeg is not on PATH; planning videos are encoded through the ffmpeg binary"
             )
         self.path = Path(path)
         self.fps = float(fps)
@@ -625,11 +671,29 @@ class FFmpegVideoWriter:
             self.path.parent.mkdir(parents=True, exist_ok=True)
             self._process = subprocess.Popen(
                 [
-                    "ffmpeg", "-y", "-loglevel", "error",
-                    "-f", "rawvideo", "-pix_fmt", "rgb24",
-                    "-s", f"{width}x{height}", "-r", str(self.fps), "-i", "-",
-                    "-c:v", "libx264", "-preset", "veryfast", "-crf", str(self.crf),
-                    "-pix_fmt", "yuv420p", str(self.path),
+                    "ffmpeg",
+                    "-y",
+                    "-loglevel",
+                    "error",
+                    "-f",
+                    "rawvideo",
+                    "-pix_fmt",
+                    "rgb24",
+                    "-s",
+                    f"{width}x{height}",
+                    "-r",
+                    str(self.fps),
+                    "-i",
+                    "-",
+                    "-c:v",
+                    "libx264",
+                    "-preset",
+                    "veryfast",
+                    "-crf",
+                    str(self.crf),
+                    "-pix_fmt",
+                    "yuv420p",
+                    str(self.path),
                 ],
                 stdin=subprocess.PIPE,
             )
@@ -667,6 +731,7 @@ def render_planning_video(
     view_range: Optional[float] = None,
     panel_height: int = PANEL_HEIGHT,
     crf: int = 26,
+    camera_size: Optional[Tuple[int, int]] = None,
 ) -> Path:
     """Render a sequence of windows into one mp4.
 
@@ -689,11 +754,17 @@ def render_planning_video(
         default otherwise.
     :param panel_height: pixel height of the video.
     :param crf: libx264 quality; lower is better and larger.
+    :param camera_size: the display channel's stored ``(width, height)``.  A
+        window whose frame is missing then gets a placeholder panel of the same
+        size as the decoded ones; without it the first dropped frame changes the
+        frame size, which the encoder refuses.  Falls back to the size of the
+        last decoded frame.
     :return: the written path.
     :raises ValueError: when ``scenes`` yields nothing.
     """
     frames_written = 0
     last_lidar = None
+    stored_size = camera_size
     with FFmpegVideoWriter(out_path, fps=fps, crf=crf) as writer:
         for scene in scenes:
             frame = scene.current_frame
@@ -701,6 +772,13 @@ def render_planning_video(
                 last_lidar = frame.lidar
             else:
                 frame.lidar = last_lidar
+            # Learn the panel size from the frames that do decode, so a caller
+            # that assembled its own views still survives a missing frame.
+            if stored_size is None and frame.cameras is not None:
+                for view in frame.cameras:
+                    if view.image is not None:
+                        stored_size = (view.image.shape[1], view.image.shape[0])
+                        break
             # Every label stays in the mapping even when this window is not
             # covered (a manifest over a strided list legitimately skips
             # centres): the panel layout is per model, not per hit.
@@ -715,6 +793,7 @@ def render_planning_video(
                     camera=camera,
                     panel_height=panel_height,
                     view_range=view_range,
+                    camera_size=stored_size,
                 )
             )
             frames_written += 1
@@ -794,6 +873,7 @@ def render_scene_video(
             fps=fps,
             view_range=view_range,
             panel_height=panel_height,
+            camera_size=reader.native_size,
         )
     finally:
         builder.close()

@@ -41,9 +41,7 @@ from t4_e2e_devkit.visualization import (
 )
 from t4_e2e_devkit.visualization.planning_video import BEV_POINT_COLOR
 
-needs_ffmpeg = pytest.mark.skipif(
-    shutil.which("ffmpeg") is None, reason="ffmpeg is not on PATH"
-)
+needs_ffmpeg = pytest.mark.skipif(shutil.which("ffmpeg") is None, reason="ffmpeg is not on PATH")
 
 SCENE_DIR = "prd_jt/scene/2026-01-01/10-00-00"
 
@@ -100,9 +98,9 @@ def _scene(center: int = 10, with_camera: bool = True, with_lidar: bool = False)
         )
     # 40 future frames at 10 Hz: x = 5t, so the default 8-pose/0.5 s grid
     # resamples to exactly x = 2.5, 5.0, ..., 20.0.
-    future = np.column_stack(
-        [np.linspace(0.5, 20.0, 40), np.zeros(40), np.zeros(40)]
-    ).astype(np.float32)
+    future = np.column_stack([np.linspace(0.5, 20.0, 40), np.zeros(40), np.zeros(40)]).astype(
+        np.float32
+    )
     return T4Scene(
         scene_metadata=SceneMetadata(
             scene_dir=SCENE_DIR,
@@ -336,3 +334,24 @@ class TestRenderPlanningVideo:
     def test_no_windows_is_an_error(self, tmp_path):
         with pytest.raises(ValueError, match="no windows"):
             render_planning_video([], tmp_path / "empty.mp4")
+
+    def test_a_dropped_camera_frame_does_not_end_the_video(self, tmp_path):
+        """One missing frame must cost one panel, not the whole render.
+
+        libx264 refuses a frame whose size changed, so a placeholder panel at a
+        different aspect than the decoded ones aborts everything after the first
+        gap -- and camera gaps are ordinary in the exports.
+        """
+        scenes = [_scene(center=center) for center in (10, 11, 12)]
+        scenes[1].current_frame.cameras["CAM_FRONT_WIDE"].image = None
+        out = render_planning_video(scenes, tmp_path / "dropped.mp4", fps=5.0)
+        assert out.is_file() and out.stat().st_size > 0
+
+    def test_the_placeholder_panel_matches_the_decoded_panels(self):
+        # Same width, so the frames concatenate to one size.  The fixture camera
+        # is 64x48, which is not the 16:9 the old placeholder assumed.
+        scene = _scene()
+        with_image = render_planning_frame(scene, panel_height=48)
+        scene.current_frame.cameras["CAM_FRONT_WIDE"].image = None
+        without = render_planning_frame(scene, panel_height=48, camera_size=(64, 48))
+        assert without.shape == with_image.shape
