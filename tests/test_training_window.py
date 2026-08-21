@@ -418,3 +418,62 @@ def test_short_horizon_spec_admits_short_scenes():
     n = spec.min_source_frames  # 61 << MIN_T4_FRAMES (111)
     assert valid_window_centers(n) == ()
     assert list(valid_window_centers(n, spec=spec)) == [spec.history_span]
+
+
+def test_handles_build_without_a_lidar_pack(tmp_path):
+    """A camera/map-only copy has no pack, and must still produce handles.
+
+    ``TrainingWindowBuilder(load_points=False)`` is the documented path for a
+    camera or map backbone, but the handles used to open the pack in their
+    constructor, so a trimmed scene failed before the builder ever saw the flag.
+    """
+    root = tmp_path / "t4-root"
+    scene_dir = _make_scene(root)
+    (scene_dir / "data" / "LIDAR_CONCAT.pack").unlink()
+
+    handles = TrainingSceneHandles(scene_dir, load_gt=False, t4_root=root)
+    try:
+        scene = handles.scene_dict("scene@0")
+        window = TrainingWindowBuilder(load_points=False).extract_window(scene, PAST_FRAMES - 1)
+        assert window is not None
+        assert window["points"].shape == (0, 5)
+        # Asking for the sweep still fails, at the read and by name.
+        with pytest.raises(FileNotFoundError, match="LIDAR_CONCAT.pack"):
+            TrainingWindowBuilder(load_points=True).extract_window(scene, PAST_FRAMES - 1)
+    finally:
+        handles.close()
+
+
+def test_a_scene_declaring_no_pack_has_no_sweeps(tmp_path):
+    # An export that carries no LiDAR at all is a fact about the export; the
+    # handles report empty sweeps rather than raising on a missing meta key.
+    root = tmp_path / "t4-root"
+    scene_dir = _make_scene(root)
+    meta_path = scene_dir / "derived" / "meta.json"
+    meta = json.loads(meta_path.read_text())
+    for key in ("lidar_pack", "lidar_frames"):
+        meta.pop(key, None)
+    meta_path.write_text(json.dumps(meta))
+
+    handles = TrainingSceneHandles(scene_dir, load_gt=False, t4_root=root)
+    try:
+        window = TrainingWindowBuilder().extract_window(
+            handles.scene_dict("scene@0"), PAST_FRAMES - 1
+        )
+        assert window is not None and window["points"].shape == (0, 5)
+    finally:
+        handles.close()
+
+
+def test_a_short_pack_is_still_rejected(tmp_path):
+    # The range check moved to the first read; it must still happen.
+    root = tmp_path / "t4-root"
+    scene_dir = _make_scene(root)
+    write_lidar_pack(scene_dir / "data" / "LIDAR_CONCAT.pack", [np.zeros((3, 5), np.float32)])
+
+    handles = TrainingSceneHandles(scene_dir, load_gt=False, t4_root=root)
+    try:
+        with pytest.raises(ValueError, match="outside pack range"):
+            TrainingWindowBuilder().extract_window(handles.scene_dict("scene@0"), PAST_FRAMES - 1)
+    finally:
+        handles.close()

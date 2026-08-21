@@ -18,14 +18,17 @@ manifests can be overlaid, each under its own label.  Rendering works with no
 manifests at all, which is the ground-truth-only replay of a scene.
 
 The camera is chosen by **geometry**, not by name: there is no single T4 rig,
-and on ``x2_dev`` the only supported wide channel, ``CAM_FRONT_WIDE``, is
-pitched about 48 degrees down at the road surface -- a name preference shows
-asphalt where the scene has a street.  :func:`front_camera_for_scene` reads
-each stored camera's optical axis from the scene's own calibration and picks
-the one that actually looks down the road (``CAM_FRONT`` on ``x2_dev``).
-Since the training reader deliberately decodes only the supported wide
-channels, the video reads its display camera itself through
-:class:`SceneCameraReader`, at the resolution the scene stores.
+and on ``x2_dev`` the wide channel ``CAM_FRONT_WIDE`` is pitched about 48
+degrees down at the road surface -- a name preference shows asphalt where the
+scene has a street.  :func:`front_camera_for_scene` reads each readable
+camera's optical axis from the scene's own calibration and picks the one that
+actually looks down the road (``CAM_FRONT`` on ``x2_dev``).
+
+The display camera is read here rather than through the training reader, which
+resolves a *register*: this needs one channel at the resolution the scene
+stores, not the model's crop, and it must be able to show a channel the run's
+register does not contain.  :class:`SceneCameraReader` is that reader; it shares
+the decode chain and the calibration source, so the pixels are the export's.
 
 Frames stream into an ``ffmpeg`` subprocess encoding H.264, because the
 devkit's only animation writer is ``frames_to_gif`` and a GIF of a full scene
@@ -35,6 +38,7 @@ is an order of magnitude larger at the same quality.
 from __future__ import annotations
 
 import json
+import logging
 import shutil
 import subprocess
 from pathlib import Path
@@ -43,7 +47,6 @@ from typing import Dict, Iterable, List, Mapping, Optional, Sequence, Tuple
 import numpy as np
 import numpy.typing as npt
 
-from t4_e2e_devkit.common.constants import T4_NON_SURROUND_CAMERA_NAMES
 from t4_e2e_devkit.common.dataclasses import Camera, T4Scene, Trajectory
 from t4_e2e_devkit.evaluation.prediction_manifest import PredictionManifest
 from t4_e2e_devkit.planning.simulation.trajectory.trajectory_sampling import (
@@ -89,6 +92,9 @@ DEFAULT_VEHICLE_WIDTH: float = 1.85
 FDE_HORIZON_SECONDS: float = 4.0
 
 
+logger = logging.getLogger(__name__)
+
+
 def _cv2():
     """OpenCV, imported on first use like matplotlib in :mod:`plots`."""
     import cv2
@@ -127,23 +133,38 @@ def front_camera_name(camera_names: Sequence[str]) -> str:
 def front_camera_for_scene(scene_dir: str | Path) -> str:
     """The stored camera that actually looks down the road, by geometry.
 
-    Reads each stored channel's optical axis from ``derived/scalars.npz`` and
-    picks the one pointing most along ego-forward.  Signal-head and roof
-    channels are excluded even though some point forward: they frame traffic
-    lights, not the road.  Falls back to :func:`front_camera_name` when the
-    calibration is unreadable.
+    Candidates are the scene's readable channels -- calibrated, stored as JPEG,
+    and road-facing -- as :func:`~t4_e2e_devkit.dataset.rigs.readable_camera_names`
+    resolves them.  Among those, the optical axis from ``derived/scalars.npz``
+    picks the one pointing most along ego-forward.  Signal-head and roof channels
+    are never picked automatically even though some point forward: they frame
+    traffic lights, not the road.  Falls back to :func:`front_camera_name` when
+    the calibration is unreadable.
+
+    Naming a channel explicitly still renders it, roof views included; this is
+    only what happens when nobody names one.
 
     :param scene_dir: the T4 scene directory.
     :return: one camera name.
-    :raises ValueError: when the scene stores no camera at all.
+    :raises ValueError: when the scene has no readable road-facing camera.
     """
     from t4_e2e_devkit.dataset.camera_source import available_cameras
+    from t4_e2e_devkit.dataset.rigs import readable_camera_names
 
     scene_dir = Path(scene_dir)
-    stored = set(available_cameras(scene_dir))
-    if not stored:
+    if not available_cameras(scene_dir):
         raise ValueError(f"{scene_dir}: no camera directory to render")
-    excluded = {name.upper() for name in T4_NON_SURROUND_CAMERA_NAMES}
+    # One boundary for "which channels may be read", shared with the training
+    # reader.  Excluding roof views only in the geometric pass used to let the
+    # name fallback hand one back on the prd_jt_val scenes that store nothing
+    # else -- a trajectory drawn over a signal-head view.
+    road_facing = readable_camera_names(scene_dir)
+    if not road_facing:
+        raise ValueError(
+            f"{scene_dir}: stores no readable road-facing camera "
+            f"({sorted(available_cameras(scene_dir))}); name one explicitly to "
+            "render through it"
+        )
     try:
         register = json.loads((scene_dir / "derived" / "cam_names.json").read_text())
         with np.load(scene_dir / "derived" / "scalars.npz") as scalars:
@@ -151,11 +172,11 @@ def front_camera_for_scene(scene_dir: str | Path) -> str:
         if extrinsics.shape != (len(register), 4, 4):
             raise ValueError("extrinsics/register mismatch")
     except (OSError, KeyError, ValueError):
-        return front_camera_name(sorted(stored))
+        return front_camera_name(road_facing)
 
     best_name, best_forward = None, 0.2  # a side camera must not win by default
     for index, name in enumerate(register):
-        if name not in stored or name.upper() in excluded:
+        if name not in road_facing:
             continue
         # Column 2 of camera2ego is the optical axis in ego coordinates; its x
         # component is 1.0 for a camera looking straight down the road and
@@ -164,7 +185,7 @@ def front_camera_for_scene(scene_dir: str | Path) -> str:
         if forward > best_forward:
             best_name, best_forward = name, forward
     if best_name is None:
-        return front_camera_name(sorted(stored))
+        return front_camera_name(road_facing)
     return best_name
 
 
@@ -458,6 +479,35 @@ def _draw_camera_ribbon(panel, camera: Camera, poses, scale: float, vehicle_widt
     panel[:] = cv2.addWeighted(overlay, RIBBON_ALPHA, panel, 1.0 - RIBBON_ALPHA, 0)
 
 
+def _points_in_panel(camera: Camera, poses, scale: float, panel_shape: Tuple[int, ...]) -> int:
+    """How many of a trajectory's poses land inside the panel.
+
+    Projection is honest but not always informative: a camera mounted high and
+    well forward of the ego origin sees none of the first seconds of a plan, and
+    what it does show is the near road surface, which at 1-3 m depth covers a
+    corner of the panel in ribbon and says nothing.  Counting the poses that
+    actually land in frame is what lets the panel admit that.
+
+    :param camera: the calibrated view.
+    :param poses: trajectory poses in ego coordinates.
+    :param scale: panel pixels per source pixel.
+    :param panel_shape: the panel's ``shape``.
+    :return: number of poses inside the panel.
+    """
+    points = np.column_stack([np.asarray(poses, dtype=np.float64)[:, :2], np.zeros(len(poses))])
+    pixels, valid = project_ego_points(camera, points)
+    pixels = pixels * scale
+    height, width = panel_shape[0], panel_shape[1]
+    inside = (
+        valid
+        & (pixels[:, 0] >= 0)
+        & (pixels[:, 0] < width)
+        & (pixels[:, 1] >= 0)
+        & (pixels[:, 1] < height)
+    )
+    return int(inside.sum())
+
+
 def _camera_panel(
     camera: Camera,
     ground_truth: Optional[Trajectory],
@@ -478,7 +528,11 @@ def _camera_panel(
     if camera.image is None:
         if missing_size is not None:
             width, height = (int(value) for value in missing_size)
-            panel_width = int(round(width * panel_height / height)) // 2 * 2
+            # Exactly the rounding the decoded path uses below, with no evening:
+            # a decoded panel keeps an odd width and only the concatenated frame
+            # is cropped even, so evening here would make the placeholder two
+            # pixels narrow and abort the video at the first gap after all.
+            panel_width = int(round(width * panel_height / height))
         else:
             # No stored resolution to follow: a plausible aspect keeps a
             # hand-built single frame renderable.
@@ -505,6 +559,20 @@ def _camera_panel(
                 _draw_camera_ground_truth(panel, camera, ground_truth.poses, scale)
             if prediction is not None:
                 _draw_camera_ribbon(panel, camera, prediction.poses, scale, vehicle_width)
+            drawn = prediction if prediction is not None else ground_truth
+            if drawn is not None and not _points_in_panel(camera, drawn.poses, scale, panel.shape):
+                # Not a failure: this rig's view simply does not contain the
+                # plan.  Unsaid, the panel reads as a model that planned nothing.
+                cv2.putText(
+                    panel,
+                    "plan outside this view",
+                    (14, 34),
+                    cv2.FONT_HERSHEY_SIMPLEX,
+                    0.7,
+                    GT_COLOR,
+                    2,
+                    cv2.LINE_AA,
+                )
     if caption:
         cv2.putText(
             panel,
@@ -522,6 +590,18 @@ def _camera_panel(
 # --------------------------------------------------------------------------- #
 # Frame and video assembly
 # --------------------------------------------------------------------------- #
+
+
+def _longest_sampling(
+    entries: Sequence[Tuple[str, Optional[Trajectory]]],
+) -> Optional[TrajectorySampling]:
+    """The longest horizon among the plans to be drawn, or ``None`` for none."""
+    samplings = [
+        trajectory.trajectory_sampling for _, trajectory in entries if trajectory is not None
+    ]
+    if not samplings:
+        return None
+    return max(samplings, key=lambda sampling: float(sampling.time_horizon))
 
 
 def render_planning_frame(
@@ -543,7 +623,8 @@ def render_planning_frame(
     :param scene: the window; its current frame must carry a camera view.
     :param predictions: label -> plan in ego coordinates of this window, or
         ``None`` for a model that skipped this centre (its panel stays).
-    :param camera: camera to show; the first of the register by default.
+    :param camera: camera to show; the most forward-facing one of the decoded
+        register by default (see :func:`front_camera_name`).
     :param panel_height: pixel height of the frame; the BEV is this square.
     :param view_range: symmetric BEV half-extent in metres, overriding the
         forward-biased default of :data:`BEV_X_RANGE` / :data:`BEV_Y_RANGE`.
@@ -567,12 +648,22 @@ def render_planning_frame(
         )
     view = frame.cameras[name]
 
+    entries_source = list((predictions or {}).items())
     ground_truth: Optional[Trajectory] = None
     if scene.future_ego_poses is not None:
-        ground_truth = scene.get_future_trajectory()
+        # On the plans' own grid, not the contract default: a manifest with a
+        # longer horizon otherwise ends beyond a white line that stopped at 4 s,
+        # which reads as the model overshooting rather than as two grids.
+        sampling = _longest_sampling(entries_source)
+        try:
+            ground_truth = scene.get_future_trajectory(trajectory_sampling=sampling)
+        except ValueError:
+            # The window cannot cover that horizon; the contract default still
+            # says something true about the recorded future.
+            ground_truth = scene.get_future_trajectory()
     entries = [
         (label, trajectory, SERIES_COLORS[index % len(SERIES_COLORS)])
-        for index, (label, trajectory) in enumerate((predictions or {}).items())
+        for index, (label, trajectory) in enumerate(entries_source)
     ]
 
     if view_range is not None:
@@ -596,7 +687,7 @@ def render_planning_frame(
             caption = f"{label}   (no plan)"
         else:
             error = final_displacement_error(scene, trajectory)
-            caption = label if error is None else f"{label}   FDE {error:.2f}m"
+            caption = label if error is None else f"{label}   FDE@4s {error:.2f}m"
         panels.append(
             _camera_panel(
                 view,
@@ -748,7 +839,8 @@ def render_planning_video(
     :param out_path: destination ``.mp4`` path.
     :param manifests: label -> prediction manifest to overlay; may be empty,
         which renders the recorded future only.
-    :param camera: camera to show; the first of each register by default.
+    :param camera: camera to show; the most forward-facing one of each window's
+        decoded register by default.
     :param fps: frames per second.
     :param view_range: symmetric BEV half-extent in metres; the forward-biased
         default otherwise.
@@ -802,6 +894,62 @@ def render_planning_video(
     return Path(out_path)
 
 
+def data_list_scene_filter(data_list, scene_filter_type):
+    """The window shape a data list was built with.
+
+    A list records ``history_frames``/``gt_future_frames``/``center_stride`` in
+    its manifest.  Re-reading its rows at the contract default instead would
+    read a different window than the one that was listed -- and, for a list with
+    a longer history, refuse its first centres outright.
+
+    :param data_list: a loaded data list.
+    :param scene_filter_type: the ``SceneFilter`` class to build.
+    :return: the scene filter, defaulting to the contract where unrecorded.
+    """
+    manifest = getattr(data_list, "manifest", None) or {}
+    kwargs = {}
+    for key, field in (
+        ("history_frames", "num_history_frames"),
+        ("gt_future_frames", "num_future_frames"),
+        ("center_stride", "frame_interval"),
+    ):
+        value = manifest.get(key)
+        if isinstance(value, int) and value > 0:
+            kwargs[field] = int(value)
+    return scene_filter_type(**kwargs)
+
+
+def warn_on_data_list_mismatch(
+    manifests: Optional[Mapping[str, PredictionManifest]], data_list
+) -> None:
+    """Warn when a manifest was written against a different data list.
+
+    The manifest header carries the sha256 of the list it was produced from, so
+    overlaying predictions from another list is detectable rather than merely
+    suspicious: the keys may still match while the windows do not.
+
+    :param manifests: label -> loaded manifest, or ``None``.
+    :param data_list: the loaded data list being rendered.
+    """
+    path = getattr(data_list, "path", None)
+    if not manifests or path is None or not Path(path).is_file():
+        return
+    from t4_e2e_devkit.evaluation.prediction_manifest import data_list_sha256
+
+    digest = data_list_sha256(path)
+    for label, manifest in manifests.items():
+        declared = manifest.header.get("data_list_sha256")
+        if declared and declared != digest:
+            logger.warning(
+                "manifest %r was written against a different data list "
+                "(declares %s, rendering %s); the overlaid plans may not be the "
+                "ones this list was scored on",
+                label,
+                str(declared)[:12],
+                digest[:12],
+            )
+
+
 def render_scene_video(
     data_list,
     scene_rel: str,
@@ -839,23 +987,28 @@ def render_scene_video(
     :return: the written path.
     :raises ValueError: when the data list has no windows for this scene.
     """
-    from t4_e2e_devkit.common.dataclasses import Cameras, SensorConfig
+    from t4_e2e_devkit.common.dataclasses import Cameras, SceneFilter, SensorConfig
     from t4_e2e_devkit.dataset.window import T4WindowBuilder
 
     centers = sorted({center for scene, center in data_list.rows if scene == scene_rel})
     if not centers:
         raise ValueError(f"the data list has no windows for scene {scene_rel!r}")
+    warn_on_data_list_mismatch(manifests, data_list)
     scene_dir = data_list.absolute_scene_dir(scene_rel)
     name = camera if camera is not None else front_camera_for_scene(scene_dir)
     reader = SceneCameraReader(scene_dir, name)
 
     if lidar and not (scene_dir / "data" / "LIDAR_CONCAT.pack").is_file():
-        print(f"note: {scene_rel} has no LiDAR pack; rendering the BEV without points")
+        logger.info("%s has no LiDAR pack; rendering the BEV without points", scene_rel)
         lidar = False
     builder = T4WindowBuilder(
         scene_dir,
         data_list.root,
         sensor_config=SensorConfig(cameras={}, lidar=[-1] if lidar else False),
+        # The window shape is the list's, not this module's default: a list built
+        # with another history or future span would otherwise be re-read at a
+        # shape its early centres cannot satisfy.
+        scene_filter=data_list_scene_filter(data_list, SceneFilter),
     )
 
     def windows() -> Iterable[T4Scene]:

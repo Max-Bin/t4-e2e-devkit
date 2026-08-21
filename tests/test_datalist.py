@@ -117,3 +117,28 @@ def test_write_puts_each_row_on_one_line(tmp_path):
 def test_write_empty_rows_is_valid_json(tmp_path):
     out = DataList(root=tmp_path, rows=[]).write(tmp_path / "empty.json")
     assert json.loads(out.read_text(encoding="utf-8"))["rows"] == []
+
+
+def test_a_header_that_disagrees_with_its_rows_is_rejected(tmp_path):
+    # A list sliced by hand keeps the original n_rows, and then every count the
+    # manifest reports is about a different set of windows than the file holds.
+    rows = [(f"prd_jt/vehicle/2025-12-24/scene-{i}", i) for i in range(3)]
+    out = DataList(root=tmp_path, rows=rows).write(tmp_path / "list.json")
+    spec = json.loads(out.read_text(encoding="utf-8"))
+    spec["rows"] = spec["rows"][:2]
+    out.write_text(json.dumps(spec), encoding="utf-8")
+
+    with pytest.raises(ValueError, match="n_rows=3 but the file carries 2"):
+        load_data_list(out)
+
+
+def test_the_writer_round_trips_through_json_only(tmp_path):
+    # The rows go in as a placeholder and are substituted, so the document is
+    # whatever json would have written -- including for a nested manifest.
+    manifest = {"filter": {"require_cameras": ["CAM_FRONT_WIDE"], "nested": {"a": 1}}}
+    rows = [("prd_jt/vehicle/2025-12-24/scene-a", 7)]
+    out = DataList(root=tmp_path, rows=rows, manifest=manifest).write(tmp_path / "n.json")
+    reloaded = json.loads(out.read_text(encoding="utf-8"))
+    assert reloaded["filter"]["nested"] == {"a": 1}
+    assert reloaded["rows"] == [["prd_jt/vehicle/2025-12-24/scene-a", 7]]
+    assert reloaded["n_rows"] == 1

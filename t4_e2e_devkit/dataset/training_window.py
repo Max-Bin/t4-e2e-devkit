@@ -193,36 +193,54 @@ class _LazyLidarFrames:
     A scene index outside the range returns ``None`` (the caller substitutes
     an empty sweep) rather than raising — trimmed scene edges are data, not
     errors, on the training path.
+
+    On demand means on demand: the pack is opened, and its range checked,
+    at the first sweep actually read.  Opening it in the constructor made a
+    camera/map-only run fail on a scene that ships no pack, even though
+    ``TrainingWindowBuilder(load_points=False)`` would never have read one --
+    and every scene handle held an open descriptor it might not use.  A scene
+    whose metadata declares no pack at all has no sweeps, which is a fact about
+    the export rather than an error.
     """
 
     def __init__(self, meta: dict, root: Path):
         self._reader: T4LidarPackReader | None = None
-        path = Path(meta["lidar_pack"])
-        self._path = path if path.is_absolute() else root / path
+        pack = meta.get("lidar_pack")
+        self._path: Path | None = None
+        if pack is not None:
+            path = Path(pack)
+            self._path = path if path.is_absolute() else root / path
         self._first = int(meta.get("lidar_first_frame", 0))
-        self._count = int(meta["lidar_frames"])
+        self._count = int(meta.get("lidar_frames") or 0)
         self._offset = int(meta.get("frame_offset", 0))
-        if self._first < 0 or self._count <= 0:
+        if self._first < 0 or (self._path is not None and self._count <= 0):
             raise ValueError("T4 metadata has an invalid LiDAR frame range")
-        self._reader = T4LidarPackReader(self._path)
-        low = self._first + self._offset
-        high = self._first + self._count - 1 + self._offset
-        if low < 0 or high >= self._reader.n_frames:
-            self.close()
-            raise ValueError(
-                f"{self._path}: scene frames [{self._first}.."
-                f"{self._first + self._count - 1}] + offset {self._offset} "
-                f"outside pack range (n_frames={self._reader.n_frames})"
-            )
+
+    def _open(self) -> T4LidarPackReader:
+        """Open the pack and check the scene's range against it, once."""
+
+        if self._reader is None:
+            reader = T4LidarPackReader(self._path)
+            low = self._first + self._offset
+            high = self._first + self._count - 1 + self._offset
+            if low < 0 or high >= reader.n_frames:
+                reader.close()
+                raise ValueError(
+                    f"{self._path}: scene frames [{self._first}.."
+                    f"{self._first + self._count - 1}] + offset {self._offset} "
+                    f"outside pack range (n_frames={reader.n_frames})"
+                )
+            self._reader = reader
+        return self._reader
 
     def frame(self, scene_idx: int) -> np.ndarray | None:
         """Return one scene frame, or ``None`` when the scene has no frame."""
 
+        if self._path is None:
+            return None
         if not (self._first <= scene_idx < self._first + self._count):
             return None
-        if self._reader is None:
-            self._reader = T4LidarPackReader(self._path)
-        return self._reader.read_frame(scene_idx + self._offset)
+        return self._open().read_frame(scene_idx + self._offset)
 
     def close(self) -> None:
         if self._reader is not None:
