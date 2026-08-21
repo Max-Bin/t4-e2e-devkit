@@ -41,7 +41,10 @@ from t4_e2e_devkit.dataset.scene import build_ego_status
 from t4_e2e_devkit.dataset.window import T4WindowBuilder
 from t4_e2e_devkit.planning.simulation.closed_loop_geometry import (
     ReplayGeometry,
+    box_corners,
     compute_replay_geometry,
+    scene_center_pose,
+    transform_poses,
 )
 from t4_e2e_devkit.planning.simulation.interfaces import (
     EgoController,
@@ -531,7 +534,7 @@ class T4ClosedLoopRunner:
                 "replay scene history length does not match the closed-loop config: "
                 f"{len(first_scene.frames)} != {self.config.history_frames}"
             )
-        initial_pose = _metadata_pose(first_scene)
+        initial_pose = scene_center_pose(first_scene)
         initial_status = first_scene.current_frame.ego_status
         initial_velocity = np.asarray(initial_status.ego_velocity, dtype=np.float64).reshape(2)
         initial_speed = max(0.0, float(np.linalg.norm(initial_velocity)))
@@ -609,7 +612,7 @@ class T4ClosedLoopRunner:
                         f"got {type(raw_plan).__name__}"
                     )
                 dense_plan = _densify_for_simulation(raw_plan, self.config.dt_s)
-                cached_world_plan = _local_to_world(dense_plan.poses, state.pose)
+                cached_world_plan = transform_poses(dense_plan.poses, state.pose)
                 cached_plan_offset = 0
 
             assert cached_world_plan is not None
@@ -748,22 +751,6 @@ def _densify_for_simulation(trajectory: Trajectory, dt_s: float) -> Trajectory:
     return trajectory.resample(target_sampling)
 
 
-def _metadata_pose(scene: T4Scene) -> np.ndarray:
-    metadata_pose = scene.scene_metadata.global_center_pose
-    if metadata_pose is None:
-        raise ValueError(
-            f"scene {scene.scene_metadata.token} has no global_center_pose; "
-            "closed-loop state propagation needs a global seed pose"
-        )
-    values = np.asarray(metadata_pose, dtype=np.float64).reshape(-1)
-    if values.shape[0] != 4:
-        raise ValueError(f"global_center_pose must have four values, got {values.shape}")
-    return np.array(
-        [values[0], values[1], math.atan2(float(values[3]), float(values[2]))],
-        dtype=np.float64,
-    )
-
-
 def _goal_pose_world(scene: T4Scene) -> Optional[np.ndarray]:
     """Convert the scene-local destination into global ``(x, y, cos, sin)``."""
 
@@ -774,12 +761,12 @@ def _goal_pose_world(scene: T4Scene) -> Optional[np.ndarray]:
         raise ValueError(
             f"scene {scene.scene_metadata.token} goal_pose must have four values, got {goal.shape}"
         )
-    recorded_pose = _metadata_pose(scene)
+    recorded_pose = scene_center_pose(scene)
     local_goal = np.array(
         [goal[0], goal[1], math.atan2(float(goal[3]), float(goal[2]))],
         dtype=np.float64,
     )
-    world_goal = _local_to_world(local_goal.reshape(1, 3), recorded_pose)[0]
+    world_goal = transform_poses(local_goal.reshape(1, 3), recorded_pose)[0]
     return np.array(
         [
             world_goal[0],
@@ -809,7 +796,7 @@ def _replay_collision_tokens(
 
     from shapely.geometry import Polygon
 
-    recorded_pose = _metadata_pose(scene)
+    recorded_pose = scene_center_pose(scene)
     ego_shape = scene.current_frame.ego_status.ego_shape
     ego_center = np.array(
         [
@@ -819,7 +806,7 @@ def _replay_collision_tokens(
         dtype=np.float64,
     )
     ego_polygon = Polygon(
-        _box_corners(
+        box_corners(
             ego_center[0],
             ego_center[1],
             state.heading,
@@ -841,10 +828,10 @@ def _replay_collision_tokens(
             [box[T4BoxIndex.X], box[T4BoxIndex.Y], box[T4BoxIndex.HEADING]],
             dtype=np.float64,
         )
-        world_box = _local_to_world(local_box.reshape(1, 3), recorded_pose)[0]
+        world_box = transform_poses(local_box.reshape(1, 3), recorded_pose)[0]
         if ego_polygon.intersects(
             Polygon(
-                _box_corners(
+                box_corners(
                     world_box[0],
                     world_box[1],
                     world_box[2],
@@ -860,52 +847,12 @@ def _replay_collision_tokens(
     return tuple(collided)
 
 
-def _box_corners(
-    x: float,
-    y: float,
-    heading: float,
-    length: float,
-    width: float,
-) -> np.ndarray:
-    """Return oriented rectangle corners in counter-clockwise order."""
-
-    half_length = length / 2.0
-    half_width = width / 2.0
-    c, s = math.cos(heading), math.sin(heading)
-    local = np.array(
-        [
-            [half_length, half_width],
-            [-half_length, half_width],
-            [-half_length, -half_width],
-            [half_length, -half_width],
-        ],
-        dtype=np.float64,
-    )
-    return np.column_stack(
-        (
-            x + local[:, 0] * c - local[:, 1] * s,
-            y + local[:, 0] * s + local[:, 1] * c,
-        )
-    )
-
-
 def _scene_history_world_poses(scene: T4Scene) -> np.ndarray:
     """Recover the recorded history in global coordinates for rollout seeding."""
 
-    center = _metadata_pose(scene)
+    center = scene_center_pose(scene)
     local = scene.get_history_poses().astype(np.float64)
-    return _local_to_world(local, center)
-
-
-def _local_to_world(poses: np.ndarray, origin: np.ndarray) -> np.ndarray:
-    values = np.asarray(poses, dtype=np.float64).reshape(-1, 3)
-    origin = np.asarray(origin, dtype=np.float64).reshape(3)
-    c, s = math.cos(float(origin[2])), math.sin(float(origin[2]))
-    world = np.empty_like(values)
-    world[:, 0] = origin[0] + c * values[:, 0] - s * values[:, 1]
-    world[:, 1] = origin[1] + s * values[:, 0] + c * values[:, 1]
-    world[:, 2] = values[:, 2] + origin[2]
-    return world
+    return transform_poses(local, center)
 
 
 def _world_to_local(poses: np.ndarray, origin: np.ndarray) -> np.ndarray:
@@ -985,7 +932,7 @@ def _rebase_goal(
     goal_local = np.array(
         [goal[0], goal[1], math.atan2(float(goal[3]), float(goal[2]))], dtype=np.float64
     )
-    goal_world = _local_to_world(goal_local.reshape(1, 3), recorded_pose)
+    goal_world = transform_poses(goal_local.reshape(1, 3), recorded_pose)
     goal_live = _world_to_local(goal_world, live_pose)[0]
     return np.array(
         [goal_live[0], goal_live[1], math.cos(goal_live[2]), math.sin(goal_live[2])],
@@ -1009,7 +956,7 @@ def _build_live_agent_input(
             f"{len(logged_statuses)}"
         )
 
-    center = _metadata_pose(scene)
+    center = scene_center_pose(scene)
     live_rows = build_ego_status(
         np.column_stack(
             (

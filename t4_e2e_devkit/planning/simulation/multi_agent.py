@@ -17,6 +17,7 @@ import numpy as np
 
 from t4_e2e_devkit.common.dataclasses import Annotations, T4Scene
 from t4_e2e_devkit.common.enums import T4BoxIndex
+from t4_e2e_devkit.planning.simulation.closed_loop_geometry import scene_center_pose
 from t4_e2e_devkit.planning.simulation.interfaces import (
     TrafficAgentController,
     TrafficAgentState,
@@ -178,7 +179,7 @@ class MultiAgentTrafficPolicy:
         annotations = scene.current_frame.annotations
         if annotations is None:
             return scene
-        recorded_pose = _scene_pose(scene)
+        recorded_pose = scene_center_pose(scene)
         observed: dict[str, TrafficAgentState] = {}
         labels = np.asarray(annotations.labels, dtype=np.int64).reshape(-1)
         tokens = (
@@ -256,16 +257,6 @@ class MultiAgentTrafficPolicy:
                 raise TypeError("traffic controller factory must return TrafficAgentController")
             self._controllers[token] = controller
         return self._controllers[token]
-
-
-def _scene_pose(scene: T4Scene) -> np.ndarray:
-    values = scene.scene_metadata.global_center_pose
-    if values is None:
-        raise ValueError(f"scene {scene.scene_metadata.token} has no global_center_pose")
-    pose = np.asarray(values, dtype=np.float64).reshape(-1)
-    if pose.shape != (4,):
-        raise ValueError("global_center_pose must contain x, y, cos, sin")
-    return np.array([pose[0], pose[1], math.atan2(pose[3], pose[2])], dtype=np.float64)
 
 
 def _local_box_to_world(box: np.ndarray, pose: np.ndarray) -> np.ndarray:
