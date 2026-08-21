@@ -215,7 +215,7 @@ class TestFrontCameraForScene:
         scene = _display_scene_dir(tmp_path)
         for name in ("CAM_FRONT", "CAM_FRONT_WIDE"):
             shutil.rmtree(scene / "data" / name)
-        with pytest.raises(ValueError, match="only non-road channels"):
+        with pytest.raises(ValueError, match="no readable road-facing camera"):
             front_camera_for_scene(scene)
 
     def test_falls_back_to_names_without_calibration(self, tmp_path):

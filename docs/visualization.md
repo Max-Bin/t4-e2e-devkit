@@ -110,13 +110,29 @@ uv run t4e2e visualize-video \
 Omit `--scene` to render every scene in the list, and omit `--manifest` for a
 ground-truth-only replay. With several manifests the BEV gives each model one
 flat legend colour, and every camera panel's caption carries the model's full
-label with its 4 s displacement error. The camera is chosen by geometry --
-the stored camera whose optical axis points most along ego-forward -- because
-on `x2_dev` the only wide channel is pitched at the asphalt; `--camera`
-overrides the choice. LiDAR follows the usual opt-in rule (`--no-lidar` skips
-it); a scene without a LiDAR pack renders the BEV without points, and a window
-without a sweep holds the previous one rather than strobing. Encoding streams
-through the `ffmpeg` binary, which must be on `PATH`.
+label with its 4 s displacement error (`FDE@4s`).
+
+The camera is chosen by geometry -- of the channels the scene can actually serve
+(`dataset.rigs.readable_camera_names`), the one whose optical axis points most
+along ego-forward -- because on `x2_dev` the wide channel is pitched at the
+asphalt. Roof and signal-head views are never picked automatically; `--camera`
+still renders any calibrated channel, those included.
+
+What the panel cannot show, it says. A rig whose camera sits well forward of the
+ego origin sees none of a slow plan -- every pose is behind the pinhole or below
+the frame -- so the panel is stamped `plan outside this view` rather than left
+looking like a model that planned nothing. The recorded future is drawn on the
+plans' own grid, so a manifest with a longer horizon does not read as
+overshooting a white line that stopped earlier.
+
+The video takes the rest of its shape from the data list: windows use the
+`history_frames`/`gt_future_frames` the list records, and `--fps` defaults to
+real time for its `center_stride` (a stride-5 list plays at 2 fps). A manifest
+whose header declares a different list's sha256 is warned about. LiDAR follows
+the usual opt-in rule (`--no-lidar` skips it); a scene without a LiDAR pack
+renders the BEV without points, and a window without a sweep holds the previous
+one rather than strobing. Encoding streams through the `ffmpeg` binary, which
+must be on `PATH`.
 
 The Python API is `render_scene_video` over a data list, or
 `render_planning_video` over an iterable of windows; see

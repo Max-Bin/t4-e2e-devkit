@@ -18,14 +18,17 @@ manifests can be overlaid, each under its own label.  Rendering works with no
 manifests at all, which is the ground-truth-only replay of a scene.
 
 The camera is chosen by **geometry**, not by name: there is no single T4 rig,
-and on ``x2_dev`` the only supported wide channel, ``CAM_FRONT_WIDE``, is
-pitched about 48 degrees down at the road surface -- a name preference shows
-asphalt where the scene has a street.  :func:`front_camera_for_scene` reads
-each stored camera's optical axis from the scene's own calibration and picks
-the one that actually looks down the road (``CAM_FRONT`` on ``x2_dev``).
-Since the training reader deliberately decodes only the supported wide
-channels, the video reads its display camera itself through
-:class:`SceneCameraReader`, at the resolution the scene stores.
+and on ``x2_dev`` the wide channel ``CAM_FRONT_WIDE`` is pitched about 48
+degrees down at the road surface -- a name preference shows asphalt where the
+scene has a street.  :func:`front_camera_for_scene` reads each readable
+camera's optical axis from the scene's own calibration and picks the one that
+actually looks down the road (``CAM_FRONT`` on ``x2_dev``).
+
+The display camera is read here rather than through the training reader, which
+resolves a *register*: this needs one channel at the resolution the scene
+stores, not the model's crop, and it must be able to show a channel the run's
+register does not contain.  :class:`SceneCameraReader` is that reader; it shares
+the decode chain and the calibration source, so the pixels are the export's.
 
 Frames stream into an ``ffmpeg`` subprocess encoding H.264, because the
 devkit's only animation writer is ``frames_to_gif`` and a GIF of a full scene
@@ -44,7 +47,6 @@ from typing import Dict, Iterable, List, Mapping, Optional, Sequence, Tuple
 import numpy as np
 import numpy.typing as npt
 
-from t4_e2e_devkit.common.constants import T4_NON_SURROUND_CAMERA_NAMES
 from t4_e2e_devkit.common.dataclasses import Camera, T4Scene, Trajectory
 from t4_e2e_devkit.evaluation.prediction_manifest import PredictionManifest
 from t4_e2e_devkit.planning.simulation.trajectory.trajectory_sampling import (
@@ -131,31 +133,37 @@ def front_camera_name(camera_names: Sequence[str]) -> str:
 def front_camera_for_scene(scene_dir: str | Path) -> str:
     """The stored camera that actually looks down the road, by geometry.
 
-    Reads each stored channel's optical axis from ``derived/scalars.npz`` and
-    picks the one pointing most along ego-forward.  Signal-head and roof
-    channels are excluded even though some point forward: they frame traffic
-    lights, not the road.  Falls back to :func:`front_camera_name` when the
-    calibration is unreadable.
+    Candidates are the scene's readable channels -- calibrated, stored as JPEG,
+    and road-facing -- as :func:`~t4_e2e_devkit.dataset.rigs.readable_camera_names`
+    resolves them.  Among those, the optical axis from ``derived/scalars.npz``
+    picks the one pointing most along ego-forward.  Signal-head and roof channels
+    are never picked automatically even though some point forward: they frame
+    traffic lights, not the road.  Falls back to :func:`front_camera_name` when
+    the calibration is unreadable.
+
+    Naming a channel explicitly still renders it, roof views included; this is
+    only what happens when nobody names one.
 
     :param scene_dir: the T4 scene directory.
     :return: one camera name.
-    :raises ValueError: when the scene stores no camera at all.
+    :raises ValueError: when the scene has no readable road-facing camera.
     """
     from t4_e2e_devkit.dataset.camera_source import available_cameras
+    from t4_e2e_devkit.dataset.rigs import readable_camera_names
 
     scene_dir = Path(scene_dir)
-    stored = set(available_cameras(scene_dir))
-    if not stored:
+    if not available_cameras(scene_dir):
         raise ValueError(f"{scene_dir}: no camera directory to render")
-    excluded = {name.upper() for name in T4_NON_SURROUND_CAMERA_NAMES}
-    # Excluded by role in both paths.  Excluding them only in the geometric pass
-    # let the name fallback hand back a roof camera on the prd_jt_val scenes that
-    # store nothing else -- a trajectory drawn over a signal-head view.
-    road_facing = sorted(name for name in stored if name.upper() not in excluded)
+    # One boundary for "which channels may be read", shared with the training
+    # reader.  Excluding roof views only in the geometric pass used to let the
+    # name fallback hand one back on the prd_jt_val scenes that store nothing
+    # else -- a trajectory drawn over a signal-head view.
+    road_facing = readable_camera_names(scene_dir)
     if not road_facing:
         raise ValueError(
-            f"{scene_dir}: stores only non-road channels {sorted(stored)}; "
-            "name one explicitly to render through it"
+            f"{scene_dir}: stores no readable road-facing camera "
+            f"({sorted(available_cameras(scene_dir))}); name one explicitly to "
+            "render through it"
         )
     try:
         register = json.loads((scene_dir / "derived" / "cam_names.json").read_text())
