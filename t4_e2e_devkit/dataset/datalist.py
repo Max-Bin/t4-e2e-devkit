@@ -32,6 +32,10 @@ from t4_e2e_devkit.common.constants import (
 
 Row = Tuple[str, int]
 
+#: Stand-in for the rows while the header is serialized; chosen so it cannot
+#: collide with a value a manifest would legitimately hold.
+_ROWS_PLACEHOLDER = "__t4_e2e_rows__"
+
 
 def is_safe_scene_path(scene: str) -> bool:
     """Whether ``scene`` is a safe repository-relative scene path."""
@@ -202,13 +206,19 @@ class DataList:
             }
         )
         rows = [[scene, int(center)] for scene, center in self.rows]
-        # keep the header pretty-printed but each row on its own line: with
+        # Keep the header pretty-printed but each row on its own line: with
         # plain indent=2 every row becomes four lines, and a 60k-row list
-        # balloons to a 240k-line file that diffs and greps badly
-        head = json.dumps(manifest, indent=2)
-        head = head[: head.rfind("}")].rstrip().rstrip(",")
-        body = ",\n    ".join(json.dumps(r) for r in rows)
-        path.write_text(f'{head},\n  "rows": [\n    {body}\n  ]\n}}\n', encoding="utf-8")
+        # balloons to a 240k-line file that diffs and greps badly.  json stays
+        # the only serializer -- the rows go in as a placeholder and are
+        # substituted afterwards, so no hand-built brace can drift out of sync
+        # with what json would have written.
+        document = json.dumps({**manifest, "rows": _ROWS_PLACEHOLDER}, indent=2)
+        body = ",\n    ".join(json.dumps(row) for row in rows)
+        rows_block = f"[\n    {body}\n  ]" if rows else "[]"
+        path.write_text(
+            document.replace(json.dumps(_ROWS_PLACEHOLDER), rows_block) + "\n",
+            encoding="utf-8",
+        )
         return path
 
 
@@ -261,6 +271,17 @@ def load_data_list(path: str | Path, *, check_subtree: bool = True) -> DataList:
 
     if not rows:
         raise ValueError(f"{path}: data list has no rows")
+
+    # A list whose header disagrees with its rows was edited by hand -- sliced
+    # with jq, merged, truncated -- and every number the manifest reports about
+    # the run is then about a different set of windows than the one being read.
+    declared_rows = spec.get("n_rows")
+    if isinstance(declared_rows, int) and declared_rows != len(rows):
+        raise ValueError(
+            f"{path}: header says n_rows={declared_rows} but the file carries "
+            f"{len(rows)} rows; rewrite it through DataList.write so the "
+            "manifest describes the rows it ships with"
+        )
 
     if check_subtree:
         offenders = sorted({scene for scene, _ in rows if not is_e2e_scene_path(scene)})
