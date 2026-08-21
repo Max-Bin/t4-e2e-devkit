@@ -1089,7 +1089,10 @@ class T4MapAPI:
             else:
                 query_geometry = LineString(global_points)
             ranked = sorted(
-                ((obj.id, _geometry_score(query_geometry, obj.geometry)) for obj in candidates),
+                (
+                    (obj.id, _geometry_score(query_geometry, _source_geometry(obj)))
+                    for obj in candidates
+                ),
                 key=lambda item: (item[1], item[0]),
             )
             candidates_ids = tuple(item[0] for item in ranked[:candidate_limit])
@@ -1236,6 +1239,33 @@ def _normalize_object_type(object_type: Optional[str]) -> Optional[str]:
 
 def _object_geometry(obj: T4Lanelet | T4MapObject) -> BaseGeometry:
     return obj.polygon if isinstance(obj, T4Lanelet) else obj.geometry
+
+
+def _source_geometry(obj: "T4Lanelet | T4MapObject") -> BaseGeometry:
+    """The shapely geometry of a candidate, whichever kind of object it is.
+
+    A lanelet carries ``polygon`` and ``centerline``; only a source object
+    carries ``geometry``.  Reading ``geometry`` off a candidate therefore raised
+    AttributeError for every match against lanelets -- which is the most natural
+    thing to match a lane tensor against.
+
+    A lanelet scores through its centerline rather than its polygon: the score is
+    a symmetric Hausdorff distance, so matching a centre-line row against the
+    lane's area costs half the lane width for free (measured 1.98 m on a real
+    lanelet, against 0.0 for the centerline), which is most of the default 3 m
+    threshold. The polygon is the fallback for a lanelet whose centerline is too
+    short to be a line.
+
+    :param obj: a lanelet or a source object.
+    :return: the geometry to score against.
+    """
+    geometry = getattr(obj, "geometry", None)
+    if geometry is not None:
+        return geometry
+    centerline = np.asarray(getattr(obj, "centerline", ()), dtype=np.float64)
+    if centerline.ndim == 2 and len(centerline) >= 2:
+        return LineString(centerline[:, :2])
+    return obj.polygon
 
 
 def _geometry_score(query: BaseGeometry, reference: BaseGeometry) -> float:

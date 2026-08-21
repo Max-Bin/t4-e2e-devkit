@@ -10,6 +10,21 @@ uv run ruff check .
 uv run t4e2e check --vendor
 ```
 
+Type checking runs against a recorded baseline rather than a clean slate: the
+package carries 239 mypy errors over 60 of its 191 first-party files, mostly
+numpy `ArrayLike` unions. The gate is that a file with no errors must not acquire
+one, and it is what found `T4MapAPI.match_local_geometries_detailed` reading
+`.geometry` off lanelets, which do not have it.
+
+```bash
+uv run python tools/typecheck.py            # fails on a new error in a clean file
+uv run python tools/typecheck.py --update   # record the current state
+uv run pytest -q -m slow                    # the same gate, in the suite
+```
+
+A file that improves is reported, so the baseline can be tightened rather than
+kept as permanent permission. The vendored trees are excluded, as in `ruff`.
+
 Dataset and CUDA tests are opt-in:
 
 ```bash

@@ -39,6 +39,7 @@ camera = ["timm>=0.9", "torchvision>=0.16"]
 lidar = ["spconv-cu120"]
 viz = ["matplotlib>=3.7", "opencv-python-headless>=4.8"]
 dev = [
+    "mypy>=1.11",
     "pytest>=8.2,<9",
     "pytest-cov>=6.0",
     "ruff>=0.8",
@@ -52,6 +53,7 @@ dev = [
 # part of the public interface.
 [dependency-groups]
 dev = [
+    "mypy>=1.11",
     "pytest>=8.2,<9",
     "pytest-cov>=6.0",
     "ruff>=0.8",
@@ -121,4 +123,31 @@ markers = [
     "gpu: requires a CUDA device",
     "data: requires the T4 dataset on disk",
     "slow: long-running consistency checks",
+]
+
+[tool.mypy]
+# No python_version pin: mypy would then parse the *installed* stubs under that
+# version's grammar, and numpy's use 3.12 `type` statements -- pinning 3.10 stops
+# the run at the first stub with a syntax error. The checker follows whichever
+# interpreter runs it, inside the supported 3.10-3.12 range.
+# Third-party stubs are not a dependency of this package: numpy and torch ship
+# their own, everything else would only add install weight for a lint.
+ignore_missing_imports = true
+# Errors are reported for the files asked about, not for everything they import.
+# Without this, one unchecked vendored module drags its whole import closure into
+# the report and the signal is gone.
+follow_imports = "silent"
+# The same vendored trees ruff excludes, for the same reason: a fix here would be
+# reverted by the next `tools/vendor.py sync` and belongs upstream.
+exclude = [
+    "t4_e2e_devkit/common/actor_state/",
+    "t4_e2e_devkit/common/geometry/",
+    "t4_e2e_devkit/common/maps/",
+    "t4_e2e_devkit/common/utils/",
+    "t4_e2e_devkit/planning/simulation/trajectory/",
+    "t4_e2e_devkit/planning/simulation/occupancy_map/",
+    "t4_e2e_devkit/planning/simulation/path/",
+    "t4_e2e_devkit/planning/simulation/pdm_sim/",
+    "t4_e2e_devkit/planning/simulation/planner/pdm_planner/",
+    "t4_e2e_devkit/evaluation/reference/",
 ]
