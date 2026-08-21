@@ -4,7 +4,6 @@ from __future__ import annotations
 
 import argparse
 import csv
-import hashlib
 import json
 import logging
 from pathlib import Path
@@ -41,6 +40,12 @@ from t4_e2e_devkit.evaluation.worker_pool import WorkerPool, WorkerResult, Worke
 from t4_e2e_devkit.planning.simulation.closed_loop import (
     T4ClosedLoopConfig,
     run_t4_closed_loop,
+)
+from t4_e2e_devkit.script.utils import (
+    file_digest,
+    load_agent_checkpoint,
+    value_fingerprint,
+    write_json,
 )
 
 logger = logging.getLogger(__name__)
@@ -205,9 +210,9 @@ def evaluate_closed_loop(
         "artifact_version": CLOSED_LOOP_ARTIFACT_VERSION,
         "agent": agent_name,
         "agent_params": dict(agent_params or {}),
-        "checkpoint_digest": _file_digest(checkpoint_path),
+        "checkpoint_digest": file_digest(checkpoint_path),
         "device": device,
-        "reader_config_digest": _fingerprint(dict(reader_config or {})),
+        "reader_config_digest": value_fingerprint(dict(reader_config or {})),
         "history_frames": int(history_frames),
         "num_steps": int(num_steps),
         "replan_interval": int(replan_interval),
@@ -231,7 +236,7 @@ def evaluate_closed_loop(
             for key, value in run_config.items()
             if key not in {"rank", "world_size", "workers", "worker_backend"}
         }
-        run_id = f"closed-loop-{_fingerprint(identity)[:16]}"
+        run_id = f"closed-loop-{value_fingerprint(identity)[:16]}"
     run_config["run_id"] = str(run_id)
     distributed_config = DistributedRunConfig(
         run_id=str(run_id),
@@ -240,9 +245,9 @@ def evaluate_closed_loop(
         workers=workers,
         backend=worker_backend,
     )
-    config_fingerprint = _fingerprint(run_config)
+    config_fingerprint = value_fingerprint(run_config)
     artifact_dir = output_path / "rollouts"
-    _write_json(
+    write_json(
         output_path / "run.json",
         {
             **run_config,
@@ -439,13 +444,13 @@ def evaluate_closed_loop(
     )
     write_closed_loop_csv(output_path / "closed_loop.csv", metrics)
     write_closed_loop_ticks(output_path / "closed_loop_ticks.csv", metrics)
-    _write_json(output_path / "aggregate.json", report)
+    write_json(output_path / "aggregate.json", report)
     OmegaConf.save(OmegaConf.create(report), output_path / "aggregate.yaml")
     with (output_path / "failures.csv").open("w", newline="", encoding="utf-8") as handle:
         writer = csv.writer(handle)
         writer.writerow(["token", "error"])
         writer.writerows(failures)
-    _write_json(
+    write_json(
         output_path / "run.json",
         {
             **run_config,
@@ -462,27 +467,8 @@ def evaluate_closed_loop(
     return report
 
 
-def _write_json(path: Path, value: Any) -> None:
-    path.write_text(json.dumps(value, indent=2, sort_keys=True) + "\n", encoding="utf-8")
-
-
 def _artifact_path(directory: Path, row_index: int, token: str) -> Path:
     return rollout_artifact_path(directory, row_index, token)
-
-
-def _fingerprint(value: Any) -> str:
-    encoded = json.dumps(value, sort_keys=True, separators=(",", ":"), ensure_ascii=True)
-    return hashlib.sha256(encoded.encode("utf-8")).hexdigest()
-
-
-def _file_digest(path: str | Path | None) -> str | None:
-    if path is None:
-        return None
-    digest = hashlib.sha256()
-    with Path(path).open("rb") as stream:
-        for chunk in iter(lambda: stream.read(1024 * 1024), b""):
-            digest.update(chunk)
-    return digest.hexdigest()
 
 
 def _build_agent(
@@ -496,7 +482,7 @@ def _build_agent(
     agent = build_agent(name, **dict(params))
     agent.initialize()
     if checkpoint_path is not None:
-        _load_checkpoint(agent, checkpoint_path)
+        load_agent_checkpoint(agent, checkpoint_path)
     active_device = device or ("cuda" if torch.cuda.is_available() else "cpu")
     if str(active_device).startswith("cuda") and not torch.cuda.is_available():
         raise ValueError("a CUDA device was requested but CUDA is unavailable")
@@ -504,15 +490,6 @@ def _build_agent(
     if callable(move_to):
         move_to(torch.device(active_device))
     return agent
-
-
-def _load_checkpoint(agent: Any, path: str | Path) -> None:
-    import torch
-
-    checkpoint = torch.load(path, map_location="cpu", weights_only=False)
-    state = checkpoint.get("state_dict", checkpoint)
-    state = {str(key).removeprefix("agent."): value for key, value in state.items()}
-    agent.load_state_dict(state, strict=False)
 
 
 def main(argv: Optional[list[str]] = None) -> int:

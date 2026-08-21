@@ -10,11 +10,10 @@ from __future__ import annotations
 import csv
 import hashlib
 import json
-import os
-import tempfile
 from pathlib import Path
 from typing import Any, Iterable, Mapping, Sequence
 
+from t4_e2e_devkit.common.artifact_io import write_json_atomic
 from t4_e2e_devkit.evaluation.open_loop import OpenLoopMetrics
 from t4_e2e_devkit.evaluation.report import aggregate_evaluation
 
@@ -64,22 +63,7 @@ def record_path(directory: str | Path, token: str) -> Path:
 def write_json(path: str | Path, value: Mapping[str, Any]) -> Path:
     """Write JSON atomically so an interrupted worker cannot fake completion."""
 
-    output = Path(path)
-    output.parent.mkdir(parents=True, exist_ok=True)
-    descriptor, temporary = tempfile.mkstemp(prefix=f".{output.name}.", dir=output.parent)
-    try:
-        with os.fdopen(descriptor, "w", encoding="utf-8") as stream:
-            json.dump(value, stream, indent=2, sort_keys=True)
-            stream.write("\n")
-            stream.flush()
-            os.fsync(stream.fileno())
-        os.replace(temporary, output)
-    finally:
-        try:
-            Path(temporary).unlink()
-        except FileNotFoundError:
-            pass
-    return output
+    return write_json_atomic(path, value)
 
 
 def read_record(

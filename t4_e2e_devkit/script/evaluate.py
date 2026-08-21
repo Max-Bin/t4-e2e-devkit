@@ -3,7 +3,6 @@
 from __future__ import annotations
 
 import argparse
-import hashlib
 import json
 import logging
 from pathlib import Path
@@ -29,6 +28,7 @@ from t4_e2e_devkit.evaluation.distributed import WorkerManifest
 from t4_e2e_devkit.evaluation.executor import rank_indices
 from t4_e2e_devkit.evaluation.navsim_score import resolve_navsim_metric_names
 from t4_e2e_devkit.evaluation.worker_pool import WorkerPool, WorkerResult, WorkerTask
+from t4_e2e_devkit.script.utils import file_digest, load_agent_checkpoint
 
 logger = logging.getLogger(__name__)
 FAMILIES = ("open_loop", "pdm")
@@ -100,7 +100,7 @@ def evaluate_data_list(
     rank_indices(len(selected), rank, world_size)
 
     resolved_reader_config = dict(reader_config or {})
-    checkpoint_digest = _file_digest(checkpoint_path)
+    checkpoint_digest = file_digest(checkpoint_path)
     data_digest = fingerprint(list(selected.rows))
 
     output = Path(output_dir)
@@ -312,7 +312,7 @@ def _evaluate_one(
     agent = build_agent(agent_name, **dict(agent_params))
     agent.initialize()
     if checkpoint_path:
-        _load_checkpoint(agent, checkpoint_path)
+        load_agent_checkpoint(agent, checkpoint_path)
     active_device = device or ("cuda" if backend == "gpu" else "cpu")
     agent.to(torch.device(active_device))
     builder = T4WindowBuilder(
@@ -380,25 +380,6 @@ def _evaluate_one(
         return values
     finally:
         builder.close()
-
-
-def _load_checkpoint(agent: Any, path: str) -> None:
-    import torch
-
-    checkpoint = torch.load(path, map_location="cpu", weights_only=False)
-    state = checkpoint.get("state_dict", checkpoint)
-    state = {str(key).removeprefix("agent."): value for key, value in state.items()}
-    agent.load_state_dict(state, strict=False)
-
-
-def _file_digest(path: str | Path | None) -> str | None:
-    if path is None:
-        return None
-    digest = hashlib.sha256()
-    with Path(path).open("rb") as stream:
-        for chunk in iter(lambda: stream.read(1024 * 1024), b""):
-            digest.update(chunk)
-    return digest.hexdigest()
 
 
 def _resolve_backend(backend: str) -> str:

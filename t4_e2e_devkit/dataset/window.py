@@ -60,20 +60,13 @@ from t4_e2e_devkit.dataset.scene import (
     T4SceneReader,
     _bridge_stationary_boxes,
     _transform_agent_boxes_to_center,
+    as_config_bool,
     build_ego_status,
     global_to_ego,
 )
 from t4_e2e_devkit.dataset.scene_tags import T4SceneTag, T4SceneTagIndex
 
 T4_FRAME_DT_S = 1.0 / T4_FRAME_RATE_HZ
-
-
-def _as_bool(value: Any) -> bool:
-    """Interpret config booleans without treating ``"false"`` as true."""
-
-    if isinstance(value, str):
-        return value.strip().lower() in {"1", "true", "yes", "on"}
-    return bool(value)
 
 
 class WindowError(ValueError):
@@ -155,12 +148,12 @@ class T4WindowBuilder:
             )
         config.setdefault("t4_image_size_hw", list(T4_DEFAULT_IMAGE_SIZE_HW))
         self.reader_config = config
-        self._include_history_annotations = _as_bool(
+        self._include_history_annotations = as_config_bool(
             config.get("t4_include_history_annotations", False)
         )
         self.route_metadata: Optional[T4RouteMetadata] = load_t4_route(
             self.scene_dir,
-            strict=_as_bool(config.get("t4_route_required", False)),
+            strict=as_config_bool(config.get("t4_route_required", False)),
         )
         tags_root = config.get("t4_scene_tags_root")
         self.scene_tag_index: Optional[T4SceneTagIndex] = None
@@ -168,19 +161,19 @@ class T4WindowBuilder:
         if tags_root not in (None, "", "null", "None"):
             self.scene_tag_index = T4SceneTagIndex.cached(
                 tags_root,
-                include_debug=_as_bool(config.get("t4_scene_tags_include_debug", False)),
-                strict=_as_bool(config.get("t4_scene_tags_strict", True)),
+                include_debug=as_config_bool(config.get("t4_scene_tags_include_debug", False)),
+                strict=as_config_bool(config.get("t4_scene_tags_strict", True)),
             )
             self.scene_tags = self.scene_tag_index.tags_for_scene(self.scene_dir)
         self.map_api: Optional[T4MapAPI] = None
-        if _as_bool(config.get("t4_attach_map_ids", False)):
+        if as_config_bool(config.get("t4_attach_map_ids", False)):
             route_lane_ids = (
                 self.route_metadata.route_lane_ids if self.route_metadata is not None else ()
             )
             self.map_api = T4MapAPI.from_scene(
                 self.scene_dir,
                 config.get("t4_maps_root"),
-                strict=_as_bool(config.get("t4_map_required", False)),
+                strict=as_config_bool(config.get("t4_map_required", False)),
                 route_lane_ids=route_lane_ids,
             )
         self.reader = T4SceneReader(

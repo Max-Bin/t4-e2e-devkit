@@ -311,7 +311,13 @@ def final_displacement_error(
         )
     except ValueError:
         return None
-    interval = float(prediction.trajectory_sampling.interval_length)
+    # TrajectorySampling accepts num_poses + time_horizon and derives the
+    # interval, so a plan built that way carries None until __post_init__ fills
+    # it; a plan with neither cannot say where its poses are in time.
+    sampling = prediction.trajectory_sampling
+    if sampling.interval_length is None:
+        return None
+    interval = float(sampling.interval_length)
     index = min(len(prediction), max(1, int(round(horizon_seconds / interval)))) - 1
     return float(np.linalg.norm(prediction.poses[index, :2] - ground_truth.poses[index, :2]))
 
@@ -793,13 +799,16 @@ class FFmpegVideoWriter:
                 f"frame size changed from {self._size} to {(width, height)}; "
                 "every frame of one video must have the size of the first"
             )
+        if self._process.stdin is None:  # pragma: no cover - defensive
+            raise RuntimeError(f"the ffmpeg pipe for {self.path} is not open")
         self._process.stdin.write(frame.tobytes())
 
     def close(self) -> None:
         """Finish the encode.  Safe to call when nothing was written."""
         if self._process is None:
             return
-        self._process.stdin.close()
+        if self._process.stdin is not None:
+            self._process.stdin.close()
         returncode = self._process.wait()
         self._process = None
         if returncode != 0:

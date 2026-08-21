@@ -9,6 +9,8 @@ import os
 from pathlib import Path
 from typing import Any, Mapping, Optional
 
+from t4_e2e_devkit.common.artifact_io import read_mapping
+
 
 class ResultsDashboard:
     """Build a dependency-free HTML view of aggregate and per-row results."""
@@ -21,8 +23,8 @@ class ResultsDashboard:
         self.results_dir.mkdir(parents=True, exist_ok=True)
         output = Path(output_path) if output_path is not None else self.results_dir / "index.html"
         output.parent.mkdir(parents=True, exist_ok=True)
-        aggregate = _read_mapping(self.results_dir / "aggregate.json")
-        run = _read_mapping(self.results_dir / "run.json")
+        aggregate = read_mapping(self.results_dir / "aggregate.json")
+        run = read_mapping(self.results_dir / "run.json")
         tables = _read_tables(self.results_dir)
         cards = _cards(aggregate)
         table_data = json.dumps(tables, ensure_ascii=True).replace("<", "\\u003c")
@@ -100,14 +102,6 @@ def write_results_dashboard(
     return ResultsDashboard(results_dir, title=title).build(output_path)
 
 
-def _read_mapping(path: Path) -> Mapping[str, Any]:
-    try:
-        value = json.loads(path.read_text(encoding="utf-8"))
-    except (OSError, json.JSONDecodeError):
-        return {}
-    return value if isinstance(value, Mapping) else {}
-
-
 def _read_tables(directory: Path) -> dict[str, list[dict[str, Any]]]:
     tables: dict[str, list[dict[str, Any]]] = {}
     for path in sorted(directory.glob("*.csv")):
@@ -166,7 +160,7 @@ def _format(value: Any) -> str:
 
 def _summarize(path: Path) -> tuple[str, str]:
     if path.suffix.lower() == ".json":
-        value = _read_mapping(path)
+        value = read_mapping(path)
         return "json", ", ".join(str(key) for key in list(value)[:4]) or "empty"
     if path.suffix.lower() == ".csv":
         try:

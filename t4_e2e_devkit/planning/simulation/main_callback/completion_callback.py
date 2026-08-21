@@ -8,6 +8,8 @@ import tempfile
 from pathlib import Path
 from typing import Any, Mapping, Optional
 
+from t4_e2e_devkit.common.artifact_io import portable_value
+
 from .abstract_main_callback import AbstractMainCallback
 
 
@@ -26,8 +28,8 @@ class CompletionCallback(AbstractMainCallback):
             "succeeded": _succeeded(report),
         }
         if isinstance(report, Mapping):
-            payload["summary"] = _portable(report)
-        payload.update({str(key): _portable(value) for key, value in kwargs.items()})
+            payload["summary"] = portable_value(report)
+        payload.update({str(key): portable_value(value) for key, value in kwargs.items()})
         _atomic_json(self.path, payload)
 
 
@@ -37,20 +39,6 @@ def _succeeded(report: Any) -> bool:
     if isinstance(report, Mapping):
         return bool(report.get("succeeded", True))
     return bool(getattr(report, "succeeded", True))
-
-
-def _portable(value: Any) -> Any:
-    if value is None or isinstance(value, (str, bool, int, float)):
-        return value
-    if isinstance(value, Mapping):
-        return {str(key): _portable(item) for key, item in value.items()}
-    if isinstance(value, (list, tuple)):
-        return [_portable(item) for item in value]
-    if hasattr(value, "tolist"):
-        return _portable(value.tolist())
-    if hasattr(value, "as_dict"):
-        return _portable(value.as_dict())
-    return str(value)
 
 
 def _atomic_json(path: Path, value: Mapping[str, Any]) -> None:

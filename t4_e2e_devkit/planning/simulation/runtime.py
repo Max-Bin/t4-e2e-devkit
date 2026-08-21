@@ -17,6 +17,7 @@ from typing import Any, Deque, Iterable, Mapping, Optional, Protocol, Sequence
 import numpy as np
 
 from t4_e2e_devkit.common.actor_state.state_representation import TimePoint
+from t4_e2e_devkit.common.artifact_io import portable_value
 from t4_e2e_devkit.planning.simulation.planner.abstract_planner import (
     PlannerInitialization,
     PlannerInput,
@@ -211,20 +212,20 @@ class SimulationHistory:
 
     def as_dict(self) -> dict[str, Any]:
         return {
-            "mission_goal": _portable_value(self.mission_goal),
+            "mission_goal": portable_value(self.mission_goal),
             "samples": [
                 {
                     "iteration": {
                         "index": sample.iteration.index,
                         "time_us": sample.iteration.time_us,
                     },
-                    "ego_state": _portable_value(sample.ego_state),
-                    "observation": _portable_value(sample.observation),
-                    "trajectory": _portable_value(sample.trajectory),
+                    "ego_state": portable_value(sample.ego_state),
+                    "observation": portable_value(sample.observation),
+                    "trajectory": portable_value(sample.trajectory),
                     "planner_report": (
                         None if sample.planner_report is None else sample.planner_report.as_dict()
                     ),
-                    "traffic_light_status": _portable_value(sample.traffic_light_status),
+                    "traffic_light_status": portable_value(sample.traffic_light_status),
                 }
                 for sample in self._samples
             ],
@@ -762,22 +763,6 @@ def _call_hook(
     if function is None:
         return
     function(*args)
-
-
-def _portable_value(value: Any) -> Any:
-    if value is None or isinstance(value, (str, bool, int, float)):
-        return value
-    if isinstance(value, np.ndarray):
-        return value.tolist()
-    if isinstance(value, Mapping):
-        return {str(key): _portable_value(item) for key, item in value.items()}
-    if isinstance(value, (list, tuple)):
-        return [_portable_value(item) for item in value]
-    if hasattr(value, "as_dict"):
-        return _portable_value(value.as_dict())
-    if hasattr(value, "__dict__"):
-        return _portable_value(vars(value))
-    return str(value)
 
 
 __all__ = [

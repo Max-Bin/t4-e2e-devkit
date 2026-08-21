@@ -44,7 +44,7 @@ class MetricContext:
         keeping the cache key independent of Python object identities.
         """
         payload = {
-            "metadata": _jsonable(dict(self.metadata)),
+            "metadata": _fingerprint_value(dict(self.metadata)),
             "prediction": _trajectory_signature(self.prediction),
             "previous_prediction": _trajectory_signature(self.previous_prediction),
             "pdm_version": self.pdm_version,
@@ -423,20 +423,30 @@ def _array_signature(value: Any) -> Optional[dict[str, Any]]:
     }
 
 
-def _jsonable(value: Any) -> Any:
-    """Convert common config/dataclass values to deterministic JSON data."""
+def _fingerprint_value(value: Any) -> Any:
+    """Normalize a config value for fingerprinting -- not for serialization.
+
+    Deliberately not ``common.artifact_io.json_value``: an array becomes a
+    *signature* rather than its elements, because a cache key must not grow with
+    the data it describes, and an unknown object becomes ``str(value)`` so a new
+    config type changes the key instead of raising.  It shared the name
+    ``_jsonable`` with two strict serializers, which is how a reader ends up
+    expecting values back.
+    """
     if value is None or isinstance(value, (str, bool, int, float)):
         return value
     if isinstance(value, np.ndarray):
         return _array_signature(value)
     if isinstance(value, Mapping):
-        return {str(key): _jsonable(item) for key, item in value.items()}
+        return {str(key): _fingerprint_value(item) for key, item in value.items()}
     if isinstance(value, (list, tuple)):
-        return [_jsonable(item) for item in value]
+        return [_fingerprint_value(item) for item in value]
     if hasattr(value, "__dataclass_fields__"):
-        return _jsonable({name: getattr(value, name) for name in value.__dataclass_fields__})
+        return _fingerprint_value(
+            {name: getattr(value, name) for name in value.__dataclass_fields__}
+        )
     if hasattr(value, "__dict__"):
-        return _jsonable(vars(value))
+        return _fingerprint_value(vars(value))
     return str(value)
 
 
@@ -474,7 +484,7 @@ def _scene_signature(scene: Optional[T4Scene]) -> Any:
         annotation_signature = {
             "boxes": _array_signature(annotations.boxes),
             "labels": _array_signature(annotations.labels),
-            "track_tokens": _jsonable(annotations.track_tokens),
+            "track_tokens": _fingerprint_value(annotations.track_tokens),
         }
     return {
         "token": scene.scene_metadata.token,
@@ -502,7 +512,7 @@ def _closed_loop_signature(result: Optional[T4ClosedLoopResult]) -> Any:
         "poses": _array_signature(result.realized_poses_world),
         "dt_s": float(result.dt_s),
         "goal": _array_signature(result.goal_pose_world),
-        "collision_steps": _jsonable(result.collision_steps),
+        "collision_steps": _fingerprint_value(result.collision_steps),
         "timeout": result.timeout,
         "termination_reason": result.termination_reason,
     }

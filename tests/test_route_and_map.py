@@ -5,6 +5,7 @@ from __future__ import annotations
 import json
 
 import numpy as np
+import pytest
 
 from t4_e2e_devkit.common.dataclasses import MapObjectIds
 from t4_e2e_devkit.common.t4_map import T4MapAPI
@@ -235,3 +236,48 @@ def test_map_api_exposes_connectors_roadblocks_and_lane_relations(tmp_path):
     assert [obj.id for obj in api.get_roadblocks()] == ["200"]
     assert [obj.id for obj in api.get_intersections()] == ["300"]
     assert api.get_map_object("100", "lane_connector").id == "100"
+
+
+@pytest.mark.data
+def test_matching_a_lane_layer_against_lanelets(t4_root):
+    """Lanelets carry ``polygon``, not ``geometry``.
+
+    Reading ``geometry`` off a candidate raised AttributeError for every match
+    against lanelets -- the most natural thing to match a lane tensor against --
+    and no test covered it because the map paths in the suite match areas and
+    line strings. A type checker found it; this pins it.
+    """
+    import numpy as np
+
+    from t4_e2e_devkit.common.t4_map import T4MapAPI, resolve_t4_map_path
+
+    scene = next(
+        (
+            candidate
+            for candidate in sorted(t4_root.glob("x2_dev/*/*/*"))
+            if resolve_t4_map_path(candidate) is not None
+        ),
+        None,
+    )
+    if scene is None:
+        pytest.skip("no scene with a resolvable Lanelet2 map")
+
+    api = T4MapAPI(resolve_t4_map_path(scene))
+    lane = api.lanes[0]
+    centerline = np.asarray(lane.centerline, dtype=np.float64)[:, :2]
+    origin = centerline[0]
+    # The tensor is in the centre frame, so hand it the lanelet in local
+    # coordinates of a pose sitting on its own first point, heading along +x.
+    # The whole centerline, not a slice: the score is a symmetric Hausdorff
+    # distance, so a partial row is far from its own source by construction.
+    segments = (centerline - origin)[None, :, :]
+    pose = [float(origin[0]), float(origin[1]), 1.0, 0.0]
+
+    matches = api.match_local_geometries_detailed(
+        segments, center_pose=pose, layer="lanes", object_types=["lane"]
+    )
+    assert len(matches) == 1
+    match = matches[0]
+    assert match.source_object_id == lane.id, "the lanelet fed in should match itself"
+    assert match.match_distance_m is not None and match.match_distance_m < 1.0
+    assert lane.id in match.candidate_ids

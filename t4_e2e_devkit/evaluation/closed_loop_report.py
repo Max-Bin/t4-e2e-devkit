@@ -4,10 +4,10 @@ from __future__ import annotations
 
 import csv
 import html
-import json
 from pathlib import Path
 from typing import Any, Iterable, Mapping, Optional
 
+from t4_e2e_devkit.common.artifact_io import read_csv_rows, read_mapping
 from t4_e2e_devkit.evaluation.closed_loop import ClosedLoopMetrics
 
 TRACE_COLUMNS = (
@@ -89,10 +89,10 @@ def write_static_html_report(
 
     directory = Path(report_dir)
     destination = Path(output_path) if output_path is not None else directory / "report.html"
-    aggregate = _read_json(directory / "aggregate.json", default={})
-    run = _read_json(directory / "run.json", default={})
-    failures = _read_csv(directory / "failures.csv")
-    rollouts = _read_csv(directory / "closed_loop.csv")
+    aggregate = read_mapping(directory / "aggregate.json", default={})
+    run = read_mapping(directory / "run.json", default={})
+    failures = read_csv_rows(directory / "failures.csv")
+    rollouts = read_csv_rows(directory / "closed_loop.csv")
     shown_rollouts = rollouts[:500]
 
     sections = [
@@ -121,22 +121,6 @@ def write_static_html_report(
     destination.parent.mkdir(parents=True, exist_ok=True)
     destination.write_text("\n".join(sections) + "\n", encoding="utf-8")
     return destination
-
-
-def _read_json(path: Path, *, default: Mapping[str, Any]) -> Mapping[str, Any]:
-    try:
-        value = json.loads(path.read_text(encoding="utf-8"))
-    except (OSError, json.JSONDecodeError):
-        return default
-    return value if isinstance(value, Mapping) else default
-
-
-def _read_csv(path: Path) -> list[dict[str, str]]:
-    try:
-        with path.open(newline="", encoding="utf-8") as handle:
-            return list(csv.DictReader(handle))
-    except OSError:
-        return []
 
 
 def _run_summary(run: Mapping[str, Any]) -> str:

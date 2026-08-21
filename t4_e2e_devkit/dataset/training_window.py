@@ -217,8 +217,16 @@ class _LazyLidarFrames:
             raise ValueError("T4 metadata has an invalid LiDAR frame range")
 
     def _open(self) -> T4LidarPackReader:
-        """Open the pack and check the scene's range against it, once."""
+        """Open the pack and check the scene's range against it, once.
 
+        :raises ValueError: when the scene declares no pack.  ``frame`` returns
+            ``None`` before reaching here, so this states the invariant rather
+            than handling a case -- and a future caller that opens directly gets
+            a sentence instead of a TypeError inside shapely.
+        """
+
+        if self._path is None:
+            raise ValueError("this scene declares no LiDAR pack; there is nothing to open")
         if self._reader is None:
             reader = T4LidarPackReader(self._path)
             low = self._first + self._offset

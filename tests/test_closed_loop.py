@@ -309,7 +309,9 @@ def test_closed_loop_real_t4_wide_camera_smoke():
         result.close()
     assert len(rollout.source_frames) == 3
     assert len(agent.inputs) == 2
-    assert all(frame.lidar is None for frame in agent.inputs[0].lidars)
+    # The agent input's ``lidars`` are the sweeps themselves, one per history
+    # step -- not frames -- and this run asked for cameras only.
+    assert all(sweep is None for sweep in agent.inputs[0].lidars)
 
 
 def test_map_rebase_uses_recorded_frame_as_the_transform_origin():

@@ -11,6 +11,8 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
 
+from t4_e2e_devkit.common.artifact_io import portable_value
+
 
 @dataclass
 class SimulationLog:
@@ -38,9 +40,9 @@ class SimulationLog:
             if log_type == "json":
                 payload = {
                     "format": "t4.simulation-log.v1",
-                    "scenario": _portable(self.scenario),
-                    "planner": _portable(self.planner),
-                    "history": _portable(self.simulation_history),
+                    "scenario": portable_value(self.scenario),
+                    "planner": portable_value(self.planner),
+                    "history": portable_value(self.simulation_history),
                 }
                 with lzma.open(temporary, "wt", encoding="utf-8") as stream:
                     json.dump(payload, stream, indent=2, sort_keys=True)
@@ -89,12 +91,6 @@ class SimulationLog:
 
         history = SimulationHistory.from_dict(value.get("history", {}))
         return cls(Path(file_path), value.get("scenario"), value.get("planner"), history)
-
-
-def _portable(value: Any) -> Any:
-    from t4_e2e_devkit.planning.simulation.runtime import _portable_value
-
-    return _portable_value(value)
 
 
 __all__ = ["SimulationLog"]

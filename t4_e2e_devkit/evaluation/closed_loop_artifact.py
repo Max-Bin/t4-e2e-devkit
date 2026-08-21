@@ -15,6 +15,7 @@ from typing import Any, Mapping, Optional
 
 import numpy as np
 
+from t4_e2e_devkit.common.artifact_io import write_json_atomic
 from t4_e2e_devkit.common.dataclasses import Trajectory
 from t4_e2e_devkit.evaluation.closed_loop import (
     ClosedLoopMetrics,
@@ -310,15 +311,8 @@ def _array_or_none(value: Optional[np.ndarray]) -> Optional[list[float]]:
 
 
 def _atomic_write_json(path: str | Path, payload: Mapping[str, Any]) -> Path:
-    destination = Path(path)
-    destination.parent.mkdir(parents=True, exist_ok=True)
-    temporary = destination.with_name(f".{destination.name}.tmp")
-    temporary.write_text(
-        json.dumps(payload, indent=2, sort_keys=True, allow_nan=False) + "\n",
-        encoding="utf-8",
-    )
-    temporary.replace(destination)
-    return destination
+    """An artifact write: a non-finite number here is a bug, not a value."""
+    return write_json_atomic(path, payload, allow_nan=False)
 
 
 __all__ = [

@@ -8,11 +8,12 @@ do not require a tracking service or a browser extension.
 
 from __future__ import annotations
 
-import csv
 import html
 import json
 from pathlib import Path
-from typing import Any, Iterable, Mapping, Optional
+from typing import Any, Iterable, Optional
+
+from t4_e2e_devkit.common.artifact_io import read_csv_rows, read_mapping
 
 
 class ExperimentDashboard:
@@ -137,32 +138,16 @@ def write_experiment_dashboard(
 
 
 def _load_experiment(directory: Path, index: int) -> dict[str, Any]:
-    run = _read_json(directory / "run.json")
-    aggregate = _read_json(directory / "aggregate.json")
+    run = read_mapping(directory / "run.json")
+    aggregate = read_mapping(directory / "aggregate.json")
     name = str(run.get("experiment_name") or run.get("agent") or directory.name or f"run-{index}")
     rows: list[dict[str, Any]] = []
     for path in sorted(directory.glob("*.csv")):
         if path.name.endswith("_ticks.csv") or path.name == "failures.csv":
             continue
-        rows.extend({"source": path.stem, **row} for row in _read_csv(path))
-    trace = _read_csv(directory / "closed_loop_ticks.csv")
+        rows.extend({"source": path.stem, **row} for row in read_csv_rows(path))
+    trace = read_csv_rows(directory / "closed_loop_ticks.csv")
     return {"name": name, "run": run, "aggregate": aggregate, "rows": rows, "trace": trace}
-
-
-def _read_json(path: Path) -> Mapping[str, Any]:
-    try:
-        value = json.loads(path.read_text(encoding="utf-8"))
-    except (OSError, json.JSONDecodeError):
-        return {}
-    return value if isinstance(value, Mapping) else {}
-
-
-def _read_csv(path: Path) -> list[dict[str, str]]:
-    try:
-        with path.open(newline="", encoding="utf-8") as stream:
-            return list(csv.DictReader(stream))
-    except OSError:
-        return []
 
 
 __all__ = ["ExperimentDashboard", "write_experiment_dashboard"]

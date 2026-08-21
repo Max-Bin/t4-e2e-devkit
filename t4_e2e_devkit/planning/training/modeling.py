@@ -82,16 +82,17 @@ class FeatureMapping(AbstractModelFeature):
         return cls(output)
 
     def serialize(self) -> dict[str, Any]:
-        return {key: _portable(value) for key, value in self.values.items()}
+        return {key: _tensor_to_python(value) for key, value in self.values.items()}
 
 
-def _portable(value: Any) -> Any:
+def _tensor_to_python(value: Any) -> Any:
+    """Detach tensors into plain Python, leaving anything else untouched."""
     if isinstance(value, torch.Tensor):
         return value.detach().cpu().numpy().tolist()
     if isinstance(value, Mapping):
-        return {str(key): _portable(item) for key, item in value.items()}
+        return {str(key): _tensor_to_python(item) for key, item in value.items()}
     if isinstance(value, (list, tuple)):
-        return [_portable(item) for item in value]
+        return [_tensor_to_python(item) for item in value]
     return value
 
 

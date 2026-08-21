@@ -3,12 +3,11 @@
 from __future__ import annotations
 
 import json
-import os
-import tempfile
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any, Iterable, Optional, Sequence
 
+from t4_e2e_devkit.common.artifact_io import portable_value, write_json_atomic
 from t4_e2e_devkit.evaluation.worker_pool import (
     WorkerPool,
     WorkerResult,
@@ -58,7 +57,7 @@ class WorkerManifest:
             "results": [
                 {
                     "task_id": result.task_id,
-                    "value": _portable(result.value),
+                    "value": portable_value(result.value),
                     "rank": result.rank,
                     "worker_index": result.worker_index,
                     "duration_s": result.duration_s,
@@ -69,22 +68,8 @@ class WorkerManifest:
         }
 
     def write(self, path: str | Path) -> Path:
-        output = Path(path)
-        output.parent.mkdir(parents=True, exist_ok=True)
-        descriptor, temporary = tempfile.mkstemp(prefix=f".{output.name}.", dir=str(output.parent))
-        try:
-            with os.fdopen(descriptor, "w", encoding="utf-8") as stream:
-                json.dump(self.as_dict(), stream, indent=2, sort_keys=True)
-                stream.write("\n")
-                stream.flush()
-                os.fsync(stream.fileno())
-            os.replace(temporary, output)
-        finally:
-            try:
-                Path(temporary).unlink()
-            except FileNotFoundError:
-                pass
-        return output
+        """Write the manifest where a merger will look for it."""
+        return write_json_atomic(path, self.as_dict())
 
     @classmethod
     def read(cls, path: str | Path) -> "WorkerManifest":
@@ -123,7 +108,20 @@ class WorkerManifest:
 
 
 class DistributedExecutor:
-    """Execute this rank's partition and optionally persist a manifest."""
+    """Execute this rank's partition and optionally persist a manifest.
+
+    Resume here is **manifest-level**: one file per rank, holding the results of
+    the tasks that succeeded, and a rerun skips those.  It is not the resume the
+    scenario entry points use -- ``t4e2e evaluate`` resumes from per-scenario
+    record files keyed by a config fingerprint, which survives a lost manifest,
+    works per window, and refuses records produced under a different config.
+    Reach for this one when the work is a task list rather than a scenario
+    sweep; reach for the records when a window is the unit of progress.
+
+    A manifest from another run or another rank is refused rather than merged:
+    the run id and rank in the file are the only evidence that the results being
+    skipped are this rank's own.
+    """
 
     def __init__(self, config: DistributedRunConfig) -> None:
         self.config = config
@@ -207,20 +205,6 @@ class DistributedExecutor:
         )
 
 
-def _portable(value: Any) -> Any:
-    if value is None or isinstance(value, (str, bool, int, float)):
-        return value
-    if isinstance(value, dict):
-        return {str(key): _portable(item) for key, item in value.items()}
-    if isinstance(value, (list, tuple)):
-        return [_portable(item) for item in value]
-    if hasattr(value, "tolist"):
-        return value.tolist()
-    if hasattr(value, "as_dict"):
-        return _portable(value.as_dict())
-    return str(value)
-
-
 def merge_worker_manifests(
     paths: Sequence[str | Path],
     *,
@@ -255,7 +239,7 @@ def merge_worker_manifests(
             "results": [
                 {
                     "task_id": result.task_id,
-                    "value": _portable(result.value),
+                    "value": portable_value(result.value),
                     "rank": result.rank,
                     "worker_index": result.worker_index,
                     "duration_s": result.duration_s,

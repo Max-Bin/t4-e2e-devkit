@@ -70,7 +70,7 @@ def compute_replay_geometry(
     if ttc_step_s <= 0.0:
         raise ValueError("ttc_step_s must be positive")
 
-    recorded_pose = _scene_pose(scene)
+    recorded_pose = scene_center_pose(scene)
     ego_shape = scene.current_frame.ego_status.ego_shape
     ego_polygon = _ego_polygon(state, ego_shape)
 
@@ -128,12 +128,22 @@ def compute_replay_geometry(
     return ReplayGeometry(**agent_values, **map_values)
 
 
-def _scene_pose(scene: T4Scene) -> np.ndarray:
+def scene_center_pose(scene: T4Scene) -> np.ndarray:
+    """The window's global centre pose as ``(x, y, heading)``.
+
+    Every consumer of a global frame in this subsystem needs this and three of
+    them had their own copy, each with its own error message.  Kept as one so a
+    scene that cannot supply a global frame fails the same way everywhere.
+
+    :param scene: the window.
+    :return: ``[3]`` of ``(x, y, heading)`` in the global frame.
+    :raises ValueError: when the window carries no usable ``global_center_pose``.
+    """
     values = scene.scene_metadata.global_center_pose
     if values is None:
         raise ValueError(
             f"scene {scene.scene_metadata.token} has no global_center_pose; "
-            "closed-loop geometry needs a global frame"
+            "a global frame is needed to place this window in the world"
         )
     pose = np.asarray(values, dtype=np.float64).reshape(-1)
     if pose.shape != (4,):
@@ -163,7 +173,7 @@ def _ego_polygon(state: Any, ego_shape: Any):
     center_x = float(state.x) + ego_shape.rear_axle_to_center * math.cos(float(state.heading))
     center_y = float(state.y) + ego_shape.rear_axle_to_center * math.sin(float(state.heading))
     return _polygon(
-        _box_corners(
+        box_corners(
             center_x,
             center_y,
             float(state.heading),
@@ -175,7 +185,7 @@ def _ego_polygon(state: Any, ego_shape: Any):
 
 def _box_polygon(box: np.ndarray):
     return _polygon(
-        _box_corners(
+        box_corners(
             float(box[T4BoxIndex.X]),
             float(box[T4BoxIndex.Y]),
             float(box[T4BoxIndex.HEADING]),
@@ -234,7 +244,7 @@ def _time_to_collision(
         ego_center_x = ego_x + ego_shape.rear_axle_to_center * math.cos(float(state.heading))
         ego_center_y = ego_y + ego_shape.rear_axle_to_center * math.sin(float(state.heading))
         ego_polygon = _polygon(
-            _box_corners(
+            box_corners(
                 ego_center_x,
                 ego_center_y,
                 float(state.heading),
@@ -305,7 +315,7 @@ def _map_lane_polygons(rows: np.ndarray, recorded_pose: np.ndarray) -> list:
         left = center + row[valid, 4:6]
         right = center + row[valid, 6:8]
         ring = np.concatenate((left, right[::-1]), axis=0)
-        polygon = _valid_polygon(_local_to_world(ring, recorded_pose))
+        polygon = _valid_polygon(transform_points(ring, recorded_pose))
         if polygon is not None:
             polygons.append(polygon)
     return polygons
@@ -320,7 +330,7 @@ def _map_ring_polygons(rows: np.ndarray, recorded_pose: np.ndarray) -> list:
         valid = np.linalg.norm(row[:, :2], axis=1) > 1.0e-3
         if valid.sum() < 3:
             continue
-        polygon = _valid_polygon(_local_to_world(row[valid, :2], recorded_pose))
+        polygon = _valid_polygon(transform_points(row[valid, :2], recorded_pose))
         if polygon is not None:
             polygons.append(polygon)
     return polygons
@@ -342,14 +352,20 @@ def _map_border_lines(rows: np.ndarray, recorded_pose: np.ndarray) -> list:
         for start, end in zip(starts, ends, strict=True):
             if end - start < 2:
                 continue
-            points = _local_to_world(row[indices[start:end], :2], recorded_pose)
+            points = transform_points(row[indices[start:end], :2], recorded_pose)
             line = _valid_line(points)
             if line is not None:
                 lines.append(line)
     return lines
 
 
-def _local_to_world(points: np.ndarray, origin: np.ndarray) -> np.ndarray:
+def transform_points(points: np.ndarray, origin: np.ndarray) -> np.ndarray:
+    """Place local ``(x, y)`` points in the frame ``origin`` describes.
+
+    :param points: ``[N, 2]`` in the origin's local frame.
+    :param origin: ``(x, y, heading)`` of that frame in the target frame.
+    :return: ``[N, 2]`` in the target frame.
+    """
     values = np.asarray(points, dtype=np.float64).reshape(-1, 2)
     c, s = math.cos(float(origin[2])), math.sin(float(origin[2]))
     return np.column_stack(
@@ -360,7 +376,36 @@ def _local_to_world(points: np.ndarray, origin: np.ndarray) -> np.ndarray:
     )
 
 
-def _box_corners(x: float, y: float, heading: float, length: float, width: float) -> np.ndarray:
+def transform_poses(poses: np.ndarray, origin: np.ndarray) -> np.ndarray:
+    """Place local ``(x, y, heading)`` poses in the frame ``origin`` describes.
+
+    The heading rotates with the frame, which is the only thing separating this
+    from :func:`transform_points` -- and the reason both existed twice.
+
+    :param poses: ``[N, 3]`` in the origin's local frame.
+    :param origin: ``(x, y, heading)`` of that frame in the target frame.
+    :return: ``[N, 3]`` in the target frame.
+    """
+    values = np.asarray(poses, dtype=np.float64).reshape(-1, 3)
+    origin = np.asarray(origin, dtype=np.float64).reshape(3)
+    c, s = math.cos(float(origin[2])), math.sin(float(origin[2]))
+    world = np.empty_like(values)
+    world[:, 0] = origin[0] + c * values[:, 0] - s * values[:, 1]
+    world[:, 1] = origin[1] + s * values[:, 0] + c * values[:, 1]
+    world[:, 2] = values[:, 2] + origin[2]
+    return world
+
+
+def box_corners(x: float, y: float, heading: float, length: float, width: float) -> np.ndarray:
+    """Oriented rectangle corners in counter-clockwise order.
+
+    :param x: centre x.
+    :param y: centre y.
+    :param heading: orientation in radians.
+    :param length: extent along the heading.
+    :param width: extent across it.
+    :return: ``[4, 2]`` corners.
+    """
     half_length = length / 2.0
     half_width = width / 2.0
     c, s = math.cos(heading), math.sin(heading)
@@ -408,4 +453,11 @@ def _point(point: np.ndarray):
     return Point(float(point[0]), float(point[1]))
 
 
-__all__ = ["ReplayGeometry", "compute_replay_geometry"]
+__all__ = [
+    "ReplayGeometry",
+    "box_corners",
+    "compute_replay_geometry",
+    "scene_center_pose",
+    "transform_points",
+    "transform_poses",
+]

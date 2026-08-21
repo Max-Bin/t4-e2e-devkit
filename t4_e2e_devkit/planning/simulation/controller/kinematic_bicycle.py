@@ -6,6 +6,8 @@ from typing import Any, Optional
 
 import numpy as np
 
+from t4_e2e_devkit.planning.simulation.closed_loop_geometry import transform_poses
+
 
 class KinematicBicycleController:
     """Use a tracker to realize a local pose trajectory."""
@@ -67,12 +69,14 @@ def _kinematic_state_type():
 
 
 def _local_to_world(values: np.ndarray, state: Any) -> np.ndarray:
+    """The shared pose transform, from a state object and keeping extra columns.
+
+    A trajectory here may carry columns past ``(x, y, heading)`` -- velocity,
+    for instance -- and those pass through untouched.
+    """
     if values.ndim != 2 or values.shape[1] < 3:
         raise ValueError("trajectory must have shape [N, 3]")
-    cosine, sine = np.cos(state.heading), np.sin(state.heading)
-    result = values.copy()
-    x_local, y_local = values[:, 0], values[:, 1]
-    result[:, 0] = state.x + cosine * x_local - sine * y_local
-    result[:, 1] = state.y + sine * x_local + cosine * y_local
-    result[:, 2] = state.heading + values[:, 2]
+    origin = np.array([state.x, state.y, state.heading], dtype=np.float64)
+    result = values.astype(np.float64, copy=True)
+    result[:, :3] = transform_poses(values[:, :3], origin)
     return result
