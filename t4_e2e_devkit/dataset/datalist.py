@@ -90,9 +90,7 @@ class DataList:
         :return: the absolute path to that scene.
         """
         if not is_safe_scene_path(scene):
-            raise ValueError(
-                f"scene path {scene!r} is not a safe repository-relative scene path"
-            )
+            raise ValueError(f"scene path {scene!r} is not a safe repository-relative scene path")
         return self.root / Path(str(scene).replace("\\", "/"))
 
     def filtered(
@@ -165,8 +163,7 @@ class DataList:
             statuses=statuses,
         )
         accepted_relative = {
-            str(path.resolve().relative_to(self.root.resolve()))
-            for path in accepted
+            str(path.resolve().relative_to(self.root.resolve())) for path in accepted
         }
         rows = [row for row in self.rows if row[0] in accepted_relative]
         manifest = dict(self.manifest)
@@ -211,8 +208,7 @@ class DataList:
         head = json.dumps(manifest, indent=2)
         head = head[: head.rfind("}")].rstrip().rstrip(",")
         body = ",\n    ".join(json.dumps(r) for r in rows)
-        path.write_text(f'{head},\n  "rows": [\n    {body}\n  ]\n}}\n',
-                        encoding="utf-8")
+        path.write_text(f'{head},\n  "rows": [\n    {body}\n  ]\n}}\n', encoding="utf-8")
         return path
 
 
@@ -238,14 +234,12 @@ def load_data_list(path: str | Path, *, check_subtree: bool = True) -> DataList:
     declared = spec.get("format")
     if declared != DATA_LIST_FORMAT:
         raise ValueError(
-            f"{path}: unknown data-list format {declared!r}; expected "
-            f"{DATA_LIST_FORMAT!r}"
+            f"{path}: unknown data-list format {declared!r}; expected {DATA_LIST_FORMAT!r}"
         )
     version = spec.get("version")
     if version != DATA_LIST_VERSION:
         raise ValueError(
-            f"{path}: unsupported data-list version {version!r}; expected "
-            f"{DATA_LIST_VERSION}"
+            f"{path}: unsupported data-list version {version!r}; expected {DATA_LIST_VERSION}"
         )
 
     root = Path(spec.get("root", "."))
@@ -269,13 +263,7 @@ def load_data_list(path: str | Path, *, check_subtree: bool = True) -> DataList:
         raise ValueError(f"{path}: data list has no rows")
 
     if check_subtree:
-        offenders = sorted(
-            {
-                scene
-                for scene, _ in rows
-                if not is_e2e_scene_path(scene)
-            }
-        )
+        offenders = sorted({scene for scene, _ in rows if not is_e2e_scene_path(scene)})
         if offenders:
             raise ValueError(
                 f"{path}: {len(offenders)} scene(s) lie outside the annotation-free E2E "
@@ -303,7 +291,13 @@ def describe_data_list(data_list: DataList) -> str:
     if data_list.path is not None:
         lines.insert(0, f"path      : {data_list.path}")
 
-    for key in ("history_frames", "num_poses", "future_stride", "center_stride", "gt_future_frames"):
+    for key in (
+        "history_frames",
+        "num_poses",
+        "future_stride",
+        "center_stride",
+        "gt_future_frames",
+    ):
         if key in manifest:
             lines.append(f"{key:<10}: {manifest[key]}")
 
@@ -314,8 +308,14 @@ def describe_data_list(data_list: DataList) -> str:
     policy = manifest.get("filter")
     if isinstance(policy, Mapping):
         lines.append("filter    :")
-        for key in ("root", "keep_labels", "keep_collision_sources", "keep_stationary_reasons",
-                    "max_window_gap_frames", "require_cameras"):
+        for key in (
+            "root",
+            "keep_labels",
+            "keep_collision_sources",
+            "keep_stationary_reasons",
+            "max_window_gap_frames",
+            "require_cameras",
+        ):
             if key in policy and policy[key] is not None:
                 lines.append(f"  {key:<28} {policy[key]}")
         for key in sorted(policy):

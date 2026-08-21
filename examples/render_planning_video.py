@@ -24,7 +24,10 @@ def main() -> None:
     parser.add_argument("--data-list", required=True, type=Path)
     parser.add_argument("--scene", required=True, help="relative scene directory from the list")
     parser.add_argument(
-        "--manifest", action="append", default=[], metavar="LABEL=PATH",
+        "--manifest",
+        action="append",
+        default=[],
+        metavar="LABEL=PATH",
         help="prediction manifest to overlay, repeatable",
     )
     parser.add_argument("--out", required=True, type=Path, help="output .mp4 path")
@@ -42,8 +45,12 @@ def main() -> None:
     data_list = load_data_list(args.data_list)
     print(
         render_scene_video(
-            data_list, args.scene, args.out, manifests,
-            fps=args.fps, lidar=not args.no_lidar,
+            data_list,
+            args.scene,
+            args.out,
+            manifests,
+            fps=args.fps,
+            lidar=not args.no_lidar,
         )
     )
 
