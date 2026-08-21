@@ -28,6 +28,12 @@ METRIC_TO_REPORT = {
 REPORT_METRIC_KEYS = tuple(dict.fromkeys(METRIC_TO_REPORT.values()))
 
 
+def _metric_name_order(name: str) -> tuple[int, str]:
+    """Sort key putting the report's own metric order first, extras after it."""
+    order = list(METRIC_TO_REPORT)
+    return (order.index(name) if name in order else len(order), name)
+
+
 def _load_devkit(root: str | Path | None = None):
     if root is not None:
         import sys
@@ -301,7 +307,16 @@ def score_prediction_manifest(
         {
             "scorer": "pdm",
             "version": str(version).lower().removeprefix("navsim-"),
-            "metric_names": list(results[0].metric_names) if results else [],
+            # The UNION, not results[0]'s. A result omits extended_comfort when
+            # it had no previous plan (T4NavSimResult keeps it absent rather than
+            # faking a zero), and results[0] is the shard's first window -- the
+            # one window that structurally cannot have a predecessor. Reading the
+            # field off it therefore reported nine metrics on every run that
+            # computed ten, so the report understated what was aggregated.
+            "metric_names": sorted(
+                {name for result in results for name in result.metric_names},
+                key=_metric_name_order,
+            ),
             "backend": scorer.config.backend,
             "data_list_sha256": actual_hash,
             "prediction_manifest_sha256": devkit["file_sha256"](predictions_path),
