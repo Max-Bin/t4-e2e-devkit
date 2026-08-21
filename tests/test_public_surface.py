@@ -64,8 +64,11 @@ def test_all_and_the_lazy_table_agree():
 
 
 def test_an_unknown_attribute_is_an_attribute_error():
+    # Through a variable: bugbear rejects a bare attribute expression as useless
+    # (B018) and a getattr on a literal as pointless (B009), and this is neither.
+    missing = "NoSuchExport"
     with pytest.raises(AttributeError):
-        getattr(t4_e2e_devkit, "NoSuchExport")
+        getattr(t4_e2e_devkit, missing)
 
 
 def test_dir_lists_the_public_names():
