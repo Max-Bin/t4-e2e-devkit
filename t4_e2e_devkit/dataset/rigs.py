@@ -108,32 +108,45 @@ def readable_camera_names(scene_dir: str | Path) -> List[str]:
     return readable
 
 
+def split_camera_names(camera_names: Sequence[str] | str) -> List[str]:
+    """Tokenize a camera register as the config boundaries deliver it.
+
+    A register arrives as a Hydra list, as one comma-separated string, or as a
+    colon-separated one (Slurm treats commas as variable separators), and a
+    shell may pass a single colon-joined value even where argparse used
+    ``nargs="+"``.  All of those mean the same register, so all of them are
+    split here -- once, rather than in each entry point that accepts a register.
+
+    :param camera_names: the config value, already known not to be a sentinel.
+    :return: the tokens, stripped, empties dropped, order preserved.
+    """
+    if isinstance(camera_names, str):
+        values = camera_names.replace(":", ",").split(",")
+    else:
+        values = []
+        for value in camera_names:
+            values.extend(str(value).replace(":", ",").split(","))
+    return [value.strip() for value in values if value.strip()]
+
+
 def normalize_camera_names(
     camera_names: Sequence[str] | str | None,
 ) -> Optional[List[str]]:
     """Parse a camera register from a config value.
-
-    Accepts a list, or a comma/colon separated string so the same setting works as
-    a Hydra list and as a Slurm environment variable (Slurm treats commas as
-    variable separators, hence colons).
 
     :param camera_names: the config value.
     :return: the parsed list, or ``None`` for ``None``/``"auto"``.
     """
     if camera_names is None:
         return None
-    if isinstance(camera_names, str):
-        if camera_names.strip().lower() in ("auto", "", "null", "none"):
-            return None
-        values = camera_names.replace(":", ",").split(",")
-    else:
-        values = []
-        for value in camera_names:
-            # Be permissive at the CLI boundary: a shell may pass one
-            # colon-separated value even where argparse used nargs="+".
-            values.extend(str(value).replace(":", ",").split(","))
-    parsed = [value.strip() for value in values if value.strip()]
-    return parsed or None
+    if isinstance(camera_names, str) and camera_names.strip().lower() in (
+        "auto",
+        "",
+        "null",
+        "none",
+    ):
+        return None
+    return split_camera_names(camera_names) or None
 
 
 def profile_names() -> List[str]:

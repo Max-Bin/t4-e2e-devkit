@@ -32,6 +32,7 @@ from typing import Any, Dict, List, Mapping, Optional, Sequence, Tuple
 
 import numpy as np
 from t4_e2e_devkit.common.constants import T4_ALL_CAMERA_NAMES
+from t4_e2e_devkit.dataset.rigs import split_camera_names
 
 T4_FRAME_CACHE_VERSION = 1
 
@@ -58,16 +59,7 @@ def normalize_t4_camera_names(
             "register. Name a profile, or resolve one per scene with "
             "dataset.rigs.resolve_camera_names."
         )
-    elif isinstance(camera_names, str):
-        values = [value for value in camera_names.replace(":", ",").split(",")]
-    else:
-        values = []
-        for value in camera_names:
-            # Be permissive at the CLI boundary: a shell may pass one
-            # colon-separated value even when argparse used nargs="+".
-            values.extend(str(value).replace(":", ",").split(","))
-
-    names = [value.strip().upper() for value in values if value.strip()]
+    names = [value.upper() for value in split_camera_names(camera_names)]
     if not names:
         raise ValueError("T4 camera_names must contain at least one camera")
     if len(set(names)) != len(names):
@@ -221,9 +213,20 @@ def _as_list(value: Any) -> List[Any]:
     return list(value)
 
 
-def _as_bool(value: Any) -> bool:
+def as_config_bool(value: Any) -> bool:
+    """Interpret a config boolean without treating ``"false"`` as true.
+
+    Config values reach the reader as strings from Hydra overrides, environment
+    variables and CLI flags, where ``bool("false")`` is ``True``.  The stripping
+    matters too: the two copies of this that ``scene`` and ``window`` each kept
+    had already drifted apart on it, so ``" true"`` was true in one and false in
+    the other.
+
+    :param value: the config value.
+    :return: the boolean it denotes.
+    """
     if isinstance(value, str):
-        return value.lower() in {"1", "true", "yes", "on"}
+        return value.strip().lower() in {"1", "true", "yes", "on"}
     return bool(value)
 
 
@@ -994,8 +997,8 @@ class T4SceneReader:
                 self.scene_dir,
                 self.root,
                 Path(str(cache_root)),
-                require=_as_bool(_cfg_get(config, "t4_frame_cache_required", False)),
-                verify_source=_as_bool(_cfg_get(config, "t4_frame_cache_verify_source", True)),
+                require=as_config_bool(_cfg_get(config, "t4_frame_cache_required", False)),
+                verify_source=as_config_bool(_cfg_get(config, "t4_frame_cache_verify_source", True)),
             )
 
     @staticmethod

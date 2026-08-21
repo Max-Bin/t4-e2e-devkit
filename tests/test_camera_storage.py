@@ -181,6 +181,42 @@ class TestNameParsing:
         assert normalize_camera_names(["CAM_FRONT:CAM_BACK"]) == ["CAM_FRONT", "CAM_BACK"]
 
 
+class TestNameTokenizer:
+    """One tokenizer for every boundary a register arrives through."""
+
+    def test_the_two_normalizers_agree_on_tokens(self):
+        from t4_e2e_devkit.dataset.rigs import split_camera_names
+        from t4_e2e_devkit.dataset.scene import normalize_t4_camera_names
+
+        # dataset.scene and dataset.rigs each parsed this, and each had its own
+        # copy of the splitting; only the upper-casing and the sentinels differ.
+        value = "CAM_FRONT: cam_back ,"
+        assert split_camera_names(value) == ["CAM_FRONT", "cam_back"]
+        assert normalize_camera_names(value) == ["CAM_FRONT", "cam_back"]
+        assert normalize_t4_camera_names(value) == ["CAM_FRONT", "CAM_BACK"]
+
+    def test_a_sentinel_is_only_the_rig_module_s_business(self):
+        from t4_e2e_devkit.dataset.scene import normalize_t4_camera_names
+
+        # "auto" means "resolve against the scene" to the rig module, and is
+        # never a register the reader may take.
+        assert normalize_camera_names("auto") is None
+        with pytest.raises(ValueError, match="unknown T4 camera name"):
+            normalize_t4_camera_names("auto")
+
+
+class TestConfigBool:
+    """The drift the two copies had: one stripped, the other did not."""
+
+    def test_whitespace_does_not_flip_a_flag(self):
+        from t4_e2e_devkit.dataset.scene import as_config_bool
+
+        for value in (" true", "true ", "TRUE", "1", "yes", "on", True):
+            assert as_config_bool(value) is True
+        for value in ("false", " false ", "0", "no", "off", "", None, False):
+            assert as_config_bool(value) is False
+
+
 class TestRigDescription:
     def test_signature_groups_by_set_not_order(self):
         assert rig_signature(PRD_JT_MAIN) == rig_signature(list(reversed(PRD_JT_MAIN)))
