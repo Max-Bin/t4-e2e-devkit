@@ -105,3 +105,25 @@ def test_the_split_reader_modules_stay_importable_from_scene():
     assert scene.T4LidarPackReader is lidar_pack.T4LidarPackReader
     assert scene.build_ego_status is ego_status.build_ego_status
     assert scene.global_to_ego is ego_status.global_to_ego
+
+
+def test_the_split_map_modules_stay_importable_from_t4_map():
+    """``common.t4_map`` was 1307 lines of four layers; three moved out.
+
+    The records, the geometry helpers and the parser are re-exported, because
+    ``t4_map`` is the import path in every caller and in the lazy table.
+    """
+    from t4_e2e_devkit.common import t4_map, t4_map_geometry, t4_map_parse, t4_map_types
+
+    assert t4_map.T4Lanelet is t4_map_types.T4Lanelet
+    assert t4_map.T4MapObject is t4_map_types.T4MapObject
+    assert t4_map._geometry_score is t4_map_geometry._geometry_score
+    assert t4_map._cached_parse is t4_map_parse._cached_parse
+
+
+def test_the_navsim_types_stay_importable_from_the_scorer():
+    from t4_e2e_devkit.evaluation import navsim_score, navsim_types
+
+    assert navsim_score.T4NavSimScorerConfig is navsim_types.T4NavSimScorerConfig
+    assert navsim_score.NAVSIM_VERSIONS is navsim_types.NAVSIM_VERSIONS
+    assert navsim_score.resolve_navsim_metric_names is navsim_types.resolve_navsim_metric_names

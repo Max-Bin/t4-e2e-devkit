@@ -1,12 +1,12 @@
 {
   "note": "Recorded mypy debt. Run tools/typecheck.py --update to refresh.",
-  "total": 239,
+  "total": 237,
   "files": {
     "t4_e2e_devkit/agents/builders.py": 1,
     "t4_e2e_devkit/agents/registry.py": 1,
     "t4_e2e_devkit/cli.py": 2,
     "t4_e2e_devkit/common/dataclasses.py": 8,
-    "t4_e2e_devkit/common/t4_map.py": 3,
+    "t4_e2e_devkit/common/t4_map.py": 1,
     "t4_e2e_devkit/common/tier4/transform.py": 31,
     "t4_e2e_devkit/common/tier4/typing/camera.py": 1,
     "t4_e2e_devkit/common/tier4/typing/trajectory.py": 1,
@@ -67,7 +67,7 @@
   "codes": {
     "arg-type": 100,
     "union-attr": 41,
-    "assignment": 27,
+    "assignment": 25,
     "attr-defined": 24,
     "misc": 12,
     "call-overload": 8,
