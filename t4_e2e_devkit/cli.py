@@ -249,18 +249,35 @@ def _cmd_visualize_video(argv: Sequence[str]) -> int:
         default=None,
         help="camera to show; by default the geometrically front-facing one",
     )
-    parser.add_argument("--fps", type=float, default=10.0, help="frames per second")
+    parser.add_argument(
+        "--fps",
+        type=float,
+        default=None,
+        help="frames per second; by default real time for the list's centre "
+        "stride (a stride-5 list plays at 2 fps)",
+    )
     parser.add_argument("--no-lidar", action="store_true", help="skip the LiDAR points")
     parser.add_argument("--view-range", type=float, default=None, help="BEV half-extent, metres")
     args = parser.parse_args(argv)
 
     from pathlib import Path
 
+    from t4_e2e_devkit.common.constants import T4_FRAME_RATE_HZ
     from t4_e2e_devkit.dataset.datalist import load_data_list
     from t4_e2e_devkit.evaluation.prediction_manifest import load_prediction_manifest
     from t4_e2e_devkit.visualization.planning_video import render_scene_video
 
     data_list = load_data_list(args.data_list)
+
+    # Real time by default: a stride-5 list holds every fifth 10 Hz centre, so
+    # 10 fps would play it five times too fast and every judgement of how the
+    # plan evolves would be made against the wrong clock.
+    fps = args.fps
+    if fps is None:
+        stride = data_list.manifest.get("center_stride")
+        stride = int(stride) if isinstance(stride, int) and stride > 0 else 1
+        fps = T4_FRAME_RATE_HZ / stride
+        print(f"note: playing at {fps:g} fps, real time for centre stride {stride}")
 
     manifests = {}
     for entry in args.manifest:
@@ -287,7 +304,7 @@ def _cmd_visualize_video(argv: Sequence[str]) -> int:
                 out_dir / (scene_rel.replace("/", "_") + ".mp4"),
                 manifests,
                 camera=args.camera,
-                fps=args.fps,
+                fps=fps,
                 view_range=args.view_range,
                 lidar=not args.no_lidar,
             )
