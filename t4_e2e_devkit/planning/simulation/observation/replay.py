@@ -50,8 +50,12 @@ class T4ReplayObservationSource:
         self.include_sensors = bool(include_sensors)
         self.include_tracks = bool(include_tracks)
         self.include_lidar = bool(include_lidar)
-        self.camera_names = tuple(camera_names or T4_SUPPORTED_CAMERA_NAMES)
-        unsupported = sorted(set(self.camera_names) - set(T4_SUPPORTED_CAMERA_NAMES))
+        # No default register: the supported set spans two rigs that share no
+        # camera, so naming "everything supported" would look like a filter while
+        # accepting whatever turned up.  ``None`` means "whatever the frame
+        # carries", which is the register the reader already resolved per scene.
+        self.camera_names = None if camera_names is None else tuple(camera_names)
+        unsupported = sorted(set(self.camera_names or ()) - set(T4_SUPPORTED_CAMERA_NAMES))
         if unsupported:
             raise ValueError(f"unsupported T4 replay cameras: {unsupported}")
         self._iteration = 0
@@ -104,11 +108,15 @@ class T4ReplayObservationSource:
         if self.include_sensors:
             return sensors if sensors is not None else Sensors(pointcloud=None, images=None)
         if self.include_tracks:
-            return tracks if tracks is not None else DetectionsTracks(
-                tracked_objects=annotations_to_detections_tracks(
-                    scene.current_frame.annotations or Annotations.empty(),
-                    timestamp_us=scene.current_frame.timestamp_us,
-                ).tracked_objects
+            return (
+                tracks
+                if tracks is not None
+                else DetectionsTracks(
+                    tracked_objects=annotations_to_detections_tracks(
+                        scene.current_frame.annotations or Annotations.empty(),
+                        timestamp_us=scene.current_frame.timestamp_us,
+                    ).tracked_objects
+                )
             )
         return Observation()
 
@@ -127,19 +135,25 @@ class T4ReplayObservationSource:
 def _sensors_from_frame(
     frame,
     *,
-    camera_names: Sequence[str] = T4_SUPPORTED_CAMERA_NAMES,
+    camera_names: Optional[Sequence[str]] = None,
     include_lidar: bool = False,
 ) -> Sensors:
     images = {}
     if frame.cameras is not None:
-        allowed = set(str(name) for name in camera_names)
+        allowed = None if camera_names is None else {str(name) for name in camera_names}
         for name in frame.cameras.names:
-            if name not in allowed:
+            if allowed is not None and name not in allowed:
                 continue
             try:
                 channel = CameraChannel(name)
-            except ValueError:
-                continue
+            except ValueError as error:
+                # The frame only carries channels the reader resolved, so a name
+                # with no channel means the enum is behind the supported set --
+                # dropping it silently would replay a rig short one camera.
+                raise ValueError(
+                    f"camera {name!r} has no CameraChannel; the replay channel "
+                    "enum is out of step with the supported camera set"
+                ) from error
             image = frame.cameras[name].image
             if image is not None:
                 images[channel] = image

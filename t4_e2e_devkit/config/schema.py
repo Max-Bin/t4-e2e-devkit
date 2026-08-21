@@ -139,7 +139,9 @@ class ExperimentConfig:
 
     @property
     def fingerprint(self) -> str:
-        payload = json.dumps(self.as_dict(), sort_keys=True, separators=(",", ":"), ensure_ascii=True)
+        payload = json.dumps(
+            self.as_dict(), sort_keys=True, separators=(",", ":"), ensure_ascii=True
+        )
         return hashlib.sha256(payload.encode("utf-8")).hexdigest()
 
     @classmethod

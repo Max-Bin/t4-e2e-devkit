@@ -163,16 +163,20 @@ image resolution agree. Projection applies camera-to-ego extrinsics,
 intrinsics and stored distortion coefficients. Trajectories use the same ego
 coordinates as the BEV.
 
-The public camera input currently supports JPEG-backed wide channels. Select
-only the wide cameras required by the run; narrow and video-backed channels are
-rejected by the current contract.
+The public camera input supports the road-facing channels a rig exports as one
+JPEG per frame; video-backed and roof channels are rejected by the current
+contract. The rigs differ -- `wide5` on the main prd_jt rig, `x2_surround6` on
+x2_dev -- so a plot resolves its register against the scene rather than assuming
+one.
 
 LiDAR is opt-in:
 
 ```python
-from t4_e2e_devkit.common.dataclasses import SensorConfig
+from t4_e2e_devkit.dataset.rigs import sensor_config_for_scene
 
-sensor_config = SensorConfig.build_current_frame(lidar=True)
+# "auto" is right here: the question is what this scene has, not what a
+# checkpoint was trained on.
+sensor_config = sensor_config_for_scene(scene_dir, "auto", lidar=True)
 ```
 
 Use `SensorConfig.build_no_sensors()` for map-only BEV plots, or set

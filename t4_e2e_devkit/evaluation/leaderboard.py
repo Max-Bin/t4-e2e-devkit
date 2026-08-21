@@ -60,7 +60,10 @@ class LeaderboardReport:
             json.dumps(self.as_dict(), indent=2, sort_keys=True) + "\n", encoding="utf-8"
         )
         with (output / "leaderboard.csv").open("w", newline="", encoding="utf-8") as stream:
-            writer = csv.DictWriter(stream, fieldnames=["rank", "name", "directory", "family", "metric", "value", "status"])
+            writer = csv.DictWriter(
+                stream,
+                fieldnames=["rank", "name", "directory", "family", "metric", "value", "status"],
+            )
             writer.writeheader()
             writer.writerows(row.as_dict() for row in self.rows)
         return output

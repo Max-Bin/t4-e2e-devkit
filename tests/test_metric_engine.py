@@ -24,9 +24,7 @@ def test_metric_engine_registers_evaluates_aggregates_and_caches(tmp_path):
     first = engine.evaluate(context, cache=cache)
     second = engine.evaluate(context, cache=cache)
     assert calls["count"] == 1
-    assert first.aggregate() == {
-        "open_loop": {"num_records": 1.0, "error": 2.0, "stable": 1.0}
-    }
+    assert first.aggregate() == {"open_loop": {"num_records": 1.0, "error": 2.0, "stable": 1.0}}
     assert second.records[0].as_dict() == first.records[0].as_dict()
 
     changed = engine.evaluate(
@@ -43,9 +41,7 @@ def test_metric_engine_registers_evaluates_aggregates_and_caches(tmp_path):
 def test_default_open_loop_adapter_accepts_sparse_and_dense_grids():
     sampling = TrajectorySampling(num_poses=4, interval_length=0.5)
     prediction = Trajectory(
-        poses=np.column_stack(
-            (np.arange(1, 5, dtype=np.float32), np.zeros(4), np.zeros(4))
-        ),
+        poses=np.column_stack((np.arange(1, 5, dtype=np.float32), np.zeros(4), np.zeros(4))),
         trajectory_sampling=sampling,
     )
     engine = MetricEngine.t4_default()
@@ -91,12 +87,8 @@ def test_metric_cache_signature_includes_prediction_values(tmp_path):
     engine.register("endpoint", compute, family="open_loop")
     cache = MetricCache(tmp_path)
 
-    first = engine.evaluate(
-        MetricContext(token="scene@1", prediction=prediction_a), cache=cache
-    )
-    second = engine.evaluate(
-        MetricContext(token="scene@1", prediction=prediction_b), cache=cache
-    )
+    first = engine.evaluate(MetricContext(token="scene@1", prediction=prediction_a), cache=cache)
+    second = engine.evaluate(MetricContext(token="scene@1", prediction=prediction_b), cache=cache)
 
     assert calls["count"] == 2
     assert first.records[0].values["endpoint"] == 1.0

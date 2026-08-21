@@ -100,7 +100,9 @@ def run_simulation(runner: AbstractRunner, *, raise_on_error: bool = False) -> R
     return report
 
 
-def execute_runners(runners: Iterable[AbstractRunner], *, raise_on_error: bool = False) -> list[RunnerReport]:
+def execute_runners(
+    runners: Iterable[AbstractRunner], *, raise_on_error: bool = False
+) -> list[RunnerReport]:
     """Execute runners serially.
 
     Use :class:`RunnerExecutor` when a batch needs local workers or rank

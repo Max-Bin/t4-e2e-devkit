@@ -183,7 +183,9 @@ class MetricStatistics(MetricResult):
         object.__setattr__(self, "metric_category", str(metric_category))
         object.__setattr__(self, "statistics", tuple(statistics))
         object.__setattr__(self, "time_series", time_series)
-        object.__setattr__(self, "metric_score", None if metric_score is None else float(metric_score))
+        object.__setattr__(
+            self, "metric_score", None if metric_score is None else float(metric_score)
+        )
         object.__setattr__(self, "metric_score_unit", metric_score_unit)
 
     def serialize(self) -> dict[str, Any]:

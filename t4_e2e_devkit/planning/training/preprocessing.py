@@ -46,8 +46,12 @@ class FeaturePreprocessor:
         return self.target_builders.compute(scene)
 
     @staticmethod
-    def collate(features: Sequence[Mapping[str, Any]], targets: Sequence[Mapping[str, Any]]) -> tuple[FeatureMapping, FeatureMapping]:
-        return FeatureMapping.collate([FeatureMapping(item) for item in features]), FeatureMapping.collate([FeatureMapping(item) for item in targets])
+    def collate(
+        features: Sequence[Mapping[str, Any]], targets: Sequence[Mapping[str, Any]]
+    ) -> tuple[FeatureMapping, FeatureMapping]:
+        return FeatureMapping.collate(
+            [FeatureMapping(item) for item in features]
+        ), FeatureMapping.collate([FeatureMapping(item) for item in targets])
 
 
 FeatureBuilder = AbstractFeatureBuilder

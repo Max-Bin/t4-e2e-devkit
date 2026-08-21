@@ -94,9 +94,7 @@ class T4SceneTag:
             source_path=_portable_source_label(source_path),
             date=None if date is None else str(date),
             vehicle_id=None if vehicle_id is None else str(vehicle_id),
-            taxonomy_version=(
-                None if taxonomy_version is None else str(taxonomy_version)
-            ),
+            taxonomy_version=(None if taxonomy_version is None else str(taxonomy_version)),
             time_series=str(time_series),
             scene_id=str(record.get("scene_id", "")),
             status=str(status),
@@ -104,20 +102,14 @@ class T4SceneTag:
             start_time_ns=_optional_int(record.get("start_time")),
             end_time_ns=_optional_int(record.get("end_time")),
             lateral_decision=(
-                None
-                if decisions.get("lateral") is None
-                else str(decisions["lateral"])
+                None if decisions.get("lateral") is None else str(decisions["lateral"])
             ),
             longitudinal_decision=(
-                None
-                if decisions.get("longitudinal") is None
-                else str(decisions["longitudinal"])
+                None if decisions.get("longitudinal") is None else str(decisions["longitudinal"])
             ),
             events=_string_tuple(record.get("event", record.get("events"))),
             justification=(
-                None
-                if record.get("justification") is None
-                else str(record["justification"])
+                None if record.get("justification") is None else str(record["justification"])
             ),
             dynamic_entities=copy.deepcopy(record.get("dynamic_entities", [])),
             scenery=copy.deepcopy(record.get("scenery", {})),
@@ -330,7 +322,12 @@ class T4SceneTagIndex:
         if exact:
             return exact
         scene_interval = _scene_interval_ns(scene)
-        candidates = [tag for (tag_date, _), values in self._by_date_series.items() if tag_date == date for tag in values]
+        candidates = [
+            tag
+            for (tag_date, _), values in self._by_date_series.items()
+            if tag_date == date
+            for tag in values
+        ]
         if scene_interval is None:
             return ()
         return tuple(

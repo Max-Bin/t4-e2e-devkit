@@ -207,15 +207,22 @@ class WorkerPool:
             return [_execute_task(task, self.rank, index) for index, task in enumerate(values)]
         executor = self._ensure_executor()
         assert executor is not None
-        futures = [executor.submit(_execute_task, task, self.rank, index) for index, task in enumerate(values)]
+        futures = [
+            executor.submit(_execute_task, task, self.rank, index)
+            for index, task in enumerate(values)
+        ]
         return [future.result() for future in futures]
 
     def map(self, function: Callable[[T], R], items: Iterable[T]) -> List[R]:
         """Map a function over this rank's partition, raising task exceptions."""
 
         values = list(items)
-        selected = [values[index] for index in rank_indices(len(values), self.rank, self.world_size)]
-        tasks = [WorkerTask(str(index), function, args=(value,)) for index, value in enumerate(selected)]
+        selected = [
+            values[index] for index in rank_indices(len(values), self.rank, self.world_size)
+        ]
+        tasks = [
+            WorkerTask(str(index), function, args=(value,)) for index, value in enumerate(selected)
+        ]
         results = self._run_local_tasks(tasks)
         failures = [result for result in results if not result.succeeded]
         if failures:
@@ -227,11 +234,17 @@ class WorkerPool:
 
         indices = rank_indices(len(items), self.rank, self.world_size)
         values = [items[index] for index in indices]
-        results = self.map(function, values) if self.world_size == 1 else self._map_local(function, values)
+        results = (
+            self.map(function, values)
+            if self.world_size == 1
+            else self._map_local(function, values)
+        )
         return list(zip(indices, results, strict=True))
 
     def _map_local(self, function: Callable[[T], R], values: Sequence[T]) -> List[R]:
-        tasks = [WorkerTask(str(index), function, args=(value,)) for index, value in enumerate(values)]
+        tasks = [
+            WorkerTask(str(index), function, args=(value,)) for index, value in enumerate(values)
+        ]
         results = self._run_local_tasks(tasks)
         failures = [result for result in results if not result.succeeded]
         if failures:

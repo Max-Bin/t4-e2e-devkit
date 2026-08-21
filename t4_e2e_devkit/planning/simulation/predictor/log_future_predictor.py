@@ -41,7 +41,9 @@ class LogFuturePredictor(AbstractPredictor):
     def compute_predicted_trajectories(self, current_input: PredictorInput) -> DetectionsTracks:
         _, observation = current_input.history.current_state
         if not isinstance(observation, DetectionsTracks):
-            raise TypeError(f"LogFuturePredictor expects DetectionsTracks, got {type(observation).__name__}")
+            raise TypeError(
+                f"LogFuturePredictor expects DetectionsTracks, got {type(observation).__name__}"
+            )
         current_time_us = int(current_input.iteration.time_us)
         future = self.scenario.get_future_tracked_objects(
             iteration=current_input.iteration.index,

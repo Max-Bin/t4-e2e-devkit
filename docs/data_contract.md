@@ -130,6 +130,8 @@ Pass `t4_scene_tags_root` in `reader_config` to attach tags to
 ```bash
 uv run t4e2e datalist \
   --root /path/to/t4_dataset \
+  --glob 'prd_jt/*/*/*' \
+  --camera-names wide5 \
   --scene-tags-root /path/to/scene_tags \
   --include-tag-event lane_change \
   --include-lateral-decision change_lane_left \
@@ -158,13 +160,17 @@ Sensor decoding is declared by `SensorConfig`:
 
 ```python
 SensorConfig.build_no_sensors()
-SensorConfig.build_current_frame(lidar=False)
+SensorConfig.build_current_frame(C.T4_WIDE5_CAMERA_NAMES, lidar=False)
 SensorConfig(cameras={"CAM_FRONT_WIDE": [-1, -5]}, lidar=False)
+sensor_config_for_scene(scene_dir, "x2_surround6")  # resolved against one rig
 ```
 
 Camera images are RGB `uint8 [H, W, 3]` with calibration at the decoded
-resolution. The public camera input currently supports only JPEG-backed wide
-channels; narrow and video-backed channels are rejected. LiDAR, when requested, is ragged `[N, 5]` with
+resolution. The public camera input supports the road-facing channels a rig
+exports as one JPEG per frame; video-backed and roof channels are rejected.
+There is no fleet-wide register and no default one: name a profile
+(`wide5` for the main prd_jt rig, `x2_surround6` for x2_dev) or resolve one per
+scene with `dataset.rigs`. LiDAR, when requested, is ragged `[N, 5]` with
 `(x, y, z, intensity, ring_or_time)`.
 
 ## Data lists

@@ -40,13 +40,9 @@ PACKAGE = REPO_ROOT / "t4_e2e_devkit"
 # --------------------------------------------------------------------------- #
 
 SOURCES: dict[str, Path] = {
-    "nuplan": Path(
-        os.environ.get("T4E2E_NUPLAN_SRC", REPO_ROOT / "references" / "nuplan-devkit")
-    ),
+    "nuplan": Path(os.environ.get("T4E2E_NUPLAN_SRC", REPO_ROOT / "references" / "nuplan-devkit")),
     # TIER IV's public devkit. Its transform helpers are vendored below.
-    "t4devkit": Path(
-        os.environ.get("T4E2E_T4DEVKIT_SRC", REPO_ROOT / "references" / "t4-devkit")
-    ),
+    "t4devkit": Path(os.environ.get("T4E2E_T4DEVKIT_SRC", REPO_ROOT / "references" / "t4-devkit")),
 }
 
 # --------------------------------------------------------------------------- #
@@ -157,31 +153,82 @@ class Item:
 
 MANIFEST: list[Item] = [
     # ---- common: the geometry/state vocabulary, lifted out of nuplan ------- #
-    Item("common", "nuplan", "nuplan/common/actor_state", "common/actor_state", recursive=True,
-         exclude=("test", "BUILD")),
-    Item("common", "nuplan", "nuplan/common/geometry", "common/geometry", recursive=True,
-         exclude=("test", "BUILD")),
-    Item("common", "nuplan", "nuplan/common/maps/maps_datatypes.py", "common/maps/maps_datatypes.py"),
+    Item(
+        "common",
+        "nuplan",
+        "nuplan/common/actor_state",
+        "common/actor_state",
+        recursive=True,
+        exclude=("test", "BUILD"),
+    ),
+    Item(
+        "common",
+        "nuplan",
+        "nuplan/common/geometry",
+        "common/geometry",
+        recursive=True,
+        exclude=("test", "BUILD"),
+    ),
+    Item(
+        "common", "nuplan", "nuplan/common/maps/maps_datatypes.py", "common/maps/maps_datatypes.py"
+    ),
     Item("common", "nuplan", "nuplan/common/maps/abstract_map.py", "common/maps/abstract_map.py"),
-    Item("common", "nuplan", "nuplan/common/maps/abstract_map_objects.py",
-         "common/maps/abstract_map_objects.py"),
-    Item("common", "nuplan", "nuplan/common/utils/interpolatable_state.py",
-         "common/utils/interpolatable_state.py"),
+    Item(
+        "common",
+        "nuplan",
+        "nuplan/common/maps/abstract_map_objects.py",
+        "common/maps/abstract_map_objects.py",
+    ),
+    Item(
+        "common",
+        "nuplan",
+        "nuplan/common/utils/interpolatable_state.py",
+        "common/utils/interpolatable_state.py",
+    ),
     Item("common", "nuplan", "nuplan/common/utils/split_state.py", "common/utils/split_state.py"),
     # ---- planning: trajectory + observation vocabulary --------------------- #
-    Item("planning", "nuplan", "nuplan/planning/simulation/trajectory",
-         "planning/simulation/trajectory", recursive=True, exclude=("test", "BUILD")),
-    Item("planning", "nuplan", "nuplan/planning/simulation/observation/idm/utils.py",
-         "planning/simulation/observation/idm_utils.py"),
-    Item("planning", "nuplan", "nuplan/planning/simulation/path",
-         "planning/simulation/path", recursive=True, exclude=("test", "BUILD")),
-    Item("planning", "nuplan", "nuplan/planning/simulation/occupancy_map",
-         "planning/simulation/occupancy_map", recursive=True, exclude=("test", "BUILD")),
-    Item("planning", "nuplan",
-         "nuplan/planning/simulation/simulation_time_controller/simulation_iteration.py",
-         "planning/simulation/simulation_iteration.py"),
-    Item("planning", "nuplan", "nuplan/planning/simulation/planner/ml_planner/transform_utils.py",
-         "planning/simulation/planner/transform_utils.py"),
+    Item(
+        "planning",
+        "nuplan",
+        "nuplan/planning/simulation/trajectory",
+        "planning/simulation/trajectory",
+        recursive=True,
+        exclude=("test", "BUILD"),
+    ),
+    Item(
+        "planning",
+        "nuplan",
+        "nuplan/planning/simulation/observation/idm/utils.py",
+        "planning/simulation/observation/idm_utils.py",
+    ),
+    Item(
+        "planning",
+        "nuplan",
+        "nuplan/planning/simulation/path",
+        "planning/simulation/path",
+        recursive=True,
+        exclude=("test", "BUILD"),
+    ),
+    Item(
+        "planning",
+        "nuplan",
+        "nuplan/planning/simulation/occupancy_map",
+        "planning/simulation/occupancy_map",
+        recursive=True,
+        exclude=("test", "BUILD"),
+    ),
+    Item(
+        "planning",
+        "nuplan",
+        "nuplan/planning/simulation/simulation_time_controller/simulation_iteration.py",
+        "planning/simulation/simulation_iteration.py",
+    ),
+    Item(
+        "planning",
+        "nuplan",
+        "nuplan/planning/simulation/planner/ml_planner/transform_utils.py",
+        "planning/simulation/planner/transform_utils.py",
+    ),
     # NOTE: ``observation_type``, ``collision_utils`` and ``abstract_planner``
     # are deliberately NOT vendored.  Their nuPlan originals import the metric
     # statistics stack, the sensor database and the simulation history buffer
@@ -197,6 +244,7 @@ MANIFEST: list[Item] = [
     Item("tier4", "t4devkit", "t4_devkit/common/converter.py", "common/tier4/converter.py"),
     Item("tier4", "t4devkit", "t4_devkit/dataclass/transform.py", "common/tier4/transform.py"),
 ]
+
 
 def _git_commit(root: Path) -> str:
     try:
@@ -325,7 +373,8 @@ def cmd_check(args: argparse.Namespace) -> int:
             if args.diff:
                 for line in list(
                     difflib.unified_diff(
-                        actual.splitlines(), expected.splitlines(),
+                        actual.splitlines(),
+                        expected.splitlines(),
                         fromfile=f"devkit/{dst}",
                         tofile=origin,
                         lineterm="",

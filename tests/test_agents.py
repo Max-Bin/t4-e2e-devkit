@@ -156,9 +156,7 @@ class TestAgentsOnRealScenes:
     def test_human_replays_the_recorded_future(self, scene):
         agent = build_agent("human")
         trajectory = agent.compute_trajectory_from_scene(scene)
-        np.testing.assert_allclose(
-            trajectory.poses, scene.get_future_trajectory().poses, atol=1e-6
-        )
+        np.testing.assert_allclose(trajectory.poses, scene.get_future_trajectory().poses, atol=1e-6)
 
     def test_feature_and_target_builders_run(self, scene):
         agent = build_agent("constant_velocity")

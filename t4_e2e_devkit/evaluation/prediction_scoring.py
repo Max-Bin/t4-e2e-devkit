@@ -150,6 +150,7 @@ def score_prediction_manifest(
     shard_index: int | None = None,
     num_shards: int | None = None,
     scene_cache_size: int | None = 0,
+    compile_rollout: bool = False,
     write_per_window: bool = True,
 ) -> dict[str, Any]:
     """Score every selected manifest row and write ``aggregate.json``."""
@@ -163,9 +164,7 @@ def score_prediction_manifest(
     data_list_path = Path(data_list_path).expanduser().resolve()
     predictions_path = Path(predictions_path).expanduser().resolve()
     output_dir = Path(output_dir).expanduser().resolve()
-    data_list = _select_data_list(
-        devkit["load_data_list"](data_list_path), max_rows, max_scenes
-    )
+    data_list = _select_data_list(devkit["load_data_list"](data_list_path), max_rows, max_scenes)
     manifest = devkit["load_prediction_manifest"](predictions_path)
     expected_rows = list(data_list)
     devkit["validate_prediction_keys"](manifest.records, expected_rows)
@@ -185,9 +184,7 @@ def score_prediction_manifest(
         raise ValueError("prediction manifest pose_format must be 'x_y_heading'")
     if num_poses < 1 or not math.isfinite(interval_seconds) or interval_seconds <= 0.0:
         raise ValueError("prediction manifest contains invalid trajectory sampling")
-    sampling = devkit["TrajectorySampling"](
-        num_poses=num_poses, interval_length=interval_seconds
-    )
+    sampling = devkit["TrajectorySampling"](num_poses=num_poses, interval_length=interval_seconds)
 
     data_list = _shard_data_list(data_list, shard_index, num_shards)
     shard_rows = list(data_list)
@@ -208,6 +205,7 @@ def score_prediction_manifest(
             metric_names=metric_names,
             backend=backend,
             device=device,
+            compile_rollout=bool(compile_rollout),
         )
     )
 

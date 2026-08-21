@@ -102,6 +102,7 @@ class FeatureBuilderRegistry:
             features.update(values)
         return features
 
+
 class TargetBuilderRegistry:
     """Stable registry for composing independent target builders."""
 
@@ -132,6 +133,7 @@ class TargetBuilderRegistry:
             targets.update(values)
         return targets
 
+
 # --------------------------------------------------------------------------- #
 # Built-in feature builders
 # --------------------------------------------------------------------------- #
@@ -161,7 +163,9 @@ class EgoStatusFeatureBuilder(AbstractFeatureBuilder):
             rows = agent_input.ego_status.as_array()
         status = agent_input.ego_status
         control = status.control_state or {}
-        velocity = np.asarray(control.get("velocity", status.ego_velocity), dtype=np.float32).reshape(-1)
+        velocity = np.asarray(
+            control.get("velocity", status.ego_velocity), dtype=np.float32
+        ).reshape(-1)
         acceleration = np.asarray(
             control.get("acceleration", status.ego_acceleration), dtype=np.float32
         ).reshape(-1)
@@ -178,7 +182,9 @@ class EgoStatusFeatureBuilder(AbstractFeatureBuilder):
         )
         return {
             "ego_status": torch.from_numpy(np.ascontiguousarray(rows)),
-            "ego_shape": torch.from_numpy(agent_input.ego_status.ego_shape.as_array().astype(np.float32)),
+            "ego_shape": torch.from_numpy(
+                agent_input.ego_status.ego_shape.as_array().astype(np.float32)
+            ),
             "control_state": torch.from_numpy(control_state),
         }
 
@@ -372,13 +378,9 @@ class TrajectoryTargetBuilder(AbstractTargetBuilder):
         :param scene: one window.
         :return: ``trajectory`` ``[num_poses, 3]``.
         """
-        trajectory = scene.get_future_trajectory(
-            trajectory_sampling=self.trajectory_sampling
-        )
+        trajectory = scene.get_future_trajectory(trajectory_sampling=self.trajectory_sampling)
         return {
-            "trajectory": torch.from_numpy(
-                np.ascontiguousarray(trajectory.poses, dtype=np.float32)
-            )
+            "trajectory": torch.from_numpy(np.ascontiguousarray(trajectory.poses, dtype=np.float32))
         }
 
 

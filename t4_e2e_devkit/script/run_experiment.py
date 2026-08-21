@@ -17,7 +17,11 @@ def main(argv: Optional[list[str]] = None) -> int:
     args = parser.parse_args(argv)
     config = load_experiment_config(args.config, overrides=args.override)
     if args.dry_run:
-        print(json.dumps({**config.as_dict(), "fingerprint": config.fingerprint}, indent=2, sort_keys=True))
+        print(
+            json.dumps(
+                {**config.as_dict(), "fingerprint": config.fingerprint}, indent=2, sort_keys=True
+            )
+        )
         return 0
     if config.mode in {"evaluate", "closed_loop", "submit"}:
         from t4_e2e_devkit.script.distributed import main as distributed_main

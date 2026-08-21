@@ -222,14 +222,12 @@ class SimulationHistory:
                     "observation": _portable_value(sample.observation),
                     "trajectory": _portable_value(sample.trajectory),
                     "planner_report": (
-                        None
-                        if sample.planner_report is None
-                        else sample.planner_report.as_dict()
+                        None if sample.planner_report is None else sample.planner_report.as_dict()
                     ),
                     "traffic_light_status": _portable_value(sample.traffic_light_status),
                 }
                 for sample in self._samples
-            ]
+            ],
         }
 
     @classmethod
@@ -265,15 +263,19 @@ class SimulationHistory:
         """Write a JSON history using only portable values."""
 
         import json
+
         destination = Path(path)
         destination.parent.mkdir(parents=True, exist_ok=True)
-        destination.write_text(json.dumps(self.as_dict(), indent=2, sort_keys=True) + "\n", encoding="utf-8")
+        destination.write_text(
+            json.dumps(self.as_dict(), indent=2, sort_keys=True) + "\n", encoding="utf-8"
+        )
 
     @classmethod
     def from_json(cls, path: str | Path) -> "SimulationHistory":
         """Read a history written by :meth:`to_json`."""
 
         import json
+
         return cls.from_dict(json.loads(Path(path).read_text(encoding="utf-8")))
 
 
@@ -338,7 +340,9 @@ class SimulationHistoryBuffer:
 
     @property
     def duration(self) -> Optional[float]:
-        return None if self._sample_interval is None else self._sample_interval * max(0, len(self) - 1)
+        return (
+            None if self._sample_interval is None else self._sample_interval * max(0, len(self) - 1)
+        )
 
     @property
     def current_state(self) -> tuple[Any, Any]:
@@ -446,55 +450,45 @@ class SimulationRunReport:
 class AbstractObservation(Protocol):
     """Observation source consumed by :class:`SimulationRunner`."""
 
-    def reset(self) -> None:
-        ...
+    def reset(self) -> None: ...
 
-    def initialize(self) -> None:
-        ...
+    def initialize(self) -> None: ...
 
-    def observation_type(self) -> type:
-        ...
+    def observation_type(self) -> type: ...
 
     def get_observation(
         self, iteration: SimulationIteration, history: SimulationHistoryBuffer
-    ) -> Any:
-        ...
+    ) -> Any: ...
 
 
 class AbstractEgoController(Protocol):
     """Controller that realizes a planner trajectory into the next state."""
 
-    def reset(self) -> None:
-        ...
+    def reset(self) -> None: ...
 
-    def update_state(self, trajectory: Any, iteration: SimulationIteration) -> Any:
-        ...
+    def update_state(self, trajectory: Any, iteration: SimulationIteration) -> Any: ...
 
 
 class SimulationCallback(Protocol):
     """Optional generic simulation lifecycle hooks."""
 
-    def on_simulation_start(self, setup: "SimulationSetup") -> None:
-        ...
+    def on_simulation_start(self, setup: "SimulationSetup") -> None: ...
 
-    def on_simulation_step(self, sample: SimulationHistorySample) -> None:
-        ...
+    def on_simulation_step(self, sample: SimulationHistorySample) -> None: ...
 
     def on_simulation_end(
         self,
         setup: "SimulationSetup",
         planner: Any,
         history: SimulationHistory,
-    ) -> None:
-        ...
+    ) -> None: ...
 
     def on_simulation_error(
         self,
         setup: "SimulationSetup",
         planner: Any,
         error: BaseException,
-    ) -> None:
-        ...
+    ) -> None: ...
 
 
 @dataclass(frozen=True)
@@ -639,8 +633,7 @@ class SimulationRunner:
                     )
                     if expected_type is not None and not isinstance(observation, expected_type):
                         raise TypeError(
-                            f"planner expects observation {expected_type}, "
-                            f"got {type(observation)}"
+                            f"planner expects observation {expected_type}, got {type(observation)}"
                         )
                 traffic_lights = getattr(
                     setup.scenario,
@@ -714,7 +707,9 @@ class SimulationManager:
         return SimulationRunReport(history=history, succeeded=True)
 
 
-def _compute_planner_trajectory(planner: Any, planner_input: PlannerInput) -> tuple[Any, PlannerReport]:
+def _compute_planner_trajectory(
+    planner: Any, planner_input: PlannerInput
+) -> tuple[Any, PlannerReport]:
     import time
 
     started = time.perf_counter()

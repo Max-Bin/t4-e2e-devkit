@@ -19,6 +19,7 @@ existing T4 dataset root and a writable ignored `results/` directory.
 uv run t4e2e datalist \
   --root /data/t4 \
   --glob 'prd_jt/*/*/*' \
+  --camera-names wide5 \
   --out results/val.datalist.json
 
 uv run t4e2e inspect results/val.datalist.json

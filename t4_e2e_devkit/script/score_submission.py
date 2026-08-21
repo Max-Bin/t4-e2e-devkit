@@ -60,16 +60,16 @@ def score_submission(
     family_names = tuple(dict.fromkeys(str(name) for name in families))
     unknown = sorted(set(family_names) - set(FAMILIES))
     if not family_names or unknown:
-        raise ValueError(f"families must be a non-empty subset of {FAMILIES}; got {unknown or family_names}")
+        raise ValueError(
+            f"families must be a non-empty subset of {FAMILIES}; got {unknown or family_names}"
+        )
     pdm_version = str(pdm_version).lower()
     if pdm_version not in PDM_VERSIONS:
         raise ValueError(f"pdm_version must be one of {PDM_VERSIONS}")
     pdm_metric_names = (
         None
         if pdm_metric_names is None
-        else resolve_navsim_metric_names(
-            pdm_version.removeprefix("navsim-"), pdm_metric_names
-        )
+        else resolve_navsim_metric_names(pdm_version.removeprefix("navsim-"), pdm_metric_names)
     )
     if pdm_previous_interval_frames is not None and pdm_previous_interval_frames < 1:
         raise ValueError("pdm_previous_interval_frames must be positive")
@@ -79,7 +79,9 @@ def score_submission(
     if worker_backend not in {"serial", "thread", "process", "ray"}:
         raise ValueError("worker_backend must be serial, thread, process or ray")
     if backend == "gpu" and worker_backend == "process" and workers > 1:
-        raise ValueError("GPU submission scoring uses one process; use rank/world_size for parallel GPUs")
+        raise ValueError(
+            "GPU submission scoring uses one process; use rank/world_size for parallel GPUs"
+        )
     assigned = [selected[index] for index in rank_indices(len(selected), rank, world_size)]
     output = Path(output_dir)
     records_dir = output / "records"
@@ -110,7 +112,12 @@ def score_submission(
     run_id = f"submission-score-{resolved_fingerprint[:16]}"
     write_json(
         output / "run.json",
-        {**config, "run_id": run_id, "status": "running", "config_fingerprint": resolved_fingerprint},
+        {
+            **config,
+            "run_id": run_id,
+            "status": "running",
+            "config_fingerprint": resolved_fingerprint,
+        },
     )
     tasks = [
         WorkerTask(
@@ -203,7 +210,9 @@ def score_submission(
                     "config_fingerprint": resolved_fingerprint,
                 },
             )
-            manifest_results.append(WorkerResult(task_id=token, value={"status": "failed"}, rank=rank, error=error))
+            manifest_results.append(
+                WorkerResult(task_id=token, value={"status": "failed"}, rank=rank, error=error)
+            )
     records.sort(key=lambda value: str(value["token"]))
     report = aggregate_records(records, num_failed=len(failures))
     write_family_csv(output, records)
@@ -212,7 +221,9 @@ def score_submission(
     with (output / "failures.csv").open("w", encoding="utf-8") as stream:
         stream.write("token,error\n")
         for token, error in failures:
-            stream.write(f'"{token.replace(chr(34), chr(34) * 2)}","{error.replace(chr(34), chr(34) * 2)}"\n')
+            stream.write(
+                f'"{token.replace(chr(34), chr(34) * 2)}","{error.replace(chr(34), chr(34) * 2)}"\n'
+            )
     manifest = WorkerManifest(
         run_id=run_id,
         rank=rank,
@@ -342,7 +353,9 @@ def main(argv: Optional[list[str]] = None) -> int:
     parser.add_argument("--rank", type=int, default=0)
     parser.add_argument("--world-size", type=int, default=1)
     parser.add_argument("--workers", type=int, default=1)
-    parser.add_argument("--worker-backend", choices=("serial", "thread", "process", "ray"), default="serial")
+    parser.add_argument(
+        "--worker-backend", choices=("serial", "thread", "process", "ray"), default="serial"
+    )
     parser.add_argument("--max-retries", type=int, default=0)
     parser.add_argument("--no-resume", action="store_true")
     args = parser.parse_args(argv)

@@ -73,8 +73,7 @@ def main() -> None:
                 raw_prediction = np.asarray(loaded)
             if raw_prediction.ndim != 2 or raw_prediction.shape[1] not in (3, 4):
                 raise ValueError(
-                    "prediction must have shape [T, 3] or [T, 4], "
-                    f"got {raw_prediction.shape}"
+                    f"prediction must have shape [T, 3] or [T, 4], got {raw_prediction.shape}"
                 )
             prediction_poses = trajectory_to_poses(
                 raw_prediction, num_poses=int(raw_prediction.shape[0])

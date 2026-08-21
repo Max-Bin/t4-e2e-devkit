@@ -24,6 +24,7 @@ keep it in an ignored runtime directory:
 uv run t4e2e datalist \
   --root /path/to/t4 \
   --glob 'prd_jt/*/*/*' \
+  --camera-names wide5 \
   --out results/val.datalist.json
 ```
 
@@ -122,6 +123,7 @@ inference:
 
 ```python
 from t4_e2e_devkit.agents import AbstractT4Agent, register_agent
+from t4_e2e_devkit.common.constants import T4_WIDE5_CAMERA_NAMES
 from t4_e2e_devkit.common.dataclasses import SensorConfig
 from t4_e2e_devkit.planning.simulation.trajectory.trajectory_sampling import (
     TrajectorySampling,
@@ -137,7 +139,10 @@ class MyAgent(AbstractT4Agent):
         return "my_agent"
 
     def get_sensor_config(self):
-        return SensorConfig.build_current_frame(lidar=False)
+        # The register is part of the agent's own contract, so it is named here.
+        # x2_dev scenes need T4_X2_SURROUND6_CAMERA_NAMES instead: the rigs share
+        # no camera, so one agent cannot read both without retraining.
+        return SensorConfig.build_current_frame(T4_WIDE5_CAMERA_NAMES, lidar=False)
 
     def forward(self, features):
         return {"trajectory": self.network(features)}
@@ -196,6 +201,8 @@ callbacks.append(
         version="v2",
         metric_names=None,
         interval_seconds=0.5,
+        # Optional logger namespace; the default is "devkit".
+        log_prefix="devkit",
     )
 )
 ```
@@ -206,7 +213,8 @@ Lightning logger that implements `log_metrics`. It does not import a tracking
 client. The default logged keys are `devkit/pdms`,
 `devkit/nc`, `devkit/dac`, `devkit/ddc`, `devkit/tlc`, `devkit/ttc`,
 `devkit/ep`, `devkit/lk`, `devkit/comfort` and `devkit/ec` when those fields are
-available.
+available. A training repository can set `log_prefix="val"` to place the
+official score and all components alongside its ordinary `val/*` metrics.
 
 For validation images, use `PredictionVizCallback` and expose up to the
 configured number of samples in `module._viz_samples`. Each sample contains

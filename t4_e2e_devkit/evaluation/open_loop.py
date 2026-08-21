@@ -163,9 +163,7 @@ def _overlap_sampling(prediction: Trajectory, ground_truth: Trajectory) -> Traje
     )
     num_poses = int(np.floor(horizon / interval + 1e-9))
     if num_poses < 1:
-        raise ValueError(
-            "prediction and ground truth have no common positive-time sample"
-        )
+        raise ValueError("prediction and ground truth have no common positive-time sample")
     return TrajectorySampling(num_poses=num_poses, interval_length=interval)
 
 

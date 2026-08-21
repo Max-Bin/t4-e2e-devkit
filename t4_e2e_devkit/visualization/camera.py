@@ -67,9 +67,18 @@ from t4_e2e_devkit.visualization.lidar import get_lidar_pc_color, subsample_lida
 
 #: Edges of a 3D box, indexing the corner order from :func:`box_corners_3d`.
 BOX_EDGES: Tuple[Tuple[int, int], ...] = (
-    (0, 1), (1, 2), (2, 3), (3, 0),  # bottom face
-    (4, 5), (5, 6), (6, 7), (7, 4),  # top face
-    (0, 4), (1, 5), (2, 6), (3, 7),  # verticals
+    (0, 1),
+    (1, 2),
+    (2, 3),
+    (3, 0),  # bottom face
+    (4, 5),
+    (5, 6),
+    (6, 7),
+    (7, 4),  # top face
+    (0, 4),
+    (1, 5),
+    (2, 6),
+    (3, 7),  # verticals
 )
 
 
@@ -151,9 +160,7 @@ def project_with_distortion(
         k1, k2, p1, p2, k3, k4, k5, k6, s1, s2, s3, s4, tau_x, tau_y = coefficients
 
         r2 = x * x + y * y
-        radial = (1 + k1 * r2 + k2 * r2**2 + k3 * r2**3) / (
-            1 + k4 * r2 + k5 * r2**2 + k6 * r2**3
-        )
+        radial = (1 + k1 * r2 + k2 * r2**2 + k3 * r2**3) / (1 + k4 * r2 + k5 * r2**2 + k6 * r2**3)
         xy = x * y
         x_d = x * radial + 2 * p1 * xy + p2 * (r2 + 2 * x * x) + s1 * r2 + s2 * r2**2
         y_d = y * radial + p1 * (r2 + 2 * y * y) + 2 * p2 * xy + s3 * r2 + s4 * r2**2
@@ -222,8 +229,14 @@ def add_camera_ax(ax, camera: Camera, title: Optional[str] = None):
         # fills it with the ImageNet mean and the window stays trainable.
         ax.imshow(np.full((10, 18, 3), 128, dtype=np.uint8))
         ax.text(
-            0.5, 0.5, "no image", transform=ax.transAxes,
-            ha="center", va="center", color="white", fontsize=11,
+            0.5,
+            0.5,
+            "no image",
+            transform=ax.transAxes,
+            ha="center",
+            va="center",
+            color="white",
+            fontsize=11,
         )
     ax.set_title(title if title is not None else camera.name, fontsize=9)
     ax.set_xticks([])
@@ -420,8 +433,13 @@ def add_trajectory_to_camera_ax(
     if len(run) < 2:
         return ax
     ax.plot(
-        run[:, 0], run[:, 1],
-        color=color, linewidth=line_width, alpha=0.9, zorder=4, label=label,
+        run[:, 0],
+        run[:, 1],
+        color=color,
+        linewidth=line_width,
+        alpha=0.9,
+        zorder=4,
+        label=label,
     )
     return ax
 

@@ -45,7 +45,9 @@ def build_scorer_config(cfg: DictConfig) -> T4NavSimScorerConfig:
     :return: the PDM/NavSim scorer configuration.
     """
     overrides: Dict[str, Any] = _container(cfg.get("scorer"))
-    overrides.setdefault("version", str(cfg.get("pdm_version") or "navsim-v2").removeprefix("navsim-"))
+    overrides.setdefault(
+        "version", str(cfg.get("pdm_version") or "navsim-v2").removeprefix("navsim-")
+    )
     overrides.setdefault("backend", str(cfg.get("backend") or "gpu"))
     if cfg.get("device") is not None:
         overrides.setdefault("device", str(cfg.device))

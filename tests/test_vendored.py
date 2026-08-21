@@ -70,7 +70,9 @@ def test_no_upstream_repo_imports():
             if stripped.startswith("#"):
                 continue
             for package in ("navsim",):
-                if stripped.startswith(f"from {package}") or stripped.startswith(f"import {package}"):
+                if stripped.startswith(f"from {package}") or stripped.startswith(
+                    f"import {package}"
+                ):
                     offenders.append(f"{path.relative_to(REPO_ROOT)}:{number}: {stripped}")
     assert not offenders, "upstream repo imports found:\n" + "\n".join(offenders)
 

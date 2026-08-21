@@ -92,8 +92,10 @@ class IDMTrafficAgentController:
         desired_gap = self.min_gap_m + speed * self.time_headway_s
         if lead_gap is not None:
             closing_speed = speed - max(0.0, float(ego_state.speed_mps))
-            desired_gap += speed * closing_speed / (
-                2.0 * math.sqrt(self.max_acceleration_mps2 * self.comfortable_deceleration_mps2)
+            desired_gap += (
+                speed
+                * closing_speed
+                / (2.0 * math.sqrt(self.max_acceleration_mps2 * self.comfortable_deceleration_mps2))
             )
             interaction = (desired_gap / max(lead_gap, 1.0e-3)) ** 2
         else:
@@ -224,8 +226,7 @@ class MultiAgentTrafficPolicy:
         self._states = next_states
         self._ages = next_ages
         local_states = [
-            _state_to_local(state_value, recorded_pose)
-            for state_value in self.snapshot()
+            _state_to_local(state_value, recorded_pose) for state_value in self.snapshot()
         ]
         if not local_states:
             updated_annotations = Annotations.empty()
@@ -234,7 +235,9 @@ class MultiAgentTrafficPolicy:
                 boxes=np.stack([item.box for item in local_states], axis=0).astype(np.float32),
                 labels=np.asarray([item.label for item in local_states], dtype=np.int64),
                 track_tokens=[item.track_token for item in local_states],
-                velocities=np.stack([item.velocity for item in local_states], axis=0).astype(np.float32),
+                velocities=np.stack([item.velocity for item in local_states], axis=0).astype(
+                    np.float32
+                ),
             )
         frames = list(scene.frames)
         frames[scene.current_frame_index] = replace(

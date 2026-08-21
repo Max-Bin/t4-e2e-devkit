@@ -49,11 +49,15 @@ class SimplePlanner(AbstractPlanner):
     def compute_planner_trajectory(self, current_input: PlannerInput) -> Trajectory:
         ego_state, _ = current_input.history.current_state
         speed = _speed(ego_state)
-        times = np.arange(1, int(self.sampling.num_poses) + 1, dtype=np.float64) * float(self.sampling.interval_length)
+        times = np.arange(1, int(self.sampling.num_poses) + 1, dtype=np.float64) * float(
+            self.sampling.interval_length
+        )
         displacement = speed * times + 0.5 * self.acceleration * times * times
         displacement = np.maximum.accumulate(np.maximum(0.0, displacement))
         return Trajectory(
-            np.column_stack((displacement, np.zeros_like(displacement), np.zeros_like(displacement))).astype(np.float32),
+            np.column_stack(
+                (displacement, np.zeros_like(displacement), np.zeros_like(displacement))
+            ).astype(np.float32),
             trajectory_sampling=self.sampling,
         )
 

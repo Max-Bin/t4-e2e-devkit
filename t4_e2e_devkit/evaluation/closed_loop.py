@@ -89,16 +89,14 @@ class ClosedLoopTrace:
             values = np.asarray(getattr(self, name)).reshape(-1)
             if len(values) != length:
                 raise ValueError(
-                    f"closed-loop trace field {name!r} has {len(values)} rows; "
-                    f"expected {length}"
+                    f"closed-loop trace field {name!r} has {len(values)} rows; expected {length}"
                 )
             object.__setattr__(self, name, np.ascontiguousarray(values))
 
         poses = np.asarray(self.poses_world, dtype=np.float64)
         if poses.shape != (length, 3):
             raise ValueError(
-                "closed-loop trace poses_world must have shape "
-                f"({length}, 3), got {poses.shape}"
+                f"closed-loop trace poses_world must have shape ({length}, 3), got {poses.shape}"
             )
         object.__setattr__(self, "poses_world", np.ascontiguousarray(poses))
         object.__setattr__(self, "step", np.asarray(self.step, dtype=np.int64).reshape(-1))
@@ -107,8 +105,15 @@ class ClosedLoopTrace:
             "source_frames",
             np.asarray(self.source_frames, dtype=np.int64).reshape(-1),
         )
-        for name in ("time_s", "speed_mps", "acceleration_mps2", "yaw_rate_radps",
-                     "steering_rad", "step_distance_m", "path_length_m"):
+        for name in (
+            "time_s",
+            "speed_mps",
+            "acceleration_mps2",
+            "yaw_rate_radps",
+            "steering_rad",
+            "step_distance_m",
+            "path_length_m",
+        ):
             object.__setattr__(
                 self,
                 name,
@@ -159,8 +164,7 @@ class ClosedLoopTrace:
             values = np.asarray(values, dtype=dtype).reshape(-1)
             if len(values) != length:
                 raise ValueError(
-                    f"closed-loop trace field {name!r} has {len(values)} rows; "
-                    f"expected {length}"
+                    f"closed-loop trace field {name!r} has {len(values)} rows; expected {length}"
                 )
             object.__setattr__(self, name, np.ascontiguousarray(values))
 
@@ -347,9 +351,7 @@ def compute_closed_loop_metrics(
     displacement = np.diff(poses[:, :2], axis=0)
     step_distances = np.linalg.norm(displacement, axis=-1)
     speeds = np.asarray([state.speed_mps for state in states], dtype=np.float64)
-    accelerations = np.asarray(
-        [state.acceleration_mps2 for state in states[1:]], dtype=np.float64
-    )
+    accelerations = np.asarray([state.acceleration_mps2 for state in states[1:]], dtype=np.float64)
     yaw_rates = np.asarray([state.yaw_rate_radps for state in states[1:]], dtype=np.float64)
 
     window_steps = max(1, int(math.ceil(config.stuck_window_s / result.dt_s)))

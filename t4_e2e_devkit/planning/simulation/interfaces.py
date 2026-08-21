@@ -31,11 +31,9 @@ class EgoController(Protocol):
         self,
         state: "KinematicState",
         reference_world: np.ndarray,
-    ) -> "KinematicState":
-        ...
+    ) -> "KinematicState": ...
 
-    def reset(self) -> None:
-        ...
+    def reset(self) -> None: ...
 
 
 @runtime_checkable
@@ -48,8 +46,7 @@ class ObservationProvider(Protocol):
         history_world: np.ndarray,
         state: "KinematicState",
         dt_s: float,
-    ) -> T4AgentInput:
-        ...
+    ) -> T4AgentInput: ...
 
 
 @runtime_checkable
@@ -63,8 +60,7 @@ class TrafficPolicy(Protocol):
         state: "KinematicState",
         step: int,
         dt_s: float,
-    ) -> T4Scene:
-        ...
+    ) -> T4Scene: ...
 
 
 @dataclass(frozen=True)
@@ -98,8 +94,7 @@ class TrafficAgentState:
 class TrafficAgentController(Protocol):
     """Lifecycle for one reactive traffic-agent policy."""
 
-    def reset(self) -> None:
-        ...
+    def reset(self) -> None: ...
 
     def step(
         self,
@@ -107,8 +102,7 @@ class TrafficAgentController(Protocol):
         *,
         ego_state: "KinematicState",
         dt_s: float,
-    ) -> TrafficAgentState:
-        ...
+    ) -> TrafficAgentState: ...
 
 
 class CallableTrafficAgentController:
@@ -177,17 +171,13 @@ class ConstantVelocityTrafficAgentController:
 class SimulationCallback(Protocol):
     """Optional hooks for a simulation manager or closed-loop runner."""
 
-    def on_start(self, token: str, state: "KinematicState") -> None:
-        ...
+    def on_start(self, token: str, state: "KinematicState") -> None: ...
 
-    def on_step(self, tick: "SimulationTick") -> None:
-        ...
+    def on_step(self, tick: "SimulationTick") -> None: ...
 
-    def on_end(self, result: "T4ClosedLoopResult") -> None:
-        ...
+    def on_end(self, result: "T4ClosedLoopResult") -> None: ...
 
-    def on_error(self, error: BaseException) -> None:
-        ...
+    def on_error(self, error: BaseException) -> None: ...
 
 
 @dataclass(frozen=True)
@@ -211,7 +201,9 @@ class ReactiveTrafficPolicy:
     observation provider.
     """
 
-    def __init__(self, controller: TrafficAgentController | Callable[..., TrafficAgentState]) -> None:
+    def __init__(
+        self, controller: TrafficAgentController | Callable[..., TrafficAgentState]
+    ) -> None:
         self.controller: TrafficAgentController = (
             controller
             if isinstance(controller, TrafficAgentController)
@@ -397,7 +389,9 @@ class ConstantVelocityTrafficPolicy:
         updated = Annotations(
             boxes=boxes,
             labels=np.array(annotations.labels, copy=True),
-            track_tokens=None if annotations.track_tokens is None else list(annotations.track_tokens),
+            track_tokens=None
+            if annotations.track_tokens is None
+            else list(annotations.track_tokens),
             velocities=np.array(velocities, dtype=np.float32),
         )
         frames = list(scene.frames)

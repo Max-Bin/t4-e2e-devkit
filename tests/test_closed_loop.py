@@ -112,9 +112,7 @@ def test_perfect_tracker_matches_reference_step():
     assert updated.heading == pytest.approx(math.pi / 2)
     assert updated.yaw_rate_radps == pytest.approx(math.pi / 2 / 0.1)
 
-    new_pose, new_speed = tracker.track(
-        np.array([0.0, 0.0, 0.0, 0.0]), reference
-    )
+    new_pose, new_speed = tracker.track(np.array([0.0, 0.0, 0.0, 0.0]), reference)
     np.testing.assert_allclose(new_pose, [0.1, 0.0, math.pi / 2])
     assert new_speed == pytest.approx(1.0)
     assert tracker.last_accel == pytest.approx(10.0)

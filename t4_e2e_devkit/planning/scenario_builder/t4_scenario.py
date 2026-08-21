@@ -37,9 +37,7 @@ class T4ScenarioBuilder:
         interval_length: float = T4_INTERVAL_LENGTH,
         include_history_annotations: bool = True,
     ) -> None:
-        self.data_list = (
-            data_list if isinstance(data_list, DataList) else load_data_list(data_list)
-        )
+        self.data_list = data_list if isinstance(data_list, DataList) else load_data_list(data_list)
         self.scene_filter = scene_filter or SceneFilter()
         self.sensor_config = sensor_config or SensorConfig.build_no_sensors()
         self.reader_config = dict(reader_config or {})

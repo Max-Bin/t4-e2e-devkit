@@ -9,6 +9,13 @@ T4 scene files -> data list -> T4Scene -> model -> prediction manifest
                                       └── evaluator / visualizer
 ```
 
+The dataset layer serves two consumers through one set of readers: the rich
+`T4Scene` object for agents and evaluation, and the flat numpy training window
+(`dataset.training_window`) a training loader consumes. A window's history
+span, future span and model rate are one `TemporalSpec`
+(`common.temporal`) — `hz` must divide the 10 Hz source rate, and sampling is
+stride-based, never interpolated.
+
 The repository supports the T4 scene format only. It does not require a
 NuPlan database or an experiment-tracking service. Evaluation returns ordinary
 Python dictionaries and local files, so a caller may send the results to any
@@ -26,10 +33,22 @@ logger or dashboard.
 | Run a registered agent | `t4e2e evaluate` | Open-loop and PDM reports |
 | Run sensor-replay closed loop | `t4e2e evaluate-closed-loop` | Kinematic rollout and metrics |
 | Score during training | `OfficialDevkitScoreCallback` | Distributed GPU scoring and generic logger output |
+| Read flat training windows | `dataset.training_window` | One numpy dict per `(scene, center)` at a chosen `TemporalSpec` |
 
 LiDAR is opt-in. Map-only and camera-only visualization do not decode it. The
-public camera path currently supports the configured wide, JPEG-backed camera
-channels; narrow and video-backed channels are not part of the input contract.
+public camera path supports the road-facing channels a rig exports as one JPEG
+per frame; video-backed and roof channels are not part of the input contract.
+
+The fleet has no single camera register, so every camera run names one. The
+supported subtrees and their profiles:
+
+| Subtree | Rig | Profile |
+| --- | --- | --- |
+| `prd_jt`, `prd_jt_val` | five wide JPEG views, narrow views HEVC | `wide5` |
+| `x2_dev` | one wide plus a six-camera JPEG surround, real `CAM_BACK` | `x2_surround6` |
+
+The two profiles share no channel, so a checkpoint trained through one cannot be
+evaluated through the other. `t4e2e rigs SCENE` reports what a scene has.
 
 ## Install and verify
 
@@ -62,6 +81,7 @@ ignored `results/` or `reports/` directory.
 uv run t4e2e datalist \
   --root /path/to/t4 \
   --glob 'prd_jt/*/*/*' \
+  --camera-names wide5 \
   --out results/val.datalist.json
 
 uv run t4e2e inspect results/val.datalist.json
@@ -139,7 +159,7 @@ from t4_e2e_devkit.planning.simulation.trajectory.trajectory_sampling import (
 )
 
 TrajectorySampling(num_poses=80, interval_length=0.1)  # 8 seconds
-TrajectorySampling(num_poses=8, interval_length=0.5)   # 4 seconds
+TrajectorySampling(num_poses=8, interval_length=0.5)  # 4 seconds
 ```
 
 Poses use the current ego frame as `(x, y, heading)`: `x` is forward, `y` is

@@ -7,6 +7,8 @@ is one frame short.  Every test in this file therefore reads the dataset.
 
 from __future__ import annotations
 
+import json
+
 import numpy as np
 import pytest
 
@@ -14,6 +16,7 @@ from t4_e2e_devkit.common import constants as C
 from t4_e2e_devkit.common.dataclasses import SceneFilter, SensorConfig
 from t4_e2e_devkit.dataset.contract import BUNDLE_TO_CONTRACT, CONTRACT_MAP_FIELDS
 from t4_e2e_devkit.dataset.datalist import DataList, load_data_list
+from t4_e2e_devkit.dataset.rigs import sensor_config_for_scene
 from t4_e2e_devkit.dataset.window import T4WindowBuilder, WindowError
 
 pytestmark = pytest.mark.data
@@ -82,7 +85,15 @@ class TestTrajectoryHorizon:
         try:
             centers = builder.valid_centers()
             scene = builder.build(centers[len(centers) // 2])
-            with pytest.raises(ValueError, match="too few"):
+            # 10 frames is 1.0 s; the default contract asks for 8 poses at 0.5 s.
+            # Assert on the counts rather than on a wording: the refusal must say
+            # what was asked for and what the scene has, because a short window
+            # must never be padded or extrapolated into a full one, and "too few"
+            # alone does not tell the caller which end to fix.
+            with pytest.raises(
+                ValueError,
+                match=rf"cannot provide {C.TRAJECTORY_POSES} poses .*from 10 future frames",
+            ):
                 scene.get_future_trajectory()
         finally:
             builder.close()
@@ -99,7 +110,9 @@ class TestMapFields:
         m = scene.current_frame.map_tensors
         assert m.lanes.shape == (C.NUM_SEGMENTS_IN_LANE, C.POINTS_PER_LANELET, C.SEGMENT_POINT_DIM)
         assert m.route_lanes.shape == (
-            C.NUM_SEGMENTS_IN_ROUTE, C.POINTS_PER_LANELET, C.SEGMENT_POINT_DIM,
+            C.NUM_SEGMENTS_IN_ROUTE,
+            C.POINTS_PER_LANELET,
+            C.SEGMENT_POINT_DIM,
         )
         assert m.polygons.shape == (C.NUM_POLYGONS, C.POINTS_PER_POLYGON, 3)
         assert m.line_strings.shape == (C.NUM_LINE_STRINGS, C.POINTS_PER_LINE_STRING, 4)
@@ -120,9 +133,13 @@ class TestSensorLaziness:
         assert all(frame.cameras is None for frame in scene.frames)
         assert all(frame.lidar is None for frame in scene.frames)
 
-    def test_current_frame_only_decodes_one_step(self, t4_scene_dir, t4_root):
+    def test_current_frame_only_decodes_one_step(self, rig_scene_dir, t4_root):
         builder = T4WindowBuilder(
-            t4_scene_dir, t4_root, sensor_config=SensorConfig.build_current_frame(lidar=True)
+            rig_scene_dir,
+            t4_root,
+            # Resolved against this scene's rig: there is no register that fits
+            # both prd_jt and x2_dev, so a fixed one would test one rig twice.
+            sensor_config=sensor_config_for_scene(rig_scene_dir, "auto", lidar=True),
         )
         try:
             centers = builder.valid_centers()
@@ -134,9 +151,11 @@ class TestSensorLaziness:
         finally:
             builder.close()
 
-    def test_camera_images_are_raw_uint8_at_reader_resolution(self, t4_scene_dir, t4_root):
+    def test_camera_images_are_raw_uint8_at_reader_resolution(self, rig_scene_dir, t4_root):
         builder = T4WindowBuilder(
-            t4_scene_dir, t4_root, sensor_config=SensorConfig.build_current_frame()
+            rig_scene_dir,
+            t4_root,
+            sensor_config=sensor_config_for_scene(rig_scene_dir, "auto"),
         )
         try:
             centers = builder.valid_centers()
@@ -151,9 +170,11 @@ class TestSensorLaziness:
         finally:
             builder.close()
 
-    def test_intrinsics_are_rescaled_to_reader_resolution(self, t4_scene_dir, t4_root):
+    def test_intrinsics_are_rescaled_to_reader_resolution(self, rig_scene_dir, t4_root):
         builder = T4WindowBuilder(
-            t4_scene_dir, t4_root, sensor_config=SensorConfig.build_current_frame()
+            rig_scene_dir,
+            t4_root,
+            sensor_config=sensor_config_for_scene(rig_scene_dir, "auto"),
         )
         try:
             centers = builder.valid_centers()
@@ -172,7 +193,8 @@ class TestSensorLaziness:
 
     def test_lidar_points_have_five_columns(self, t4_scene_dir, t4_root):
         builder = T4WindowBuilder(
-            t4_scene_dir, t4_root,
+            t4_scene_dir,
+            t4_root,
             sensor_config=SensorConfig(cameras={}, lidar=[-1]),
         )
         try:
@@ -246,7 +268,19 @@ class TestDataList:
             load_data_list(tmp_path / "bad.json")
 
     def test_empty_list_is_refused(self, tmp_path, t4_root):
-        (tmp_path / "empty.json").write_text('{"root": "/x", "rows": []}')
+        # Stamped from the constants, not spelled out: a hand-written header goes
+        # stale the moment the format or version moves, and then the header guard
+        # fires first and this test silently stops covering the empty-rows guard.
+        (tmp_path / "empty.json").write_text(
+            json.dumps(
+                {
+                    "format": C.DATA_LIST_FORMAT,
+                    "version": C.DATA_LIST_VERSION,
+                    "root": "/x",
+                    "rows": [],
+                }
+            )
+        )
         with pytest.raises(ValueError, match="no rows"):
             load_data_list(tmp_path / "empty.json")
 

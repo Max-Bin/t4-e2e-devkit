@@ -51,14 +51,18 @@ def merge_evaluation_reports(
     if destination in sources:
         raise ValueError("output directory must differ from every input directory")
     runs = [_read_run(source) for source in sources]
-    signatures = [{key: value for key, value in run.items() if key not in _VOLATILE} for run in runs]
+    signatures = [
+        {key: value for key, value in run.items() if key not in _VOLATILE} for run in runs
+    ]
     if any(value != signatures[0] for value in signatures[1:]):
         raise ValueError("evaluation rank configurations do not match")
     declared_world_size = int(runs[0].get("world_size", 1))
     ranks = [int(run.get("rank", 0)) for run in runs]
     if len(set(ranks)) != len(ranks):
         raise ValueError(f"duplicate ranks: {ranks}")
-    if not allow_incomplete and (set(ranks) != set(range(declared_world_size)) or len(sources) != declared_world_size):
+    if not allow_incomplete and (
+        set(ranks) != set(range(declared_world_size)) or len(sources) != declared_world_size
+    ):
         raise ValueError(
             f"incomplete rank set; expected {list(range(declared_world_size))}, got {sorted(ranks)}"
         )
@@ -89,9 +93,7 @@ def merge_evaluation_reports(
             else:
                 failures.append((token, str(record.get("error", "evaluation failed"))))
         if expected_tokens is not None and actual_tokens != expected_tokens:
-            raise ValueError(
-                f"evaluation records do not match the worker manifest in {source}"
-            )
+            raise ValueError(f"evaluation records do not match the worker manifest in {source}")
 
     records.sort(key=lambda item: str(item["token"]))
     output = Path(output_dir)
@@ -117,14 +119,17 @@ def merge_evaluation_reports(
         stream.write("token,error\n")
         for token, error in failures:
             stream.write(f"{_csv(token)},{_csv(error)}\n")
-    write_json(output / "run.json", {
-        **merged_config,
-        "status": "failed" if failures else "completed",
-        "config_fingerprint": resolved_fingerprint,
-        "rank_rows": len(records) + len(failures),
-        "num_completed": len(records),
-        "num_failed": len(failures),
-    })
+    write_json(
+        output / "run.json",
+        {
+            **merged_config,
+            "status": "failed" if failures else "completed",
+            "config_fingerprint": resolved_fingerprint,
+            "rank_rows": len(records) + len(failures),
+            "num_completed": len(records),
+            "num_failed": len(failures),
+        },
+    )
     return report
 
 
@@ -133,7 +138,11 @@ def _read_run(directory: Path) -> dict[str, Any]:
         value = json.loads((directory / "run.json").read_text(encoding="utf-8"))
     except (OSError, json.JSONDecodeError) as error:
         raise ValueError(f"cannot read {directory / 'run.json'}") from error
-    if not isinstance(value, dict) or value.get("format") != RUN_FORMAT or value.get("version") != RUN_VERSION:
+    if (
+        not isinstance(value, dict)
+        or value.get("format") != RUN_FORMAT
+        or value.get("version") != RUN_VERSION
+    ):
         raise ValueError(f"not an evaluation run directory: {directory}")
     if value.get("status") not in {"completed", "failed"}:
         raise ValueError(f"evaluation run is not finished: {directory}")

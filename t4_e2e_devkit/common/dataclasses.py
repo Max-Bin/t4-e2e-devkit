@@ -22,7 +22,6 @@ from t4_e2e_devkit.common.constants import (
     T4_INTERVAL_LENGTH,
     T4_LIDAR_POINT_DIM,
     T4_SUPPORTED_CAMERA_NAMES,
-    T4_WIDE5_CAMERA_NAMES,
     TRAJECTORY_INTERVAL,
     TRAJECTORY_POSES,
 )
@@ -188,8 +187,16 @@ class Cameras:
         return np.stack(images, axis=0)
 
     @classmethod
-    def empty(cls, names: Sequence[str] = T4_WIDE5_CAMERA_NAMES) -> Cameras:
-        """:return: a register with every named slot present but unfilled."""
+    def empty(cls, names: Sequence[str]) -> Cameras:
+        """A register with every named slot present but unfilled.
+
+        ``names`` is required: no register is the fleet default, and a
+        wide-five default here silently produced a prd_jt-shaped placeholder on
+        every rig.
+
+        :param names: the register to create slots for, in order.
+        :return: the empty register.
+        """
         return cls({name: Camera(name=name) for name in names})
 
 
@@ -205,8 +212,7 @@ class Lidar:
         values = np.asarray(self.lidar_pc, dtype=np.float32)
         if values.ndim != 2 or values.shape[1] != T4_LIDAR_POINT_DIM:
             raise ValueError(
-                f"T4 LiDAR points are [x, y, z, intensity, ring_or_time]; "
-                f"got shape {values.shape}"
+                f"T4 LiDAR points are [x, y, z, intensity, ring_or_time]; got shape {values.shape}"
             )
         self.lidar_pc = np.ascontiguousarray(values)
 
@@ -240,7 +246,9 @@ class EgoShape:
         """:param array: ``[3]`` of ``(wheel_base, length, width)``."""
         values = np.asarray(array, dtype=np.float64).reshape(-1)
         if values.shape[0] != 3:
-            raise ValueError(f"ego_shape must be [wheel_base, length, width]; got shape {values.shape}")
+            raise ValueError(
+                f"ego_shape must be [wheel_base, length, width]; got shape {values.shape}"
+            )
         return cls(
             wheel_base=float(values[EGO_SHAPE_IDX_WHEEL_BASE]),
             length=float(values[EGO_SHAPE_IDX_LENGTH]),
@@ -396,8 +404,7 @@ class MapObjectIds:
         output = Path(path)
         output.parent.mkdir(parents=True, exist_ok=True)
         output.write_text(
-            json.dumps(self.as_dict(), ensure_ascii=False, indent=2, sort_keys=True)
-            + "\n",
+            json.dumps(self.as_dict(), ensure_ascii=False, indent=2, sort_keys=True) + "\n",
             encoding="utf-8",
         )
         return str(output)
@@ -474,9 +481,7 @@ class Annotations:
                 f"(x, y, z, width, length, height, yaw[, vx, vy]); got {boxes.shape}"
             )
         if len(labels) != len(boxes):
-            raise ValueError(
-                f"annotation labels ({len(labels)}) and boxes ({len(boxes)}) disagree"
-            )
+            raise ValueError(f"annotation labels ({len(labels)}) and boxes ({len(boxes)}) disagree")
         if self.track_tokens is not None and len(self.track_tokens) != len(boxes):
             raise ValueError(
                 f"annotation track_tokens ({len(self.track_tokens)}) and boxes "
@@ -538,14 +543,18 @@ class Trajectory:
         validate_trajectory_sampling(self.trajectory_sampling)
         poses = np.asarray(self.poses, dtype=np.float32)
         if poses.ndim != 2:
-            raise ValueError(f"Trajectory poses need two dimensions (samples, pose); got {poses.shape}")
+            raise ValueError(
+                f"Trajectory poses need two dimensions (samples, pose); got {poses.shape}"
+            )
         if poses.shape[0] != self.trajectory_sampling.num_poses:
             raise ValueError(
                 f"Trajectory has {poses.shape[0]} poses but its sampling declares "
                 f"{self.trajectory_sampling.num_poses}"
             )
         if poses.shape[1] != 3:
-            raise ValueError(f"Trajectory poses need (x, y, heading) at the last dim; got {poses.shape}")
+            raise ValueError(
+                f"Trajectory poses need (x, y, heading) at the last dim; got {poses.shape}"
+            )
         if not np.isfinite(poses).all():
             raise ValueError("Trajectory poses must contain only finite values")
         # The dataclass is the numpy boundary.  Normalising here keeps callers
@@ -589,8 +598,12 @@ class Trajectory:
         source_interval = float(self.trajectory_sampling.interval_length)
         target_interval = float(target_sampling.interval_length)
         source_times = np.arange(len(self) + 1, dtype=np.float64) * source_interval
-        target_times = np.arange(1, target_sampling.num_poses + 1, dtype=np.float64) * target_interval
-        source_poses = np.vstack((np.zeros((1, 3), dtype=np.float64), self.poses.astype(np.float64)))
+        target_times = (
+            np.arange(1, target_sampling.num_poses + 1, dtype=np.float64) * target_interval
+        )
+        source_poses = np.vstack(
+            (np.zeros((1, 3), dtype=np.float64), self.poses.astype(np.float64))
+        )
 
         if target_times.size:
             source_horizon = float(source_times[-1])
@@ -613,9 +626,7 @@ class Trajectory:
                 result[index] = values[-1] + slope * (time - source_times[-1])
             return result
 
-        xy = np.stack(
-            [interpolate(source_poses[:, column]) for column in (0, 1)], axis=-1
-        )
+        xy = np.stack([interpolate(source_poses[:, column]) for column in (0, 1)], axis=-1)
         unwrapped_heading = np.unwrap(source_poses[:, 2])
         heading = interpolate(unwrapped_heading)
         poses = np.column_stack((xy, heading)).astype(np.float32)
@@ -782,9 +793,7 @@ class T4Scene:
                 "it was read with a filter that excluded them"
             )
         if trajectory_sampling is not None and (num_poses is not None or stride is not None):
-            raise ValueError(
-                "trajectory_sampling cannot be combined with num_poses or stride"
-            )
+            raise ValueError("trajectory_sampling cannot be combined with num_poses or stride")
         if trajectory_sampling is None:
             num_poses = TRAJECTORY_POSES if num_poses is None else int(num_poses)
             stride = FUTURE_STRIDE if stride is None else int(stride)
@@ -864,9 +873,11 @@ class SensorConfig:
 
     Values are ``bool`` (all history steps or none) or ``list[int]`` (specific
     history step indices, where ``-1`` is the current frame).  ``cameras`` is
-    keyed by camera name; the public input boundary currently accepts only the
-    JPEG-backed wide channels, while the full on-disk register remains available
-    to schema inspection.
+    keyed by camera name; the public input boundary accepts the road-facing
+    channels some rig exports as JPEG, while the full on-disk register remains
+    available to schema inspection.  Whether a *given scene* can serve a named
+    channel is a rig question, answered by
+    :func:`t4_e2e_devkit.dataset.rigs.resolve_camera_names`.
     """
 
     cameras: Dict[str, Union[bool, List[int]]] = field(default_factory=dict)
@@ -878,7 +889,7 @@ class SensorConfig:
         if unsupported:
             raise ValueError(
                 f"unsupported T4 cameras: {unsupported}. "
-                "Only JPEG-backed wide cameras are supported."
+                f"Supported channels: {list(T4_SUPPORTED_CAMERA_NAMES)}."
             )
 
     def camera_names_at(self, iteration: int) -> List[str]:
@@ -919,35 +930,35 @@ class SensorConfig:
     @classmethod
     def build_current_frame(
         cls,
-        camera_names: Optional[Sequence[str]] = None,
+        camera_names: Sequence[str] = (),
         lidar: bool = False,
     ) -> SensorConfig:
         """Current frame only -- the common case for single-timestep models.
 
-        :param camera_names: cameras to decode, in register order.  ``None``
-            falls back to the wide-five profile; to take whatever a given scene
-            actually stores, use
-            :func:`t4_e2e_devkit.dataset.rigs.sensor_config_for_scene` instead,
-            since no single register fits every rig in the fleet.
+        :param camera_names: cameras to decode, in register order.  There is no
+            fleet-wide default: ``wide5`` resolves on 96% of prd_jt and on no
+            x2_dev scene, so a default here would be a prd_jt assumption wearing
+            a neutral name.  Name a profile from
+            :data:`t4_e2e_devkit.common.constants.T4_CAMERA_PROFILES`, or use
+            :func:`t4_e2e_devkit.dataset.rigs.sensor_config_for_scene` to take
+            whatever a given scene actually stores.  Empty means no camera.
         :param lidar: whether to decode the current LiDAR sweep.
         :return: sensor configuration dataclass.
         """
-        names = T4_WIDE5_CAMERA_NAMES if camera_names is None else camera_names
         return cls(
-            cameras={name: [-1] for name in names},
+            cameras={name: [-1] for name in camera_names},
             lidar=[-1] if lidar else False,
         )
 
     @classmethod
-    def build_all_sensors(
-        cls, camera_names: Optional[Sequence[str]] = None
-    ) -> SensorConfig:
+    def build_all_sensors(cls, camera_names: Sequence[str] = ()) -> SensorConfig:
         """
-        :param camera_names: cameras to decode; the wide-five profile by default.
+        :param camera_names: cameras to decode, in register order; empty means
+            none.  As in :meth:`build_current_frame`, no register is a fleet
+            default.
         :return: every named camera and LiDAR at every history step.
         """
-        names = T4_WIDE5_CAMERA_NAMES if camera_names is None else camera_names
-        return cls(cameras={name: True for name in names}, lidar=True)
+        return cls(cameras={name: True for name in camera_names}, lidar=True)
 
 
 @dataclass

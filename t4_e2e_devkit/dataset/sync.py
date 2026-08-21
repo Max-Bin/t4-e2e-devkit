@@ -148,7 +148,9 @@ class SensorSync:
             unreadable.
         """
         scene_dir = Path(scene_dir)
-        paths = {name: scene_dir / name for name in (SAMPLE_DATA, EGO_POSE, SENSOR, CALIBRATED_SENSOR)}
+        paths = {
+            name: scene_dir / name for name in (SAMPLE_DATA, EGO_POSE, SENSOR, CALIBRATED_SENSOR)
+        }
         missing = [str(path) for path in paths.values() if not path.is_file()]
         if missing:
             if require:
@@ -163,16 +165,16 @@ class SensorSync:
             ego_poses = {
                 record["token"]: record for record in json.loads(paths[EGO_POSE].read_text())
             }
-            sensors = {
-                record["token"]: record for record in json.loads(paths[SENSOR].read_text())
-            }
+            sensors = {record["token"]: record for record in json.loads(paths[SENSOR].read_text())}
             calibrated = {
                 record["token"]: record
                 for record in json.loads(paths[CALIBRATED_SENSOR].read_text())
             }
         except (OSError, ValueError, KeyError) as error:
             if require:
-                raise SyncUnavailable(f"{scene_dir}: unreadable annotation tables: {error!r}") from error
+                raise SyncUnavailable(
+                    f"{scene_dir}: unreadable annotation tables: {error!r}"
+                ) from error
             return None
 
         channels: Dict[str, ChannelTimes] = {}
@@ -190,9 +192,7 @@ class SensorSync:
                 continue
             frame_index = int(stem)
 
-            entry = channels.setdefault(
-                channel, ChannelTimes(channel, {}, {}, {}, {})
-            )
+            entry = channels.setdefault(channel, ChannelTimes(channel, {}, {}, {}, {}))
             entry.frames[frame_index] = int(record["timestamp"])
             entry.key_frame[frame_index] = bool(record.get("is_key_frame", True))
             pose = ego_poses.get(record.get("ego_pose_token"))
@@ -277,9 +277,7 @@ class SensorSync:
     # Ego motion
     # ------------------------------------------------------------------ #
 
-    def ego_transform(
-        self, channel: str, frame_index: int
-    ) -> Optional["object"]:
+    def ego_transform(self, channel: str, frame_index: int) -> Optional["object"]:
         """The transform from the LiDAR-frame ego pose to the camera-frame one.
 
         Built with TIER IV's own :class:`HomogeneousMatrix`, so the frame
@@ -377,9 +375,7 @@ class SensorSync:
         if values.shape[0] == 0:
             return values.astype(np.float32)
 
-        moved = self._advance_objects(
-            values, offset, frame_index, next_boxes, labels, next_labels
-        )
+        moved = self._advance_objects(values, offset, frame_index, next_boxes, labels, next_labels)
         return self._apply_ego_motion(moved, channel, frame_index).astype(np.float32)
 
     def _advance_objects(
@@ -400,17 +396,17 @@ class SensorSync:
                 interval = later - here
 
         if next_boxes is not None and interval is not None and offset <= interval:
-            matched = _associate(values, np.asarray(next_boxes, np.float64).reshape(-1, 9),
-                                 labels, next_labels)
+            matched = _associate(
+                values, np.asarray(next_boxes, np.float64).reshape(-1, 9), labels, next_labels
+            )
             alpha = offset / interval
             for index, target in matched.items():
                 # Interpolate position and heading between the bracketing frames;
                 # this is t4-devkit's approach, and strictly better informed than
                 # extrapolation because the later frame is actually observed.
-                values[index, T4BoxIndex.POINT2D] = (
-                    (1.0 - alpha) * values[index, T4BoxIndex.POINT2D]
-                    + alpha * target[T4BoxIndex.POINT2D]
-                )
+                values[index, T4BoxIndex.POINT2D] = (1.0 - alpha) * values[
+                    index, T4BoxIndex.POINT2D
+                ] + alpha * target[T4BoxIndex.POINT2D]
                 values[index, T4BoxIndex.HEADING] = _interpolate_heading(
                     values[index, T4BoxIndex.HEADING], target[T4BoxIndex.HEADING], alpha
                 )

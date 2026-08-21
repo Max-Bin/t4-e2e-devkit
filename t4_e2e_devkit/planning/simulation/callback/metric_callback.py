@@ -28,9 +28,11 @@ class MetricCallback(AbstractCallback):
 
     def on_simulation_end(self, setup: Any, planner: Any, history: Any) -> None:
         del planner
-        token = self.scenario_token or str(
-            getattr(getattr(setup, "scenario", None), "token", "")
-        ) or None
+        token = (
+            self.scenario_token
+            or str(getattr(getattr(setup, "scenario", None), "token", ""))
+            or None
+        )
         self.results = self.registry.compute(history, scenario_token=token)
 
     def on_simulation_error(self, setup: Any, planner: Any, error: BaseException) -> None:

@@ -154,7 +154,9 @@ class ClosedLoopMetricBuilder(AbstractMetricBuilder):
             if not isinstance(value, T4ClosedLoopResult):
                 value = getattr(value, "closed_loop", getattr(value, "result", value))
             if not isinstance(value, T4ClosedLoopResult):
-                raise TypeError("closed-loop metric builder needs T4ClosedLoopResult or ClosedLoopMetrics")
+                raise TypeError(
+                    "closed-loop metric builder needs T4ClosedLoopResult or ClosedLoopMetrics"
+                )
             output = compute_closed_loop_metrics(
                 value,
                 config=self.config,
@@ -184,7 +186,9 @@ class NavSimMetricBuilder(AbstractMetricBuilder):
     ) -> None:
         self._name = str(name)
         self.version = str(version)
-        self.metric_names = None if metric_names is None else tuple(str(name) for name in metric_names)
+        self.metric_names = (
+            None if metric_names is None else tuple(str(name) for name in metric_names)
+        )
         self.scorer = scorer
 
     @property

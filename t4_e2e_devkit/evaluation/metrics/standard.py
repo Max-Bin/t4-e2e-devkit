@@ -24,13 +24,25 @@ class _SeriesMetric(AbstractMetric):
     def _statistic(self, series: TimeSeries) -> list[Statistic]:
         values = np.asarray(series.values, dtype=np.float64)
         return [
-            Statistic(f"max_{self.name}", series.unit, MetricStatisticsType.MAX, float(np.max(np.abs(values))) if values.size else 0.0),
-            Statistic(f"mean_{self.name}", series.unit, MetricStatisticsType.MEAN, float(np.mean(np.abs(values))) if values.size else 0.0),
+            Statistic(
+                f"max_{self.name}",
+                series.unit,
+                MetricStatisticsType.MAX,
+                float(np.max(np.abs(values))) if values.size else 0.0,
+            ),
+            Statistic(
+                f"mean_{self.name}",
+                series.unit,
+                MetricStatisticsType.MEAN,
+                float(np.mean(np.abs(values))) if values.size else 0.0,
+            ),
         ]
 
     def compute(self, history: Any, scenario: Any = None) -> list[MetricStatistics]:
         series = self._series(history)
-        return self._construct_metric_results(self._statistic(series), scenario=scenario, time_series=series)
+        return self._construct_metric_results(
+            self._statistic(series), scenario=scenario, time_series=series
+        )
 
 
 class AccelerationMetric(_SeriesMetric):
@@ -50,7 +62,9 @@ class JerkMetric(_SeriesMetric):
         super().__init__(name, category, metric_score_unit="ratio")
 
     def _values(self, samples: list[Any]) -> list[float]:
-        acceleration = np.asarray([_acceleration(item.ego_state) for item in samples], dtype=np.float64)
+        acceleration = np.asarray(
+            [_acceleration(item.ego_state) for item in samples], dtype=np.float64
+        )
         times = np.asarray([item.iteration.time_s for item in samples], dtype=np.float64)
         if len(acceleration) < 2:
             return [0.0] * len(acceleration)
@@ -64,7 +78,9 @@ class YawRateMetric(_SeriesMetric):
         super().__init__(name, category, metric_score_unit="ratio")
 
     def _values(self, samples: list[Any]) -> list[float]:
-        headings = np.unwrap(np.asarray([_heading(item.ego_state) for item in samples], dtype=np.float64))
+        headings = np.unwrap(
+            np.asarray([_heading(item.ego_state) for item in samples], dtype=np.float64)
+        )
         times = np.asarray([item.iteration.time_s for item in samples], dtype=np.float64)
         if len(headings) < 2:
             return [0.0] * len(headings)
@@ -102,7 +118,12 @@ class ProgressMetric(AbstractMetric):
 
 
 class ExpertL2ErrorMetric(AbstractMetric):
-    def __init__(self, ground_truth: Callable[[Any], Any], name: str = "expert_l2_error", category: str = "tracking") -> None:
+    def __init__(
+        self,
+        ground_truth: Callable[[Any], Any],
+        name: str = "expert_l2_error",
+        category: str = "tracking",
+    ) -> None:
         super().__init__(name, category, metric_score_unit="m")
         self.ground_truth = ground_truth
 
@@ -110,13 +131,32 @@ class ExpertL2ErrorMetric(AbstractMetric):
         predicted = np.asarray([_pose(item.ego_state) for item in history], dtype=np.float64)
         truth = np.asarray(self.ground_truth(history), dtype=np.float64)
         count = min(len(predicted), len(truth))
-        values = np.linalg.norm(predicted[:count, :2] - truth[:count, :2], axis=1) if count else np.zeros(0)
-        statistics = [Statistic("mean_l2", "m", MetricStatisticsType.MEAN, float(values.mean()) if len(values) else 0.0), Statistic("max_l2", "m", MetricStatisticsType.MAX, float(values.max()) if len(values) else 0.0)]
+        values = (
+            np.linalg.norm(predicted[:count, :2] - truth[:count, :2], axis=1)
+            if count
+            else np.zeros(0)
+        )
+        statistics = [
+            Statistic(
+                "mean_l2",
+                "m",
+                MetricStatisticsType.MEAN,
+                float(values.mean()) if len(values) else 0.0,
+            ),
+            Statistic(
+                "max_l2", "m", MetricStatisticsType.MAX, float(values.max()) if len(values) else 0.0
+            ),
+        ]
         return self._construct_metric_results(statistics, scenario=scenario)
 
 
 class ExpertHeadingErrorMetric(AbstractMetric):
-    def __init__(self, ground_truth: Callable[[Any], Any], name: str = "expert_heading_error", category: str = "tracking") -> None:
+    def __init__(
+        self,
+        ground_truth: Callable[[Any], Any],
+        name: str = "expert_heading_error",
+        category: str = "tracking",
+    ) -> None:
         super().__init__(name, category, metric_score_unit="rad")
         self.ground_truth = ground_truth
 
@@ -124,17 +164,39 @@ class ExpertHeadingErrorMetric(AbstractMetric):
         predicted = np.asarray([_heading(item.ego_state) for item in history], dtype=np.float64)
         truth = np.asarray(self.ground_truth(history), dtype=np.float64).reshape(-1)
         count = min(len(predicted), len(truth))
-        values = np.arctan2(np.sin(predicted[:count] - truth[:count]), np.cos(predicted[:count] - truth[:count]))
-        statistics = [Statistic("mean_heading_error", "rad", MetricStatisticsType.MEAN, float(np.mean(np.abs(values))) if len(values) else 0.0)]
+        values = np.arctan2(
+            np.sin(predicted[:count] - truth[:count]), np.cos(predicted[:count] - truth[:count])
+        )
+        statistics = [
+            Statistic(
+                "mean_heading_error",
+                "rad",
+                MetricStatisticsType.MEAN,
+                float(np.mean(np.abs(values))) if len(values) else 0.0,
+            )
+        ]
         return self._construct_metric_results(statistics, scenario=scenario)
 
 
 class SpeedLimitMetric(WithinBoundMetricBase):
-    def __init__(self, speed_limit_mps: float, name: str = "speed_limit", category: str = "speed") -> None:
-        super().__init__(name, category, lower_bound=float("-inf"), upper_bound=speed_limit_mps, max_violation_threshold=0, metric_score_unit="ratio")
+    def __init__(
+        self, speed_limit_mps: float, name: str = "speed_limit", category: str = "speed"
+    ) -> None:
+        super().__init__(
+            name,
+            category,
+            lower_bound=float("-inf"),
+            upper_bound=speed_limit_mps,
+            max_violation_threshold=0,
+            metric_score_unit="ratio",
+        )
 
     def compute(self, history: Any, scenario: Any = None) -> list[MetricStatistics]:
-        series = TimeSeries("m/s", [int(item.iteration.time_us) for item in history], [_speed(item.ego_state) for item in history])
+        series = TimeSeries(
+            "m/s",
+            [int(item.iteration.time_us) for item in history],
+            [_speed(item.ego_state) for item in history],
+        )
         return self.aggregate_metric_violations(self.find_violations(series), scenario, series)
 
 
@@ -144,13 +206,30 @@ class CollisionMetric(AbstractMetric):
 
     def compute(self, history: Any, scenario: Any = None) -> list[MetricStatistics]:
         collisions = sum(1 for item in history if bool(getattr(item, "collision", False)))
-        statistics = [Statistic("collision_count", "count", MetricStatisticsType.COUNT, collisions), Statistic(self.name, MetricStatisticsType.BOOLEAN.unit, MetricStatisticsType.BOOLEAN, collisions == 0)]
+        statistics = [
+            Statistic("collision_count", "count", MetricStatisticsType.COUNT, collisions),
+            Statistic(
+                self.name,
+                MetricStatisticsType.BOOLEAN.unit,
+                MetricStatisticsType.BOOLEAN,
+                collisions == 0,
+            ),
+        ]
         return self._construct_metric_results(statistics, scenario=scenario)
 
 
 class TTCMetric(WithinBoundMetricBase):
-    def __init__(self, minimum_ttc_s: float = 1.0, name: str = "ttc", category: str = "safety") -> None:
-        super().__init__(name, category, lower_bound=minimum_ttc_s, upper_bound=float("inf"), max_violation_threshold=0, metric_score_unit="ratio")
+    def __init__(
+        self, minimum_ttc_s: float = 1.0, name: str = "ttc", category: str = "safety"
+    ) -> None:
+        super().__init__(
+            name,
+            category,
+            lower_bound=minimum_ttc_s,
+            upper_bound=float("inf"),
+            max_violation_threshold=0,
+            metric_score_unit="ratio",
+        )
 
     def compute(self, history: Any, scenario: Any = None) -> list[MetricStatistics]:
         values = [_ttc(item) for item in history]
@@ -164,7 +243,10 @@ class StopLineViolationMetric(AbstractMetric):
 
     def compute(self, history: Any, scenario: Any = None) -> list[MetricStatistics]:
         value = sum(1 for item in history if bool(getattr(item, "stop_line_violation", False)))
-        statistics = [Statistic("violation_count", "count", MetricStatisticsType.COUNT, value), Statistic(self.name, "boolean", MetricStatisticsType.BOOLEAN, value == 0)]
+        statistics = [
+            Statistic("violation_count", "count", MetricStatisticsType.COUNT, value),
+            Statistic(self.name, "boolean", MetricStatisticsType.BOOLEAN, value == 0),
+        ]
         return self._construct_metric_results(statistics, scenario=scenario)
 
 
@@ -202,7 +284,9 @@ class TrafficLightMetric(_EventMetric):
 
 
 class GoalReachedMetric(AbstractMetric):
-    def __init__(self, radius_m: float = 2.0, name: str = "goal_reached", category: str = "progress") -> None:
+    def __init__(
+        self, radius_m: float = 2.0, name: str = "goal_reached", category: str = "progress"
+    ) -> None:
         if radius_m <= 0.0:
             raise ValueError("radius_m must be positive")
         super().__init__(name, category, metric_score_unit="boolean")
@@ -225,7 +309,11 @@ class GoalReachedMetric(AbstractMetric):
         reached = False
         if samples and goal is not None:
             target = np.asarray(goal, dtype=np.float64).reshape(-1)
-            reached = target.size >= 2 and float(np.linalg.norm(_pose(samples[-1].ego_state)[:2] - target[:2])) <= self.radius_m
+            reached = (
+                target.size >= 2
+                and float(np.linalg.norm(_pose(samples[-1].ego_state)[:2] - target[:2]))
+                <= self.radius_m
+            )
         statistics = [Statistic(self.name, "boolean", MetricStatisticsType.BOOLEAN, reached)]
         return self._construct_metric_results(statistics, scenario=scenario)
 
@@ -257,7 +345,9 @@ def _acceleration(state: Any) -> float:
     value = getattr(state, "acceleration_mps2", None)
     if value is not None:
         return float(value)
-    acceleration = np.asarray(getattr(state, "ego_acceleration", [0.0, 0.0]), dtype=np.float64).reshape(-1)
+    acceleration = np.asarray(
+        getattr(state, "ego_acceleration", [0.0, 0.0]), dtype=np.float64
+    ).reshape(-1)
     return float(np.linalg.norm(acceleration[:2]))
 
 

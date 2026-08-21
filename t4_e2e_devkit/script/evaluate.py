@@ -75,16 +75,16 @@ def evaluate_data_list(
     family_names = tuple(dict.fromkeys(str(name) for name in families))
     unknown = sorted(set(family_names) - set(FAMILIES))
     if not family_names or unknown:
-        raise ValueError(f"families must be a non-empty subset of {FAMILIES}; got {unknown or family_names}")
+        raise ValueError(
+            f"families must be a non-empty subset of {FAMILIES}; got {unknown or family_names}"
+        )
     pdm_version = str(pdm_version).lower()
     if pdm_version not in PDM_VERSIONS:
         raise ValueError(f"pdm_version must be one of {PDM_VERSIONS}")
     pdm_metric_names = (
         None
         if pdm_metric_names is None
-        else resolve_navsim_metric_names(
-            pdm_version.removeprefix("navsim-"), pdm_metric_names
-        )
+        else resolve_navsim_metric_names(pdm_version.removeprefix("navsim-"), pdm_metric_names)
     )
     if pdm_previous_interval_frames is not None and pdm_previous_interval_frames < 1:
         raise ValueError("pdm_previous_interval_frames must be positive")
@@ -217,15 +217,18 @@ def evaluate_data_list(
         else:
             error = str(value.get("error", "evaluation failed"))
             failures.append((token, error))
-            write_json(record_path(records_dir, token), {
-                "format": "t4.evaluation.record",
-                "version": 1,
-                "status": "failed",
-                "token": token,
-                "error": error,
-                "attempts": int(value.get("attempts", max_retries + 1)),
-                "config_fingerprint": resolved_fingerprint,
-            })
+            write_json(
+                record_path(records_dir, token),
+                {
+                    "format": "t4.evaluation.record",
+                    "version": 1,
+                    "status": "failed",
+                    "token": token,
+                    "error": error,
+                    "attempts": int(value.get("attempts", max_retries + 1)),
+                    "config_fingerprint": resolved_fingerprint,
+                },
+            )
             manifest_results.append(
                 WorkerResult(task_id=token, value={"status": "failed"}, rank=rank, error=error)
             )
@@ -251,17 +254,20 @@ def evaluate_data_list(
     )
     manifest_path = output / f"worker-manifest-rank-{rank}.json"
     manifest.write(manifest_path)
-    write_json(output / "run.json", {
-        **config,
-        "status": "failed" if failures else "completed",
-        "config_fingerprint": resolved_fingerprint,
-        "rank_rows": len(assigned),
-        "num_completed": len(records),
-        "num_failed": len(failures),
-        "num_resumed": len(previous),
-        "num_attempts": attempts_total,
-        "manifest": manifest_path.name,
-    })
+    write_json(
+        output / "run.json",
+        {
+            **config,
+            "status": "failed" if failures else "completed",
+            "config_fingerprint": resolved_fingerprint,
+            "rank_rows": len(assigned),
+            "num_completed": len(records),
+            "num_failed": len(failures),
+            "num_resumed": len(previous),
+            "num_attempts": attempts_total,
+            "manifest": manifest_path.name,
+        },
+    )
     return report
 
 
@@ -318,6 +324,7 @@ def _evaluate_one(
     )
     try:
         window = builder.build(int(center))
+
         def predict(value):
             with torch.inference_mode():
                 return (

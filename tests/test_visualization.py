@@ -263,8 +263,13 @@ class TestCameraGridLayout:
 
     def test_wide_five_rig_has_no_centre_rear_cell(self):
         grid = camera_grid_layout(
-            ["CAM_FRONT_WIDE", "CAM_FRONT_LEFT_WIDE", "CAM_FRONT_RIGHT_WIDE",
-             "CAM_BACK_LEFT_WIDE", "CAM_BACK_RIGHT_WIDE"]
+            [
+                "CAM_FRONT_WIDE",
+                "CAM_FRONT_LEFT_WIDE",
+                "CAM_FRONT_RIGHT_WIDE",
+                "CAM_BACK_LEFT_WIDE",
+                "CAM_BACK_RIGHT_WIDE",
+            ]
         )
         assert grid[0] == ["CAM_FRONT_LEFT_WIDE", "CAM_FRONT_WIDE", "CAM_FRONT_RIGHT_WIDE"]
         assert grid[1] == ["CAM_BACK_LEFT_WIDE", None, "CAM_BACK_RIGHT_WIDE"]
@@ -273,8 +278,14 @@ class TestCameraGridLayout:
         # x2_dev has a real CAM_BACK; prd_jt does not. A fixed layout gets one of
         # the two wrong.
         grid = camera_grid_layout(
-            ["CAM_FRONT", "CAM_FRONT_LEFT", "CAM_FRONT_RIGHT",
-             "CAM_BACK", "CAM_BACK_LEFT", "CAM_BACK_RIGHT"]
+            [
+                "CAM_FRONT",
+                "CAM_FRONT_LEFT",
+                "CAM_FRONT_RIGHT",
+                "CAM_BACK",
+                "CAM_BACK_LEFT",
+                "CAM_BACK_RIGHT",
+            ]
         )
         assert grid[0] == ["CAM_FRONT_LEFT", "CAM_FRONT", "CAM_FRONT_RIGHT"]
         assert grid[1] == ["CAM_BACK_LEFT", "CAM_BACK", "CAM_BACK_RIGHT"]
@@ -326,15 +337,14 @@ class TestRenderingRealScenes:
         from t4_e2e_devkit.visualization import plot_cameras_frame
 
         builder = T4WindowBuilder(
-            t4_scene_dir, t4_root,
+            t4_scene_dir,
+            t4_root,
             sensor_config=sensor_config_for_scene(t4_scene_dir, lidar=True),
         )
         try:
             centers = builder.valid_centers()
             window = builder.build(centers[len(centers) // 2])
-            figure, axes = plot_cameras_frame(
-                window, with_annotations=True, with_lidar=True
-            )
+            figure, axes = plot_cameras_frame(window, with_annotations=True, with_lidar=True)
             assert figure_to_rgb(figure).std() > 5.0
         finally:
             builder.close()
@@ -356,7 +366,9 @@ class TestTrajectoryKinds:
         # A declared kind nothing can produce is dead config -- it promises a
         # legend entry that never appears.
         assert set(TRAJECTORY_CONFIG) == {
-            "prediction", "ground_truth", "history",
+            "prediction",
+            "ground_truth",
+            "history",
         }
 
     def test_fixed_bev_legend_has_stable_t4_vocabulary(self):
@@ -424,9 +436,7 @@ class TestVizCallbackIsNonFatal:
     def test_failure_is_swallowed_and_eventually_disables(self, tmp_path):
         from t4_e2e_devkit.planning.training.callbacks import TrajectoryVizCallback
 
-        callback = TrajectoryVizCallback(
-            data_list=tmp_path / "does_not_exist.json", max_failures=2
-        )
+        callback = TrajectoryVizCallback(data_list=tmp_path / "does_not_exist.json", max_failures=2)
 
         class _Trainer:
             is_global_zero = True
@@ -471,8 +481,12 @@ class TestPredictionVisualization:
 
     @staticmethod
     def _sample():
-        lanes = np.zeros((C.NUM_SEGMENTS_IN_LANE, C.POINTS_PER_LANELET, C.SEGMENT_POINT_DIM), np.float32)
-        route = np.zeros((C.NUM_SEGMENTS_IN_ROUTE, C.POINTS_PER_LANELET, C.SEGMENT_POINT_DIM), np.float32)
+        lanes = np.zeros(
+            (C.NUM_SEGMENTS_IN_LANE, C.POINTS_PER_LANELET, C.SEGMENT_POINT_DIM), np.float32
+        )
+        route = np.zeros(
+            (C.NUM_SEGMENTS_IN_ROUTE, C.POINTS_PER_LANELET, C.SEGMENT_POINT_DIM), np.float32
+        )
         lanes[0, :, 0] = np.linspace(0.0, 40.0, C.POINTS_PER_LANELET)
         route[0, :, 0] = np.linspace(0.0, 40.0, C.POINTS_PER_LANELET)
         route[0, :, 1] = 2.0
@@ -528,9 +542,7 @@ class TestPredictionVisualization:
 
         callback.on_validation_epoch_start(trainer, module)
         assert module._viz_capacity == 1
-        module._viz_samples = [
-            {"gt_xy": gt, "pred_xy": pred, "lanes": lanes, "route": route}
-        ]
+        module._viz_samples = [{"gt_xy": gt, "pred_xy": pred, "lanes": lanes, "route": route}]
         callback.on_validation_epoch_end(trainer, module)
 
         assert len(logger.calls) == 1

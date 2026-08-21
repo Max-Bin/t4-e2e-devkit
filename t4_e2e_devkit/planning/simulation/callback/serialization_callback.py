@@ -20,7 +20,9 @@ class SimulationLogCallback(AbstractCallback):
 
     def on_simulation_end(self, setup: Any, planner: Any, history: Any) -> None:
         token = str(getattr(getattr(setup, "scenario", None), "token", "simulation"))
-        safe_token = "".join(character if character.isalnum() or character in "-_" else "_" for character in token)
+        safe_token = "".join(
+            character if character.isalnum() or character in "-_" else "_" for character in token
+        )
         path = self.output_dir / f"{safe_token}{self.suffix}"
         self.paths.append(SimulationLog(path, setup.scenario, planner, history).save_to_file())
 

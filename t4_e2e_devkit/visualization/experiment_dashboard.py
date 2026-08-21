@@ -18,7 +18,9 @@ from typing import Any, Iterable, Mapping, Optional
 class ExperimentDashboard:
     """Build one interactive report from one or more result directories."""
 
-    def __init__(self, result_dirs: Iterable[str | Path], *, title: str = "T4 experiment analysis") -> None:
+    def __init__(
+        self, result_dirs: Iterable[str | Path], *, title: str = "T4 experiment analysis"
+    ) -> None:
         values = tuple(Path(directory).resolve() for directory in result_dirs)
         if not values:
             raise ValueError("at least one result directory is required")
@@ -26,10 +28,16 @@ class ExperimentDashboard:
         self.title = str(title)
 
     def build(self, output_path: Optional[str | Path] = None) -> Path:
-        output = Path(output_path) if output_path is not None else self.result_dirs[0] / "analysis.html"
+        output = (
+            Path(output_path) if output_path is not None else self.result_dirs[0] / "analysis.html"
+        )
         output.parent.mkdir(parents=True, exist_ok=True)
-        experiments = [_load_experiment(directory, index) for index, directory in enumerate(self.result_dirs)]
-        payload = json.dumps(experiments, ensure_ascii=True, separators=(",", ":")).replace("<", "\\u003c")
+        experiments = [
+            _load_experiment(directory, index) for index, directory in enumerate(self.result_dirs)
+        ]
+        payload = json.dumps(experiments, ensure_ascii=True, separators=(",", ":")).replace(
+            "<", "\\u003c"
+        )
         document = f"""<!doctype html>
 <html lang="en"><head><meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">

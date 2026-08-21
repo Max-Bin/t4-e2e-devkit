@@ -197,8 +197,7 @@ class AbstractT4Agent(torch.nn.Module, ABC):
         if not torch.isfinite(output).all():
             raise ValueError("forward['trajectory'] contains NaN or Inf")
         poses = output[0].float().cpu().numpy()
-        return Trajectory(poses=np.asarray(poses, dtype=np.float32),
-                          trajectory_sampling=sampling)
+        return Trajectory(poses=np.asarray(poses, dtype=np.float32), trajectory_sampling=sampling)
 
     def compute_control(self, agent_input: T4AgentInput) -> Dict[str, float]:
         """One-step actuator command for deployment.

@@ -83,9 +83,7 @@ def _header_sampling(header: Mapping[str, Any]) -> tuple[int, float]:
     )
 
 
-def trajectory_to_poses(
-    trajectory: Any, *, num_poses: int
-) -> np.ndarray:
+def trajectory_to_poses(trajectory: Any, *, num_poses: int) -> np.ndarray:
     """Convert ``[T, 3]`` or ``[T, 4]`` output to ``x/y/heading`` poses."""
 
     value = getattr(trajectory, "poses", trajectory)
@@ -98,8 +96,7 @@ def trajectory_to_poses(
     values = np.asarray(value)
     if values.shape not in {(num_poses, 3), (num_poses, 4)}:
         raise ValueError(
-            f"trajectory must have shape ({num_poses}, 3) or ({num_poses}, 4), "
-            f"got {values.shape}"
+            f"trajectory must have shape ({num_poses}, 3) or ({num_poses}, 4), got {values.shape}"
         )
     if not np.issubdtype(values.dtype, np.number):
         raise ValueError(f"trajectory must contain numeric values, got {values.dtype}")
@@ -153,8 +150,7 @@ def load_prediction_manifest(path: str | Path) -> PredictionManifest:
             if header is None:
                 if payload.get("format") != PREDICTION_MANIFEST_FORMAT:
                     raise ValueError(
-                        f"{path}:{line_number}: expected format "
-                        f"{PREDICTION_MANIFEST_FORMAT!r}"
+                        f"{path}:{line_number}: expected format {PREDICTION_MANIFEST_FORMAT!r}"
                     )
                 if payload.get("version") != PREDICTION_MANIFEST_VERSION:
                     raise ValueError(

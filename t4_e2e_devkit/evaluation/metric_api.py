@@ -198,7 +198,9 @@ class MetricAggregator:
             if result.failure and not include_failures:
                 continue
             counts[result.metric_name] = counts.get(result.metric_name, 0) + 1
-            weight = 1.0 if weights is None else float(weights.get(result.scenario_token or "", 1.0))
+            weight = (
+                1.0 if weights is None else float(weights.get(result.scenario_token or "", 1.0))
+            )
             if weight < 0.0:
                 raise ValueError("metric aggregation weights must be non-negative")
             for statistic in result.statistics:
@@ -254,7 +256,9 @@ class MetricBuilderRegistry:
             raise ValueError(f"metric builder is already registered: {name}")
         self._builders[name] = builder
 
-    def compute(self, history: Any, *, scenario_token: Optional[str] = None) -> tuple[MetricResult, ...]:
+    def compute(
+        self, history: Any, *, scenario_token: Optional[str] = None
+    ) -> tuple[MetricResult, ...]:
         return tuple(
             _compute_builder(builder, history, scenario_token=scenario_token)
             for builder in self._builders.values()
@@ -285,8 +289,7 @@ class MetricCallback:
             token = self.scenario_token or _scenario_token(setup)
         else:
             raise TypeError(
-                "MetricCallback.on_simulation_end expects history or "
-                "(setup, planner, history)"
+                "MetricCallback.on_simulation_end expects history or (setup, planner, history)"
             )
         self.results = self.registry.compute(history, scenario_token=token)
 
@@ -300,7 +303,9 @@ def _scenario_token(setup: Any) -> Optional[str]:
     return None if token is None or str(token) == "" else str(token)
 
 
-def _compute_builder(builder: AbstractMetricBuilder, history: Any, *, scenario_token: Optional[str]) -> MetricResult:
+def _compute_builder(
+    builder: AbstractMetricBuilder, history: Any, *, scenario_token: Optional[str]
+) -> MetricResult:
     """Call compact and scenario-shaped builders through one boundary."""
 
     import inspect

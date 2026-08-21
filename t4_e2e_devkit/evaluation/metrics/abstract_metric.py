@@ -43,7 +43,11 @@ class AbstractMetric(ABC):
         time_series: Optional[TimeSeries] = None,
     ) -> float:
         del scenario, time_series
-        values = [float(statistic.value) for statistic in metric_statistics if not isinstance(statistic.value, bool)]
+        values = [
+            float(statistic.value)
+            for statistic in metric_statistics
+            if not isinstance(statistic.value, bool)
+        ]
         return 0.0 if not values else float(values[0])
 
     def _construct_metric_results(
@@ -73,7 +77,13 @@ MetricBase = AbstractMetric
 class ViolationMetricBase(AbstractMetric):
     """Aggregate contiguous or instantaneous violations."""
 
-    def __init__(self, name: str, category: str, max_violation_threshold: int = 0, metric_score_unit: Optional[str] = None) -> None:
+    def __init__(
+        self,
+        name: str,
+        category: str,
+        max_violation_threshold: int = 0,
+        metric_score_unit: Optional[str] = None,
+    ) -> None:
         super().__init__(name, category, metric_score_unit)
         if max_violation_threshold < 0:
             raise ValueError("max_violation_threshold must be non-negative")
@@ -92,21 +102,59 @@ class ViolationMetricBase(AbstractMetric):
         self.number_of_violations = len(violations)
         if not violations:
             statistics = [
-                Statistic(self.name, MetricStatisticsType.BOOLEAN.unit, MetricStatisticsType.BOOLEAN, True)
+                Statistic(
+                    self.name, MetricStatisticsType.BOOLEAN.unit, MetricStatisticsType.BOOLEAN, True
+                )
             ]
         else:
             durations = [max(1, item.duration) for item in violations]
             total_duration = sum(durations)
             statistics = [
-                Statistic(f"number_of_violations_of_{self.name}", MetricStatisticsType.COUNT.unit, MetricStatisticsType.COUNT, len(violations)),
-                Statistic(f"max_violation_of_{self.name}", violations[0].unit, MetricStatisticsType.MAX, max(item.extremum for item in violations)),
-                Statistic(f"min_violation_of_{self.name}", violations[0].unit, MetricStatisticsType.MIN, min(item.extremum for item in violations)),
-                Statistic(f"mean_violation_of_{self.name}", violations[0].unit, MetricStatisticsType.MEAN, sum(item.mean * duration for item, duration in zip(violations, durations, strict=True)) / total_duration),
-                Statistic(self.name, MetricStatisticsType.BOOLEAN.unit, MetricStatisticsType.BOOLEAN, False),
+                Statistic(
+                    f"number_of_violations_of_{self.name}",
+                    MetricStatisticsType.COUNT.unit,
+                    MetricStatisticsType.COUNT,
+                    len(violations),
+                ),
+                Statistic(
+                    f"max_violation_of_{self.name}",
+                    violations[0].unit,
+                    MetricStatisticsType.MAX,
+                    max(item.extremum for item in violations),
+                ),
+                Statistic(
+                    f"min_violation_of_{self.name}",
+                    violations[0].unit,
+                    MetricStatisticsType.MIN,
+                    min(item.extremum for item in violations),
+                ),
+                Statistic(
+                    f"mean_violation_of_{self.name}",
+                    violations[0].unit,
+                    MetricStatisticsType.MEAN,
+                    sum(
+                        item.mean * duration
+                        for item, duration in zip(violations, durations, strict=True)
+                    )
+                    / total_duration,
+                ),
+                Statistic(
+                    self.name,
+                    MetricStatisticsType.BOOLEAN.unit,
+                    MetricStatisticsType.BOOLEAN,
+                    False,
+                ),
             ]
-        return self._construct_metric_results(statistics, scenario=scenario, time_series=time_series)
+        return self._construct_metric_results(
+            statistics, scenario=scenario, time_series=time_series
+        )
 
-    def compute_score(self, scenario: Any, metric_statistics: list[Statistic], time_series: Optional[TimeSeries] = None) -> float:
+    def compute_score(
+        self,
+        scenario: Any,
+        metric_statistics: list[Statistic],
+        time_series: Optional[TimeSeries] = None,
+    ) -> float:
         del scenario, metric_statistics, time_series
         return max(0.0, 1.0 - self.number_of_violations / (self.max_violation_threshold + 1))
 
@@ -114,7 +162,14 @@ class ViolationMetricBase(AbstractMetric):
 class WithinBoundMetricBase(ViolationMetricBase):
     """Base for a scalar series that must stay within an inclusive bound."""
 
-    def __init__(self, name: str, category: str, lower_bound: float = float("-inf"), upper_bound: float = float("inf"), **kwargs: Any) -> None:
+    def __init__(
+        self,
+        name: str,
+        category: str,
+        lower_bound: float = float("-inf"),
+        upper_bound: float = float("inf"),
+        **kwargs: Any,
+    ) -> None:
         super().__init__(name, category, **kwargs)
         if lower_bound > upper_bound:
             raise ValueError("lower_bound must not exceed upper_bound")
@@ -126,14 +181,27 @@ class WithinBoundMetricBase(ViolationMetricBase):
         for index, value in enumerate(time_series.values):
             if self.lower_bound <= value <= self.upper_bound:
                 continue
-            severity = self.lower_bound - value if value < self.lower_bound else value - self.upper_bound
+            severity = (
+                self.lower_bound - value if value < self.lower_bound else value - self.upper_bound
+            )
             timestamp = time_series.time_stamps[index]
             duration = (
                 time_series.time_stamps[index + 1] - timestamp
                 if index + 1 < len(time_series.time_stamps)
                 else 0
             )
-            violations.append(MetricViolation(type(self).__name__, self.name, self.category, time_series.unit, timestamp, duration, severity, severity))
+            violations.append(
+                MetricViolation(
+                    type(self).__name__,
+                    self.name,
+                    self.category,
+                    time_series.unit,
+                    timestamp,
+                    duration,
+                    severity,
+                    severity,
+                )
+            )
         return violations
 
 

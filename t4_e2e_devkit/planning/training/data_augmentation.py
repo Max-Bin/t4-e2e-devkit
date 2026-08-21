@@ -21,7 +21,9 @@ from t4_e2e_devkit.common.dataclasses import (
 
 class Augmentor(ABC):
     @abstractmethod
-    def __call__(self, agent_input: T4AgentInput, scene: Optional[T4Scene]) -> tuple[T4AgentInput, Optional[T4Scene]]:
+    def __call__(
+        self, agent_input: T4AgentInput, scene: Optional[T4Scene]
+    ) -> tuple[T4AgentInput, Optional[T4Scene]]:
         """Return augmented agent input and optional privileged scene."""
 
 
@@ -29,7 +31,9 @@ class ComposeAugmentor(Augmentor):
     def __init__(self, augmentors: list[Augmentor] | tuple[Augmentor, ...]) -> None:
         self.augmentors = tuple(augmentors)
 
-    def __call__(self, agent_input: T4AgentInput, scene: Optional[T4Scene]) -> tuple[T4AgentInput, Optional[T4Scene]]:
+    def __call__(
+        self, agent_input: T4AgentInput, scene: Optional[T4Scene]
+    ) -> tuple[T4AgentInput, Optional[T4Scene]]:
         for augmentor in self.augmentors:
             agent_input, scene = augmentor(agent_input, scene)
         return agent_input, scene
@@ -44,7 +48,12 @@ class RandomSE2Augmentor(Augmentor):
     inputs and for camera-free training pipelines.
     """
 
-    def __init__(self, translation_std_m: float = 0.0, rotation_std_rad: float = 0.0, seed: Optional[int] = None) -> None:
+    def __init__(
+        self,
+        translation_std_m: float = 0.0,
+        rotation_std_rad: float = 0.0,
+        seed: Optional[int] = None,
+    ) -> None:
         if translation_std_m < 0.0 or rotation_std_rad < 0.0:
             raise ValueError("augmentation standard deviations must be non-negative")
         self.translation_std_m = float(translation_std_m)
@@ -52,7 +61,9 @@ class RandomSE2Augmentor(Augmentor):
         self.rng = np.random.default_rng(seed)
         self.last_transform: Optional[np.ndarray] = None
 
-    def __call__(self, agent_input: T4AgentInput, scene: Optional[T4Scene]) -> tuple[T4AgentInput, Optional[T4Scene]]:
+    def __call__(
+        self, agent_input: T4AgentInput, scene: Optional[T4Scene]
+    ) -> tuple[T4AgentInput, Optional[T4Scene]]:
         self.last_transform = np.array(
             [
                 self.rng.normal(0.0, self.translation_std_m),
@@ -73,7 +84,9 @@ class RandomSE2Augmentor(Augmentor):
 
 def _transform_agent_input(agent_input: T4AgentInput, transform: np.ndarray) -> T4AgentInput:
     return T4AgentInput(
-        ego_statuses=[_transform_ego_status(status, transform) for status in agent_input.ego_statuses],
+        ego_statuses=[
+            _transform_ego_status(status, transform) for status in agent_input.ego_statuses
+        ],
         cameras=agent_input.cameras,
         lidars=[_transform_lidar(lidar, transform) for lidar in agent_input.lidars],
         map_tensors=_transform_map(agent_input.map_tensors, transform),
@@ -112,15 +125,21 @@ def _transform_scene(scene: T4Scene, transform: np.ndarray) -> T4Scene:
 
 
 def _transform_ego_status(status: EgoStatus, transform: np.ndarray) -> EgoStatus:
-    pose = _transform_pose_array(np.asarray(status.ego_pose, dtype=np.float32).reshape(1, 3), transform)[0]
-    velocity = _rotate_vectors(np.asarray(status.ego_velocity, dtype=np.float32).reshape(1, 2), transform)[0]
+    pose = _transform_pose_array(
+        np.asarray(status.ego_pose, dtype=np.float32).reshape(1, 3), transform
+    )[0]
+    velocity = _rotate_vectors(
+        np.asarray(status.ego_velocity, dtype=np.float32).reshape(1, 2), transform
+    )[0]
     acceleration = _rotate_vectors(
         np.asarray(status.ego_acceleration, dtype=np.float32).reshape(1, 2), transform
     )[0]
     return replace(status, ego_pose=pose, ego_velocity=velocity, ego_acceleration=acceleration)
 
 
-def _transform_annotations(annotations: Optional[Annotations], transform: np.ndarray) -> Optional[Annotations]:
+def _transform_annotations(
+    annotations: Optional[Annotations], transform: np.ndarray
+) -> Optional[Annotations]:
     if annotations is None:
         return None
     boxes = np.array(annotations.boxes, copy=True)
@@ -140,7 +159,9 @@ def _transform_annotations(annotations: Optional[Annotations], transform: np.nda
     )
 
 
-def _transform_map(map_tensors: Optional[MapTensors], transform: np.ndarray) -> Optional[MapTensors]:
+def _transform_map(
+    map_tensors: Optional[MapTensors], transform: np.ndarray
+) -> Optional[MapTensors]:
     if map_tensors is None:
         return None
     lanes = _transform_lane_array(map_tensors.lanes, transform)
@@ -168,8 +189,12 @@ def _transform_lane_array(values: np.ndarray, transform: np.ndarray) -> np.ndarr
     if result.ndim != 3 or result.shape[-1] < 8:
         return result
     result[..., :2] = _transform_xy(result[..., :2], transform)
-    result[..., 2:4] = _rotate_vectors(result[..., 2:4].reshape(-1, 2), transform).reshape(result[..., 2:4].shape)
-    result[..., 4:8] = _rotate_vectors(result[..., 4:8].reshape(-1, 2), transform).reshape(result[..., 4:8].shape)
+    result[..., 2:4] = _rotate_vectors(result[..., 2:4].reshape(-1, 2), transform).reshape(
+        result[..., 2:4].shape
+    )
+    result[..., 4:8] = _rotate_vectors(result[..., 4:8].reshape(-1, 2), transform).reshape(
+        result[..., 4:8].shape
+    )
     return result
 
 
@@ -223,7 +248,10 @@ def _rotate_vectors(values: np.ndarray, transform: np.ndarray) -> np.ndarray:
 
 
 def _has_images(agent_input: T4AgentInput) -> bool:
-    return any(camera is not None and any(view.image is not None for view in camera) for camera in agent_input.cameras)
+    return any(
+        camera is not None and any(view.image is not None for view in camera)
+        for camera in agent_input.cameras
+    )
 
 
 def _scene_has_images(scene: T4Scene) -> bool:

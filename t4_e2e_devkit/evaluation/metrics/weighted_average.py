@@ -30,11 +30,17 @@ class WeightedAverageMetricAggregator:
             for statistic in result.statistics:
                 if isinstance(statistic.value, bool):
                     continue
-                grouped.setdefault((statistic.name, statistic.unit, statistic.type.serialize()), []).append((float(statistic.value), weight))
+                grouped.setdefault(
+                    (statistic.name, statistic.unit, statistic.type.serialize()), []
+                ).append((float(statistic.value), weight))
         statistics = []
         for (name, unit, kind), samples in sorted(grouped.items()):
             denominator = sum(weight for _, weight in samples)
-            value = float(sum(sample * weight for sample, weight in samples) / denominator) if denominator else float("nan")
+            value = (
+                float(sum(sample * weight for sample, weight in samples) / denominator)
+                if denominator
+                else float("nan")
+            )
             statistics.append(Statistic(name, unit, MetricStatisticsType.deserialize(kind), value))
         return [
             MetricStatistics(
@@ -45,7 +51,9 @@ class WeightedAverageMetricAggregator:
             )
         ]
 
-    def aggregate_metric_statistics(self, results: Iterable[MetricStatistics], **kwargs: Any) -> list[MetricStatistics]:
+    def aggregate_metric_statistics(
+        self, results: Iterable[MetricStatistics], **kwargs: Any
+    ) -> list[MetricStatistics]:
         return self.aggregate(results, **kwargs)
 
 

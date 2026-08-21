@@ -16,7 +16,9 @@ class AbstractEgoController(ABC):
         """Reset internal state."""
 
     @abstractmethod
-    def update_state(self, current_iteration: Any, next_iteration: Any, ego_state: Any, trajectory: Any) -> None:
+    def update_state(
+        self, current_iteration: Any, next_iteration: Any, ego_state: Any, trajectory: Any
+    ) -> None:
         """Propagate the current state using a planned trajectory."""
 
 

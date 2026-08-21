@@ -78,7 +78,11 @@ def run_pdm_score(cfg: DictConfig) -> dict[str, dict[str, float]]:
                         )
                     )
                 except Exception as error:  # noqa: BLE001 - optional family
-                    logger.warning("open-loop metrics unavailable for %s: %s", scene.scene_metadata.token, error)
+                    logger.warning(
+                        "open-loop metrics unavailable for %s: %s",
+                        scene.scene_metadata.token,
+                        error,
+                    )
         except Exception as error:  # noqa: BLE001 - row failures belong in the report
             failures.extend((scene.scene_metadata.token, repr(error)) for scene in scenes)
         logger.info("scored %d/%d windows", len(pdm_rows), len(dataset))

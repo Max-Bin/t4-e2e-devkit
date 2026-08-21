@@ -61,8 +61,7 @@ from t4_e2e_devkit.planning.simulation.trajectory.trajectory_sampling import (
 class ReplaySceneProvider(Protocol):
     """Callable that returns the recorded input window at one source frame."""
 
-    def __call__(self, frame_index: int) -> T4Scene:
-        ...
+    def __call__(self, frame_index: int) -> T4Scene: ...
 
 
 @dataclass(frozen=True)
@@ -89,23 +88,15 @@ class T4ClosedLoopConfig:
         if self.history_frames < 1:
             raise ValueError(f"history_frames must be positive, got {self.history_frames}")
         if self.replan_interval < 1:
-            raise ValueError(
-                f"replan_interval must be positive, got {self.replan_interval}"
-            )
+            raise ValueError(f"replan_interval must be positive, got {self.replan_interval}")
         if not math.isfinite(float(self.max_speed_mps)) or self.max_speed_mps <= 0.0:
-            raise ValueError(
-                f"max_speed_mps must be positive, got {self.max_speed_mps}"
-            )
+            raise ValueError(f"max_speed_mps must be positive, got {self.max_speed_mps}")
         if not math.isfinite(float(self.goal_radius_m)) or self.goal_radius_m <= 0.0:
-            raise ValueError(
-                f"goal_radius_m must be positive, got {self.goal_radius_m}"
-            )
+            raise ValueError(f"goal_radius_m must be positive, got {self.goal_radius_m}")
         if self.ttc_horizon_s is not None and (
             not math.isfinite(float(self.ttc_horizon_s)) or self.ttc_horizon_s <= 0.0
         ):
-            raise ValueError(
-                f"ttc_horizon_s must be positive or None, got {self.ttc_horizon_s}"
-            )
+            raise ValueError(f"ttc_horizon_s must be positive or None, got {self.ttc_horizon_s}")
 
 
 @dataclass(frozen=True)
@@ -223,8 +214,7 @@ class PerfectTracker:
         reference = np.asarray(reference_world, dtype=np.float64)
         if reference.ndim != 2 or reference.shape[1] != 3:
             raise ValueError(
-                "reference_world must have shape [num_poses, 3], "
-                f"got {reference.shape}"
+                f"reference_world must have shape [num_poses, 3], got {reference.shape}"
             )
         if reference.shape[0] == 0:
             return KinematicState(
@@ -305,8 +295,7 @@ class T4ClosedLoopResult:
         source_frames = np.asarray(self.source_frames)
         if source_frames.ndim != 1:
             raise ValueError(
-                "closed-loop source_frames must be one-dimensional, "
-                f"got {source_frames.shape}"
+                f"closed-loop source_frames must be one-dimensional, got {source_frames.shape}"
             )
         if len(source_frames) < 1:
             raise ValueError("closed-loop results must contain at least one source frame")
@@ -324,7 +313,9 @@ class T4ClosedLoopResult:
             raise ValueError("closed-loop source_frames must contain finite integers")
         source_frames = np.asarray(frame_values, dtype=np.int64)
         if np.any(source_frames < 0) or np.any(np.diff(source_frames) <= 0):
-            raise ValueError("closed-loop source_frames must be non-negative and strictly increasing")
+            raise ValueError(
+                "closed-loop source_frames must be non-negative and strictly increasing"
+            )
         self.source_frames = np.ascontiguousarray(source_frames)
         if not math.isfinite(float(self.dt_s)) or self.dt_s <= 0.0:
             raise ValueError("closed-loop dt_s must be finite and positive")
@@ -343,8 +334,7 @@ class T4ClosedLoopResult:
             goal = np.asarray(self.goal_pose_world, dtype=np.float64).reshape(-1)
             if goal.shape != (4,):
                 raise ValueError(
-                    "goal_pose_world must have four values (x, y, cos, sin), "
-                    f"got {goal.shape}"
+                    f"goal_pose_world must have four values (x, y, cos, sin), got {goal.shape}"
                 )
             if not np.isfinite(goal).all():
                 raise ValueError("goal_pose_world must contain finite values")
@@ -358,9 +348,7 @@ class T4ClosedLoopResult:
                 )
             self.collision_steps = steps
         if self.geometry is not None and len(self.geometry) != len(self.source_frames):
-            raise ValueError(
-                "closed-loop geometry must align with source_frames"
-            )
+            raise ValueError("closed-loop geometry must align with source_frames")
         if self.traffic_states is not None:
             if len(self.traffic_states) != len(self.source_frames):
                 raise ValueError("closed-loop traffic states must align with source_frames")
@@ -394,9 +382,7 @@ class T4ClosedLoopResult:
         local = _world_to_local(self.realized_poses_world[1:], initial.pose)
         return Trajectory(
             poses=local.astype(np.float32),
-            trajectory_sampling=TrajectorySampling(
-                num_poses=len(local), interval_length=self.dt_s
-            ),
+            trajectory_sampling=TrajectorySampling(num_poses=len(local), interval_length=self.dt_s),
         )
 
 
@@ -585,8 +571,7 @@ class T4ClosedLoopRunner:
             )
             if not isinstance(replay_scene, T4Scene):
                 raise TypeError(
-                    "traffic policies must return a T4Scene, "
-                    f"got {type(replay_scene).__name__}"
+                    f"traffic policies must return a T4Scene, got {type(replay_scene).__name__}"
                 )
             last_replay_scene = replay_scene
             if traffic_states is not None:
@@ -632,8 +617,7 @@ class T4ClosedLoopRunner:
             next_state = self._controller.step(state, reference)
             if not isinstance(next_state, KinematicState):
                 raise TypeError(
-                    "ego controllers must return KinematicState, "
-                    f"got {type(next_state).__name__}"
+                    f"ego controllers must return KinematicState, got {type(next_state).__name__}"
                 )
             cached_plan_offset += 1
 
@@ -665,13 +649,13 @@ class T4ClosedLoopRunner:
             plans.append(raw_plan)
             states.append(next_state)
             state = next_state
-            history_world = np.concatenate(
-                (history_world[1:], state.pose[None, :]), axis=0
-            )
+            history_world = np.concatenate((history_world[1:], state.pose[None, :]), axis=0)
 
-            goal_reached = goal_pose_world is not None and float(
-                np.linalg.norm(state.pose[:2] - goal_pose_world[:2])
-            ) <= self.config.goal_radius_m
+            goal_reached = (
+                goal_pose_world is not None
+                and float(np.linalg.norm(state.pose[:2] - goal_pose_world[:2]))
+                <= self.config.goal_radius_m
+            )
             collision_detected = bool(collision_tokens) or bool(geometry_event.collision_tokens)
             if (self.config.stop_on_collision and collision_detected) or (
                 self.config.stop_on_goal and goal_reached
@@ -700,9 +684,7 @@ class T4ClosedLoopRunner:
         timeout: Optional[bool] = None
         termination_reason = "completed"
         if goal_pose_world is not None:
-            goal_distance = float(
-                np.linalg.norm(states[-1].pose[:2] - goal_pose_world[:2])
-            )
+            goal_distance = float(np.linalg.norm(states[-1].pose[:2] - goal_pose_world[:2]))
             timeout = goal_distance > self.config.goal_radius_m
         if collision_steps:
             termination_reason = "collision"
@@ -721,6 +703,7 @@ class T4ClosedLoopRunner:
             termination_reason=termination_reason,
             traffic_states=traffic_states,
         )
+
 
 def run_t4_closed_loop(
     agent,
@@ -789,8 +772,7 @@ def _goal_pose_world(scene: T4Scene) -> Optional[np.ndarray]:
     goal = np.asarray(scene.goal_pose, dtype=np.float64).reshape(-1)
     if goal.shape != (4,):
         raise ValueError(
-            f"scene {scene.scene_metadata.token} goal_pose must have four values, "
-            f"got {goal.shape}"
+            f"scene {scene.scene_metadata.token} goal_pose must have four values, got {goal.shape}"
         )
     recorded_pose = _metadata_pose(scene)
     local_goal = np.array(
@@ -939,7 +921,9 @@ def _world_to_local(poses: np.ndarray, origin: np.ndarray) -> np.ndarray:
     return local
 
 
-def _rebase_map(map_tensors: Optional[MapTensors], recorded_pose: np.ndarray, live_pose: np.ndarray):
+def _rebase_map(
+    map_tensors: Optional[MapTensors], recorded_pose: np.ndarray, live_pose: np.ndarray
+):
     """Re-express vector map geometry around the simulated ego.
 
     Raw images and point clouds remain replayed in their recorded sensor frame.

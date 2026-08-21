@@ -45,12 +45,18 @@ class RunnerExecutor:
             results = pool.run_tasks(tasks)
         failures = [result for result in results if not result.succeeded]
         if failures:
-            raise RuntimeError("runner worker failed: " + "; ".join(item.error or "unknown" for item in failures))
+            raise RuntimeError(
+                "runner worker failed: " + "; ".join(item.error or "unknown" for item in failures)
+            )
         reports = [
-            result.value if isinstance(result.value, RunnerReport) else RunnerReport.from_dict(result.value)
+            result.value
+            if isinstance(result.value, RunnerReport)
+            else RunnerReport.from_dict(result.value)
             for result in results
         ]
-        return sorted(reports, key=lambda report: (report.scenario_name, report.planner_name, report.log_name))
+        return sorted(
+            reports, key=lambda report: (report.scenario_name, report.planner_name, report.log_name)
+        )
 
 
 def _run_one(runner: AbstractRunner, raise_on_error: bool) -> RunnerReport:

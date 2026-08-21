@@ -81,7 +81,13 @@ family.addEventListener('change', render); filter.addEventListener('input', rend
         for path in sorted(self.results_dir.rglob("*")):
             if path.is_file() and path.name != "index.html":
                 kind, summary = _summarize(path)
-                rows.append({"path": str(path.relative_to(self.results_dir)), "kind": kind, "summary": summary})
+                rows.append(
+                    {
+                        "path": str(path.relative_to(self.results_dir)),
+                        "kind": kind,
+                        "summary": summary,
+                    }
+                )
         return rows
 
 
@@ -123,7 +129,7 @@ def _cards(aggregate: Mapping[str, Any]) -> str:
                 continue
             cards.append(
                 f'<div class="card"><span>{html.escape(str(family))}/{html.escape(str(name))}</span>'
-                f'<strong>{html.escape(_format(value))}</strong></div>'
+                f"<strong>{html.escape(_format(value))}</strong></div>"
             )
     return "".join(cards)
 
@@ -146,7 +152,7 @@ def _file_rows(directory: Path, output: Path) -> str:
         label = path.relative_to(directory)
         rows.append(
             f'<li><a href="{html.escape(href.as_posix(), quote=True)}">'
-            f'<code>{html.escape(str(label))}</code></a></li>'
+            f"<code>{html.escape(str(label))}</code></a></li>"
         )
     return "".join(rows)
 

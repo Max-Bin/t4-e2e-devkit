@@ -82,7 +82,9 @@ class ScenarioSampling:
             raise ValueError("strategy must be ordered, uniform or type_balanced")
 
 
-def filter_scenarios(scenarios: Iterable[Any], config: Optional[ScenarioFilter] = None) -> list[Any]:
+def filter_scenarios(
+    scenarios: Iterable[Any], config: Optional[ScenarioFilter] = None
+) -> list[Any]:
     """Filter scenarios and apply deterministic limits."""
 
     config = config or ScenarioFilter()

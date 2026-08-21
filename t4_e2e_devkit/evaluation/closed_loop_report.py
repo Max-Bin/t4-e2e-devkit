@@ -166,12 +166,15 @@ def _aggregate_section(aggregate: Mapping[str, Any]) -> str:
     for family, values in aggregate.items():
         if not isinstance(values, Mapping):
             continue
-        rows = [{"metric": str(name), "value": _format_value(value)} for name, value in values.items()]
-        sections.append(
-            f"<h3>{html.escape(str(family))}</h3>"
-            + _table(rows, empty="No values.")
-        )
-    return "<section><h2>Aggregate metrics</h2>" + ("".join(sections) or "<p>No aggregate.json.</p>") + "</section>"
+        rows = [
+            {"metric": str(name), "value": _format_value(value)} for name, value in values.items()
+        ]
+        sections.append(f"<h3>{html.escape(str(family))}</h3>" + _table(rows, empty="No values."))
+    return (
+        "<section><h2>Aggregate metrics</h2>"
+        + ("".join(sections) or "<p>No aggregate.json.</p>")
+        + "</section>"
+    )
 
 
 def _table_section(
@@ -198,8 +201,7 @@ def _table(rows: list[dict[str, Any]], *, empty: str) -> str:
         body.append(
             "<tr>"
             + "".join(
-                f'<td>{html.escape(_format_value(row.get(column, "")))}</td>'
-                for column in columns
+                f"<td>{html.escape(_format_value(row.get(column, '')))}</td>" for column in columns
             )
             + "</tr>"
         )

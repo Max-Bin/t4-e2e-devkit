@@ -160,14 +160,22 @@ class SubmissionPackage:
             missing = sorted(expected - actual)
             extra = sorted(actual - expected)
             if missing:
-                errors.append(f"missing tokens: {missing[:8]}" + (" ..." if len(missing) > 8 else ""))
+                errors.append(
+                    f"missing tokens: {missing[:8]}" + (" ..." if len(missing) > 8 else "")
+                )
             if extra and not allow_extra:
-                errors.append(f"unexpected tokens: {extra[:8]}" + (" ..." if len(extra) > 8 else ""))
+                errors.append(
+                    f"unexpected tokens: {extra[:8]}" + (" ..." if len(extra) > 8 else "")
+                )
         if min_horizon_s is not None and min_horizon_s <= 0.0:
             raise ValueError("min_horizon_s must be positive")
         if max_horizon_s is not None and max_horizon_s <= 0.0:
             raise ValueError("max_horizon_s must be positive")
-        if min_horizon_s is not None and max_horizon_s is not None and min_horizon_s > max_horizon_s:
+        if (
+            min_horizon_s is not None
+            and max_horizon_s is not None
+            and min_horizon_s > max_horizon_s
+        ):
             raise ValueError("min_horizon_s must not exceed max_horizon_s")
         for entry in self.entries:
             sampling = entry.sampling
@@ -177,7 +185,9 @@ class SubmissionPackage:
             if sampling.interval_length is None or sampling.interval_length <= 0.0:
                 errors.append(f"{entry.token}: sampling interval must be positive")
             if min_horizon_s is not None and horizon + 1.0e-9 < min_horizon_s:
-                errors.append(f"{entry.token}: horizon {horizon:g}s is shorter than {min_horizon_s:g}s")
+                errors.append(
+                    f"{entry.token}: horizon {horizon:g}s is shorter than {min_horizon_s:g}s"
+                )
             if max_horizon_s is not None and horizon - 1.0e-9 > max_horizon_s:
                 warnings.append(f"{entry.token}: horizon {horizon:g}s exceeds {max_horizon_s:g}s")
         return SubmissionValidation(tuple(errors), tuple(warnings), len(self.entries))
@@ -187,7 +197,9 @@ class SubmissionPackage:
 
         output = Path(directory)
         output.mkdir(parents=True, exist_ok=True)
-        if not overwrite and any((output / name).exists() for name in (MANIFEST_NAME, PREDICTIONS_NAME)):
+        if not overwrite and any(
+            (output / name).exists() for name in (MANIFEST_NAME, PREDICTIONS_NAME)
+        ):
             raise FileExistsError(f"submission directory already contains an artifact: {output}")
         validation = self.validate()
         validation.raise_for_errors()
@@ -217,7 +229,10 @@ class SubmissionPackage:
             manifest = json.loads((source / MANIFEST_NAME).read_text(encoding="utf-8"))
         except (OSError, json.JSONDecodeError) as error:
             raise ValueError(f"cannot read submission manifest: {source}") from error
-        if manifest.get("format") != SUBMISSION_FORMAT or manifest.get("version") != SUBMISSION_VERSION:
+        if (
+            manifest.get("format") != SUBMISSION_FORMAT
+            or manifest.get("version") != SUBMISSION_VERSION
+        ):
             raise ValueError(f"unsupported submission format: {source}")
         prediction_path = source / PREDICTIONS_NAME
         try:
