@@ -51,7 +51,8 @@ class _PreparedScene:
     route_centerlines: tuple[torch.Tensor, ...]
     intersection_starts: torch.Tensor
     intersection_ends: torch.Tensor
-    border_segments: tuple[tuple[torch.Tensor, torch.Tensor], ...]
+    border_starts: torch.Tensor
+    border_ends: torch.Tensor
     vehicle: VehicleTensors
     metadata: dict[str, float]
 
@@ -298,7 +299,8 @@ def _prepare_scene(
     route_centerlines: tuple[torch.Tensor, ...] = ()
     intersection_starts = torch.empty((0, 0, 2), device=device, dtype=dtype)
     intersection_ends = torch.empty((0, 0, 2), device=device, dtype=dtype)
-    border_segments: tuple[tuple[torch.Tensor, torch.Tensor], ...] = ()
+    border_starts = torch.empty((0, 2), device=device, dtype=dtype)
+    border_ends = torch.empty((0, 2), device=device, dtype=dtype)
     coverage: dict[str, float] = {}
 
     if needs_map:
@@ -362,14 +364,16 @@ def _prepare_scene(
         intersections = gpu_map.intersection_indices
         intersection_starts = gpu_map.edge_starts[intersections]
         intersection_ends = gpu_map.edge_ends[intersections]
-        border_segments = _border_segments(map_tensors.line_strings, device, dtype)
+        border_starts, border_ends, border_count = _border_segments(
+            map_tensors.line_strings, device, dtype
+        )
         line_rows = _valid_rows(np.asarray(map_tensors.line_strings), min_columns=2)
         red_count = sum(
             row.shape[1] > 10 and bool((row[:, 10] > 0.5).any())
             for row in route_rows
         )
         coverage = {
-            "dac_border_frac": float(len(border_segments) / max(len(line_rows), 1)),
+            "dac_border_frac": float(border_count / max(len(line_rows), 1)),
             "ddc_route_frac": float(len(route_rows) / max(len(route_rows), 1)),
             "lane_centerline_frac": float(len(route_centerlines) / max(len(route_rows), 1)),
             "traffic_light_route_frac": float(red_count / max(len(route_rows), 1)),
@@ -382,7 +386,8 @@ def _prepare_scene(
         route_centerlines=route_centerlines,
         intersection_starts=intersection_starts,
         intersection_ends=intersection_ends,
-        border_segments=border_segments,
+        border_starts=border_starts,
+        border_ends=border_ends,
         vehicle=VehicleTensors(
             half_length=float(shape.length) / 2.0,
             half_width=float(shape.width) / 2.0,
@@ -408,14 +413,29 @@ def _border_segments(
     values: np.ndarray,
     device: torch.device,
     dtype: torch.dtype,
-) -> tuple[tuple[torch.Tensor, torch.Tensor], ...]:
-    segments: list[tuple[torch.Tensor, torch.Tensor]] = []
+) -> tuple[torch.Tensor, torch.Tensor, int]:
+    """Every drivable-area border segment as one ``[S, 2]`` start/end pair.
+
+    Concatenated across line-strings rather than kept per line-string:
+    ``_drivable_area`` reduces the whole set with ``any()``, so one vectorised
+    kernel call over all segments is equivalent to a call per border and costs
+    about twenty times fewer launches -- and launch overhead, not arithmetic,
+    dominated the metric.  The third element is the number of contributing
+    line-strings, which the caller reports as ``dac_border_frac``.
+    """
+
+    starts: list[torch.Tensor] = []
+    ends: list[torch.Tensor] = []
     for row in _valid_rows(values, min_columns=2):
         if row.shape[1] < 4 or not bool((row[:, 3] > 0.5).any()):
             continue
         points = torch.as_tensor(row[:, :2], device=device, dtype=dtype)
-        segments.append((points[:-1], points[1:]))
-    return tuple(segments)
+        starts.append(points[:-1])
+        ends.append(points[1:])
+    if not starts:
+        empty = torch.empty((0, 2), device=device, dtype=dtype)
+        return empty, empty, 0
+    return torch.cat(starts), torch.cat(ends), len(starts)
 
 
 def _simulate_pair(
@@ -668,14 +688,13 @@ def _drivable_area(
     prepared: _PreparedScene,
     semantic_score: torch.Tensor,
 ) -> torch.Tensor:
-    if not prepared.border_segments:
+    starts, ends = prepared.border_starts, prepared.border_ends
+    if not starts.numel():
         return semantic_score
     corners = _ego_corners(poses, prepared)
-    hit = torch.zeros((), dtype=torch.bool, device=poses.device)
-    for starts, ends in prepared.border_segments:
-        hit = hit | segment_intersects_quad(
-            starts[:, None, :], ends[:, None, :], corners[None, :, :, :]
-        ).any()
+    hit = segment_intersects_quad(
+        starts[:, None, :], ends[:, None, :], corners[None, :, :, :]
+    ).any()
     return (~hit).to(poses.dtype)
 
 
