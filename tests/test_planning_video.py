@@ -521,3 +521,23 @@ class TestRenderPlanningVideo:
         scene.current_frame.cameras["CAM_FRONT_WIDE"].image = None
         without = render_planning_frame(scene, panel_height=48, camera_size=(64, 48))
         assert without.shape == with_image.shape
+
+    @pytest.mark.parametrize("width", [64, 65, 67])
+    def test_an_odd_scaled_width_still_matches(self, width):
+        """The decoded panel keeps an odd width; only the frame is cropped even.
+
+        Rounding the placeholder down to an even width made it two pixels narrow
+        per panel, which is the same aborted video the placeholder was meant to
+        prevent -- with several manifests, once per panel.
+        """
+        scene = _scene()
+        image = np.zeros((48, width, 3), dtype=np.uint8)
+        scene.current_frame.cameras["CAM_FRONT_WIDE"].image = image
+        decoded = render_planning_frame(
+            scene, {"a": None, "b": None}, panel_height=48, camera_size=(width, 48)
+        )
+        scene.current_frame.cameras["CAM_FRONT_WIDE"].image = None
+        placeholder = render_planning_frame(
+            scene, {"a": None, "b": None}, panel_height=48, camera_size=(width, 48)
+        )
+        assert placeholder.shape == decoded.shape

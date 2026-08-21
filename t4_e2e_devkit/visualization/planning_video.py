@@ -528,7 +528,11 @@ def _camera_panel(
     if camera.image is None:
         if missing_size is not None:
             width, height = (int(value) for value in missing_size)
-            panel_width = int(round(width * panel_height / height)) // 2 * 2
+            # Exactly the rounding the decoded path uses below, with no evening:
+            # a decoded panel keeps an odd width and only the concatenated frame
+            # is cropped even, so evening here would make the placeholder two
+            # pixels narrow and abort the video at the first gap after all.
+            panel_width = int(round(width * panel_height / height))
         else:
             # No stored resolution to follow: a plausible aspect keeps a
             # hand-built single frame renderable.
