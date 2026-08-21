@@ -7,6 +7,7 @@ import traceback
 from typing import Any, Iterable, Optional
 
 from t4_e2e_devkit.planning.simulation.runner.abstract_runner import AbstractRunner
+from t4_e2e_devkit.planning.simulation.runner.metric_runner import _name
 from t4_e2e_devkit.planning.simulation.runner.runner_report import RunnerReport
 from t4_e2e_devkit.planning.simulation.runtime import PlannerReport
 from t4_e2e_devkit.planning.simulation.simulation import Simulation
@@ -126,11 +127,6 @@ def _compute(planner: Any, planner_input: Any) -> tuple[Any, PlannerReport]:
 def _planner_report(planner: Any) -> Any:
     generate = getattr(planner, "generate_planner_report", None)
     return None if generate is None else generate()
-
-
-def _name(value: Any) -> str:
-    name = getattr(value, "name", type(value).__name__)
-    return str(name() if callable(name) else name)
 
 
 def _scenario_name(scenario: Any) -> str:
