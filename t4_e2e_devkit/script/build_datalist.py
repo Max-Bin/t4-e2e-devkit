@@ -133,6 +133,16 @@ def parse_args(argv: Optional[Sequence[str]] = None) -> argparse.Namespace:
         help="source frames between consecutive centres (default: %(default)s = 0.5 s)",
     )
     parser.add_argument(
+        "--center-pair-period",
+        type=int,
+        default=None,
+        help="keep the first two of every N accepted centres instead of all of "
+        "them. Extended comfort needs one predecessor a planning cycle earlier, "
+        "which a full-stride list buys for every row -- at N times the windows. "
+        "Pairs keep one comfort sample per two rows and shrink the list by N/2 "
+        "(default: keep every centre)",
+    )
+    parser.add_argument(
         "--camera-names",
         nargs="+",
         required=True,
@@ -315,6 +325,7 @@ def build(args: argparse.Namespace) -> DataList:
         "history_frames": args.history_frames,
         "gt_future_frames": args.future_frames,
         "center_stride": args.center_stride,
+        "center_pair_period": args.center_pair_period,
         # Recorded apart from camera_names because they are allowed to differ:
         # what the model reads and what a window must have are two decisions.
         "filter": {
@@ -411,7 +422,33 @@ def _scene_rows(
                 continue
 
         rows.append((relative, int(center)))
-    return rows
+    if args.center_pair_period is None:
+        return rows
+    return _center_pairs(rows, args.center_pair_period, args.center_stride)
+
+
+def _center_pairs(rows: List[tuple], period: int, stride: int) -> List[tuple]:
+    """Keep the first two of every ``period`` accepted centres.
+
+    The second of each pair is exactly ``stride`` source frames after the first,
+    which is what extended comfort pairs against; the first has no predecessor
+    and is scored without that term, as any list's leading row already is.
+
+    Adjacency is read off the centres rather than assumed from the stride: the
+    gap and camera gates drop centres, so consecutive entries here are not
+    always consecutive windows. A first centre whose successor was dropped is
+    kept alone rather than paired with a further-away window.
+    """
+
+    if period < 2:
+        raise SystemExit("--center-pair-period must be at least 2")
+    kept: List[tuple] = []
+    for index in range(0, len(rows), period):
+        kept.append(rows[index])
+        following = index + 1
+        if following < len(rows) and rows[following][1] - rows[index][1] == stride:
+            kept.append(rows[following])
+    return kept
 
 
 def main(argv: Optional[Sequence[str]] = None) -> int:

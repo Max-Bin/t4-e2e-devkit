@@ -117,6 +117,38 @@ def _shard_data_list(data_list: Any, shard_index: int | None, num_shards: int | 
     )
 
 
+def _scene_batches(dataset: Any, batch_size: int, workers: int) -> Any:
+    """Contiguous ``(start, scenes)`` batches, assembled in worker processes.
+
+    Assembling a window is around 25 ms of file reads and numpy that holds the
+    GIL, so a thread cannot overlap it with the equally Python-bound scoring: a
+    single prefetch thread measured 40% *slower* than loading inline. Processes
+    do overlap it, and a sensor-free scene pickles to well under a megabyte, so
+    handing one back costs far less than building it.
+
+    ``workers < 1`` loads inline, which is what a machine without spare cores
+    wants and what the tests run.
+    """
+
+    if workers < 1:
+        for start in range(0, len(dataset), batch_size):
+            end = min(start + batch_size, len(dataset))
+            yield start, [dataset[index] for index in range(start, end)]
+        return
+
+    from torch.utils.data import DataLoader
+
+    loader = DataLoader(
+        dataset,
+        batch_size=batch_size,
+        shuffle=False,
+        num_workers=workers,
+        collate_fn=list,
+    )
+    for position, scenes in enumerate(loader):
+        yield position * batch_size, scenes
+
+
 def _report_values(values: Mapping[str, float]) -> dict[str, float]:
     return {
         METRIC_TO_REPORT[name]: float(value)
@@ -159,6 +191,7 @@ def score_prediction_manifest(
     shard_index: int | None = None,
     num_shards: int | None = None,
     scene_cache_size: int | None = 0,
+    scene_workers: int = 0,
     compile_rollout: bool = False,
     write_per_window: bool = True,
 ) -> dict[str, Any]:
@@ -257,18 +290,11 @@ def score_prediction_manifest(
     results: list[Any] = []
     paired = 0
     try:
-        for start in range(0, len(dataset), batch_size):
-            end = min(start + batch_size, len(dataset))
-            scenes = [dataset[index] for index in range(start, end)]
+        head_scene: Any = None
+        for start, scenes in _scene_batches(dataset, batch_size, scene_workers):
+            end = start + len(scenes)
             trajectories = [_trajectory(key) for key in shard_rows[start:end]]
             previous_indices = [_previous_index(index) for index in range(start, end)]
-            # ``dataset[start - 1]`` is the one scene this batch needs that its
-            # own slice does not hold; every other predecessor is already loaded.
-            head_scene = (
-                dataset[previous_indices[0]]
-                if previous_indices and previous_indices[0] == start - 1
-                else None
-            )
             previous_scenes = [
                 None
                 if index is None
@@ -288,6 +314,8 @@ def score_prediction_manifest(
                     previous_scenes=previous_scenes,
                 )
             )
+            # The one predecessor the next batch needs but will not hold.
+            head_scene = scenes[-1]
             LOG.info("scored %d/%d windows", len(results), len(dataset))
         LOG.info(
             "extended comfort: %d/%d windows had a predecessor %d source frames earlier",
