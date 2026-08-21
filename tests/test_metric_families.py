@@ -258,3 +258,24 @@ def test_closed_loop_ranks_merge_and_recompute_local_report(tmp_path, monkeypatc
     assert merged["run"]["num_completed"] == pytest.approx(2.0)
     assert (tmp_path / "merged" / "report.html").is_file()
     assert len(list((tmp_path / "merged" / "rollouts").glob("*.json"))) == 2
+
+
+def test_the_public_metric_import_paths_still_resolve():
+    """The flat ``evaluation.metric_*`` modules are a published import surface.
+
+    They are one-line re-exports of ``evaluation.metrics.*``; four of them were
+    deleted incidentally while ``metric_aggregator`` survived, which turns any
+    existing ``from t4_e2e_devkit.evaluation.metric_result import ...`` into a
+    ModuleNotFoundError with no migration path.
+    """
+    import importlib
+
+    for module, symbol in (
+        ("metric_result", "MetricStatistics"),
+        ("abstract_metric", "AbstractMetric"),
+        ("metric_file", "MetricFile"),
+        ("metric_dataframe", "MetricStatisticsDataFrame"),
+        ("metric_aggregator", "WeightedAverageMetricAggregator"),
+    ):
+        shim = importlib.import_module(f"t4_e2e_devkit.evaluation.{module}")
+        assert hasattr(shim, symbol), f"{module} no longer re-exports {symbol}"
