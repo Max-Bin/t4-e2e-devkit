@@ -12,6 +12,7 @@ One place to discover everything the devkit can do::
     t4e2e inspect LIST           # explain a data list, filter policy included
     t4e2e rigs SCENE...          # what cameras a scene has, and how they are stored
     t4e2e visualize SCENE         # render a window: BEV, cameras, or both
+    t4e2e visualize-video ...    # render planning videos from a data list
     t4e2e check                  # verify the install and the vendored sources
 
 ``train`` and ``score`` forward their arguments to the hydra entry points
@@ -217,6 +218,80 @@ def _cmd_visualize(argv: Sequence[str]) -> int:
         print(save_figure(figure, args.out))
     finally:
         builder.close()
+    return 0
+
+
+def _cmd_visualize_video(argv: Sequence[str]) -> int:
+    parser = argparse.ArgumentParser(
+        prog="t4e2e visualize-video",
+        description="Render one mp4 per scene: camera and BEV side by side, with the "
+        "recorded future and any number of labelled prediction manifests overlaid. "
+        "Frames are the data list's windows, which is also the key space of a "
+        "prediction manifest, so a video shows exactly what was scored.",
+    )
+    parser.add_argument("--data-list", required=True, help="data list naming the windows")
+    parser.add_argument(
+        "--scene",
+        nargs="*",
+        default=None,
+        help="relative scene directories to render (default: every scene in the list)",
+    )
+    parser.add_argument(
+        "--manifest",
+        action="append",
+        default=[],
+        metavar="LABEL=PATH",
+        help="prediction manifest to overlay, repeatable; the label names the model",
+    )
+    parser.add_argument("--out", required=True, help="output directory for the mp4 files")
+    parser.add_argument(
+        "--camera",
+        default=None,
+        help="camera to show; by default the geometrically front-facing one",
+    )
+    parser.add_argument("--fps", type=float, default=10.0, help="frames per second")
+    parser.add_argument("--no-lidar", action="store_true", help="skip the LiDAR points")
+    parser.add_argument("--view-range", type=float, default=None, help="BEV half-extent, metres")
+    args = parser.parse_args(argv)
+
+    from pathlib import Path
+
+    from t4_e2e_devkit.dataset.datalist import load_data_list
+    from t4_e2e_devkit.evaluation.prediction_manifest import load_prediction_manifest
+    from t4_e2e_devkit.visualization.planning_video import render_scene_video
+
+    data_list = load_data_list(args.data_list)
+
+    manifests = {}
+    for entry in args.manifest:
+        label, separator, path = entry.partition("=")
+        if not separator or not label or not path:
+            parser.error(f"--manifest expects LABEL=PATH, got {entry!r}")
+        if label in manifests:
+            parser.error(f"duplicate manifest label {label!r}")
+        manifests[label] = load_prediction_manifest(path)
+
+    scene_dirs = data_list.scene_dirs
+    if args.scene:
+        missing = sorted(set(args.scene) - set(scene_dirs))
+        if missing:
+            parser.error(f"scene(s) not in the data list: {missing}; run 't4e2e inspect' to see it")
+        scene_dirs = list(args.scene)
+
+    out_dir = Path(args.out)
+    for scene_rel in scene_dirs:
+        print(
+            render_scene_video(
+                data_list,
+                scene_rel,
+                out_dir / (scene_rel.replace("/", "_") + ".mp4"),
+                manifests,
+                camera=args.camera,
+                fps=args.fps,
+                view_range=args.view_range,
+                lidar=not args.no_lidar,
+            )
+        )
     return 0
 
 
@@ -440,6 +515,10 @@ COMMANDS = {
     "inspect": (_cmd_inspect, "explain a data list and the policy that built it"),
     "rigs": (_cmd_rigs, "report a scene's camera register and how it is stored"),
     "visualize": (_cmd_visualize, "render a window: BEV, cameras, or both"),
+    "visualize-video": (
+        _cmd_visualize_video,
+        "render per-frame planning videos from a data list",
+    ),
     "check": (_cmd_check, "verify the install and the vendored sources"),
 }
 

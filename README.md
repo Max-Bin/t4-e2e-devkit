@@ -28,6 +28,7 @@ logger or dashboard.
 | Build a data list | `t4e2e datalist` | Reproducible evaluation windows |
 | Inspect a data list | `t4e2e inspect` | Window count, root and filters |
 | Render one window | `t4e2e visualize` | BEV, camera or summary image |
+| Render planning videos | `t4e2e visualize-video` | Per-scene mp4 with prediction overlays |
 | Score external predictions | `t4e2e score-manifest` | v2 metrics from JSONL predictions |
 | Run a registered agent | `t4e2e evaluate` | Open-loop and PDM reports |
 | Run sensor-replay closed loop | `t4e2e evaluate-closed-loop` | Kinematic rollout and metrics |

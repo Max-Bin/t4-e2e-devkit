@@ -87,6 +87,43 @@ Regenerate it from the repository root:
 MPLCONFIGDIR=/tmp/mplconfig uv run python docs/examples/generate_bev_sample.py
 ```
 
+## Planning videos
+
+`t4e2e visualize-video` renders one mp4 per scene: on the left, the raw LiDAR
+sweep from above -- grey points on black, ego marker at the centre -- with the
+recorded future (white) and every model plan drawn over it; to its right, one
+camera panel per model with the same trajectories projected onto the road
+surface through the scene's own calibration, a model's plan as a vehicle-width
+ribbon with a green-yellow-red temporal gradient. Frames are the data list's
+windows -- the same key space a prediction manifest covers -- so a video shows
+exactly what was scored:
+
+```bash
+uv run t4e2e visualize-video \
+  --data-list results/val.datalist.json \
+  --scene prd_jt/scene/date/time \
+  --manifest baseline=results/baseline/predictions.jsonl \
+  --manifest experiment=results/experiment/predictions.jsonl \
+  --out results/visualization/videos
+```
+
+Omit `--scene` to render every scene in the list, and omit `--manifest` for a
+ground-truth-only replay. With several manifests the BEV gives each model one
+flat legend colour, and every camera panel's caption carries the model's full
+label with its 4 s displacement error. The camera is chosen by geometry --
+the stored camera whose optical axis points most along ego-forward -- because
+on `x2_dev` the only wide channel is pitched at the asphalt; `--camera`
+overrides the choice. LiDAR follows the usual opt-in rule (`--no-lidar` skips
+it); a scene without a LiDAR pack renders the BEV without points, and a window
+without a sweep holds the previous one rather than strobing. Encoding streams
+through the `ffmpeg` binary, which must be on `PATH`.
+
+The Python API is `render_scene_video` over a data list, or
+`render_planning_video` over an iterable of windows; see
+[`examples/render_planning_video.py`](../examples/render_planning_video.py).
+Single frames come from `render_planning_frame`, which returns an RGB array
+like `render_prediction_bev`.
+
 ## Map and object layers
 
 The current frame uses ego coordinates (`x` forward, `y` left). The BEV renderer

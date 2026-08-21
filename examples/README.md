@@ -101,7 +101,25 @@ row partition. Merge the resulting reports in the calling job, or use the
 higher-level `evaluate`/`distribute` workflow when the model is registered as
 an agent.
 
-## 6. Register an agent instead
+## 6. Render a planning video
+
+Once a manifest exists, replay it against the recorded future frame by frame.
+One mp4 per scene, camera and BEV side by side; `--manifest` is repeatable, so
+two models can be compared in one video, and omitting it replays the ground
+truth alone. Requires the `ffmpeg` binary on `PATH`:
+
+```bash
+uv run t4e2e visualize-video \
+  --data-list results/val.datalist.json \
+  --scene prd_jt/scene/date/time \
+  --manifest baseline=results/model/predictions.jsonl \
+  --out results/visualization/videos
+```
+
+The equivalent Python API is in
+[`render_planning_video.py`](render_planning_video.py).
+
+## 7. Register an agent instead
 
 If the model should be invoked by the devkit, implement
 `AbstractT4Agent`, declare its `SensorConfig` and `TrajectorySampling`, then
@@ -120,7 +138,7 @@ Use this route when the devkit should own scene loading and inference. Use the
 manifest route when the model repository already owns inference or its
 environment is separate.
 
-## 7. Training integration
+## 8. Training integration
 
 Lightning-based training code can use the shared callback directly:
 
