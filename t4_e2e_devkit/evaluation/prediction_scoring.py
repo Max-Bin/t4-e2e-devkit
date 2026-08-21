@@ -249,7 +249,8 @@ def score_prediction_manifest(
             # ``dataset[start - 1]`` is the one scene this batch needs that its
             # own slice does not hold; every other predecessor is already loaded.
             head_scene = (
-                dataset[previous_indices[0]] if previous_indices and previous_indices[0] == start - 1
+                dataset[previous_indices[0]]
+                if previous_indices and previous_indices[0] == start - 1
                 else None
             )
             previous_scenes = [

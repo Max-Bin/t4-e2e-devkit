@@ -6,7 +6,7 @@ import json
 from pathlib import Path
 from typing import Any, Callable, Optional
 
-from t4_e2e_devkit.planning.simulation.runtime import _portable_value
+from t4_e2e_devkit.common.artifact_io import portable_value
 
 from .abstract_callback import AbstractCallback
 
@@ -38,7 +38,7 @@ class VisualizationCallback(AbstractCallback):
         payload = (
             self.renderer(setup, planner, sample)
             if self.renderer is not None
-            else _portable_value(sample)
+            else portable_value(sample)
         )
         token = str(getattr(getattr(setup, "scenario", None), "token", "simulation"))
         safe_token = "".join(
@@ -47,7 +47,7 @@ class VisualizationCallback(AbstractCallback):
         path = self.output_dir / safe_token / f"{int(sample.iteration.index):06d}.json"
         path.parent.mkdir(parents=True, exist_ok=True)
         path.write_text(
-            json.dumps(_portable_value(payload), sort_keys=True) + "\n", encoding="utf-8"
+            json.dumps(portable_value(payload), sort_keys=True) + "\n", encoding="utf-8"
         )
         self.paths.append(path)
 

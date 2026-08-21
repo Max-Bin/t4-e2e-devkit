@@ -70,9 +70,10 @@ class TestRun:
         second = DistributedExecutor(_config(tmp_path, rank=1, world_size=2)).run(
             _tasks(tmp_path, "a", "b")
         )
-        assert {result.task_id for result in first} | {
-            result.task_id for result in second
-        } == {"a", "b"}
+        assert {result.task_id for result in first} | {result.task_id for result in second} == {
+            "a",
+            "b",
+        }
         assert not ({r.task_id for r in first} & {r.task_id for r in second})
 
 
