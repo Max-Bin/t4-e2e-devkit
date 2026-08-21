@@ -30,6 +30,13 @@ class LocalExecutor:
     The executor intentionally has no scheduler integration.  ``workers=1``
     is the default and is useful for debugging; larger values use Python's
     standard ``ProcessPoolExecutor`` and preserve input order.
+
+    This is the plain-callable half of the two: one function over one sequence,
+    results in input order, nothing recorded.  A run that needs per-task
+    identity, error capture, a thread or Ray backend, or a manifest to resume
+    from wants :class:`~t4_e2e_devkit.evaluation.worker_pool.WorkerPool`
+    instead, which is what the entry points use.  Both partition through
+    :func:`rank_indices`, so a rank means the same thing in either.
     """
 
     workers: int = 1

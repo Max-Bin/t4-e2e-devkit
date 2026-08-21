@@ -108,7 +108,20 @@ class WorkerManifest:
 
 
 class DistributedExecutor:
-    """Execute this rank's partition and optionally persist a manifest."""
+    """Execute this rank's partition and optionally persist a manifest.
+
+    Resume here is **manifest-level**: one file per rank, holding the results of
+    the tasks that succeeded, and a rerun skips those.  It is not the resume the
+    scenario entry points use -- ``t4e2e evaluate`` resumes from per-scenario
+    record files keyed by a config fingerprint, which survives a lost manifest,
+    works per window, and refuses records produced under a different config.
+    Reach for this one when the work is a task list rather than a scenario
+    sweep; reach for the records when a window is the unit of progress.
+
+    A manifest from another run or another rank is refused rather than merged:
+    the run id and rank in the file are the only evidence that the results being
+    skipped are this rank's own.
+    """
 
     def __init__(self, config: DistributedRunConfig) -> None:
         self.config = config

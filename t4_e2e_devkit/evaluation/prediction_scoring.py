@@ -209,20 +209,75 @@ def score_prediction_manifest(
         )
     )
 
+    def _trajectory(key: Any) -> Any:
+        return devkit["Trajectory"](
+            poses=manifest.records[key].poses,
+            trajectory_sampling=sampling,
+        )
+
+    # v2 extended comfort compares a plan with the plan one PLANNING CYCLE
+    # earlier, shifted by ``round(observation_interval_s / dt)`` samples. So the
+    # predecessor of row ``i`` is row ``i - 1`` only when it is the same scene
+    # and exactly that many source frames earlier: on a subsampled list (say a
+    # stride-50 validation set) no such row exists and extended comfort is
+    # genuinely unavailable, which is not the same thing as never asking for it.
+    #
+    # Without passing it, ``_aggregate`` drops the extended-comfort term and
+    # renormalises over the remaining weights (14 of 16) instead of failing, so
+    # the report reads as a full EPDMS while being a partial-weight one.
+    cycle_frames = int(round(float(scorer.config.observation_interval_s) / interval_seconds))
+
+    def _previous_index(position: int) -> int | None:
+        if position <= 0 or cycle_frames <= 0:
+            return None
+        scene_dir, center = shard_rows[position]
+        previous_scene_dir, previous_center = shard_rows[position - 1]
+        if previous_scene_dir != scene_dir:
+            return None
+        if int(center) - int(previous_center) != cycle_frames:
+            return None
+        return position - 1
+
     results: list[Any] = []
+    paired = 0
     try:
         for start in range(0, len(dataset), batch_size):
             end = min(start + batch_size, len(dataset))
             scenes = [dataset[index] for index in range(start, end)]
-            trajectories = [
-                devkit["Trajectory"](
-                    poses=manifest.records[key].poses,
-                    trajectory_sampling=sampling,
-                )
-                for key in shard_rows[start:end]
+            trajectories = [_trajectory(key) for key in shard_rows[start:end]]
+            previous_indices = [_previous_index(index) for index in range(start, end)]
+            # ``dataset[start - 1]`` is the one scene this batch needs that its
+            # own slice does not hold; every other predecessor is already loaded.
+            head_scene = (
+                dataset[previous_indices[0]] if previous_indices and previous_indices[0] == start - 1
+                else None
+            )
+            previous_scenes = [
+                None
+                if index is None
+                else (head_scene if index == start - 1 else scenes[index - start])
+                for index in previous_indices
             ]
-            results.extend(scorer.score_batch(trajectories, scenes))
+            previous_trajectories = [
+                None if index is None else _trajectory(shard_rows[index])
+                for index in previous_indices
+            ]
+            paired += sum(1 for index in previous_indices if index is not None)
+            results.extend(
+                scorer.score_batch(
+                    trajectories,
+                    scenes,
+                    previous_trajectories=previous_trajectories,
+                    previous_scenes=previous_scenes,
+                )
+            )
             LOG.info("scored %d/%d windows", len(results), len(dataset))
+        LOG.info(
+            "extended comfort: %d/%d windows had a predecessor %d source frames earlier",
+            paired,
+            len(dataset),
+            cycle_frames,
+        )
     finally:
         dataset.close()
 
