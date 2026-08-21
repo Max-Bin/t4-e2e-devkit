@@ -90,3 +90,18 @@ def test_the_planning_package_imports():
     # Cheap canary: planning/ pulls in the simulation stack, which is where the
     # deep import chains live.
     assert planning is not None
+
+
+def test_the_split_reader_modules_stay_importable_from_scene():
+    """``dataset.scene`` grew to hold four independent readers; two moved out.
+
+    Callers import them from ``dataset.scene`` -- the training window, the closed
+    loop, the scripts -- so the module re-exports them. Pinning that here means a
+    later tidy-up of the re-exports fails loudly instead of breaking those
+    imports.
+    """
+    from t4_e2e_devkit.dataset import ego_status, lidar_pack, scene
+
+    assert scene.T4LidarPackReader is lidar_pack.T4LidarPackReader
+    assert scene.build_ego_status is ego_status.build_ego_status
+    assert scene.global_to_ego is ego_status.global_to_ego
