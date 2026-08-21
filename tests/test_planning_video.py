@@ -11,6 +11,7 @@ from __future__ import annotations
 
 import json
 import shutil
+from pathlib import Path
 
 import numpy as np
 import pytest
@@ -24,10 +25,14 @@ from t4_e2e_devkit.common.dataclasses import (
     SceneMetadata,
     T4Frame,
     T4Scene,
+    Trajectory,
 )
 from t4_e2e_devkit.evaluation.prediction_manifest import (
     PredictionManifestWriter,
     load_prediction_manifest,
+)
+from t4_e2e_devkit.planning.simulation.trajectory.trajectory_sampling import (
+    TrajectorySampling,
 )
 from t4_e2e_devkit.visualization import (
     FFmpegVideoWriter,
@@ -114,10 +119,12 @@ def _scene(center: int = 10, with_camera: bool = True, with_lidar: bool = False)
     )
 
 
-def _manifest(tmp_path, lateral_offset: float = 0.0, centers=(10,)):
+def _manifest(tmp_path, lateral_offset: float = 0.0, centers=(10,), data_list=None):
     """Write and reload a manifest whose plan replays the recorded future."""
     path = tmp_path / f"predictions_{lateral_offset:g}.jsonl"
-    with PredictionManifestWriter(path, num_poses=8, interval_seconds=0.5) as writer:
+    with PredictionManifestWriter(
+        path, data_list=data_list, num_poses=8, interval_seconds=0.5
+    ) as writer:
         for center in centers:
             poses = np.column_stack(
                 [np.linspace(2.5, 20.0, 8), np.full(8, lateral_offset), np.zeros(8)]
@@ -200,6 +207,17 @@ class TestFrontCameraForScene:
         shutil.rmtree(scene / "data" / "CAM_FRONT")
         assert front_camera_for_scene(scene) == "CAM_FRONT_WIDE"
 
+    def test_signal_cameras_never_win_through_the_name_fallback_either(self, tmp_path):
+        # The prd_jt_val scenes that store only roof channels used to come back
+        # as CAM_TOP_LEFT_CENTER: excluded by role in the geometric pass, handed
+        # back by the fallback.  A trajectory over a signal-head view is worse
+        # than a refusal.
+        scene = _display_scene_dir(tmp_path)
+        for name in ("CAM_FRONT", "CAM_FRONT_WIDE"):
+            shutil.rmtree(scene / "data" / name)
+        with pytest.raises(ValueError, match="no readable road-facing camera"):
+            front_camera_for_scene(scene)
+
     def test_falls_back_to_names_without_calibration(self, tmp_path):
         (tmp_path / "data" / "CAM_FRONT_WIDE").mkdir(parents=True)
         assert front_camera_for_scene(tmp_path) == "CAM_FRONT_WIDE"
@@ -227,6 +245,69 @@ class TestSceneCameraReader:
     def test_uncalibrated_camera_is_an_error(self, tmp_path):
         with pytest.raises(ValueError, match="not calibrated"):
             SceneCameraReader(_display_scene_dir(tmp_path), "CAM_BACK")
+
+
+def _forward_mounted_camera() -> Camera:
+    """A camera 5.35 m ahead of the ego origin and 2.78 m up, as x2_dev mounts it.
+
+    The whole first half of a 4 s plan is then behind the pinhole, and what is
+    in front projects below the frame.  No synthetic case covered this before,
+    which is how a panel that silently showed nothing got shipped.
+    """
+    rotation = np.array([[0.0, 0.0, 1.0], [-1.0, 0.0, 0.0], [0.0, -1.0, 0.0]])
+    gradient = np.linspace(0, 255, 64, dtype=np.uint8)
+    image = np.broadcast_to(gradient[None, :, None], (48, 64, 3)).copy()
+    return Camera(
+        name="CAM_FRONT_WIDE",
+        image=image,
+        camera2ego_rotation=rotation,
+        camera2ego_translation=np.array([5.35, 0.0, 2.78]),
+        intrinsics=np.array([[50.0, 0, 32.0], [0, 50.0, 24.0], [0, 0, 1]]),
+    )
+
+
+def _slow_plan() -> Trajectory:
+    """A 4 s plan of a vehicle crawling: eight poses out to 8 m ahead of ego.
+
+    Speed is the other half of the geometry.  A camera mounted 5.35 m ahead of
+    the ego origin sees a fast plan (which reaches far past the pinhole) and not
+    a slow one, so a synthetic case has to be slow to reproduce what the fleet
+    actually shows at a junction.
+    """
+    poses = np.column_stack([np.linspace(1.0, 8.0, 8), np.zeros(8), np.zeros(8)])
+    return Trajectory(
+        poses=poses.astype(np.float32),
+        trajectory_sampling=TrajectorySampling(num_poses=8, interval_length=0.5),
+    )
+
+
+class TestOutOfViewPlans:
+    """A plan the view does not contain must say so, not read as no plan."""
+
+    def test_a_forward_mounted_camera_sees_none_of_a_slow_plan(self):
+        from t4_e2e_devkit.visualization.planning_video import _points_in_panel
+
+        poses = _slow_plan().poses
+        shape = (48, 64, 3)
+        # Same intrinsics, same plan: only the mounting moved.
+        assert _points_in_panel(_camera(), poses, 1.0, shape) > 0
+        assert _points_in_panel(_forward_mounted_camera(), poses, 1.0, shape) == 0
+
+    def test_the_panel_is_annotated_rather_than_left_blank(self):
+        scene = _scene()
+        scene.current_frame.cameras = Cameras({"CAM_FRONT_WIDE": _forward_mounted_camera()})
+        frame = render_planning_frame(scene, {"model": _slow_plan()}, panel_height=48)
+        panel = frame[:, frame.shape[0] :]
+        # Nothing of the plan projects into this panel, so without the note the
+        # panel would be the bare image and a reader would see a model that
+        # planned nothing.
+        assert not np.array_equal(panel, np.asarray(_forward_mounted_camera().image))
+
+    def test_nothing_crashes_when_every_pose_is_behind_the_camera(self):
+        scene = _scene()
+        scene.current_frame.cameras = Cameras({"CAM_FRONT_WIDE": _forward_mounted_camera()})
+        image = render_planning_frame(scene, None, panel_height=48)
+        assert image.ndim == 3 and image.dtype == np.uint8
 
 
 class TestManifestTrajectory:
@@ -298,6 +379,91 @@ class TestRenderPlanningFrame:
             render_planning_frame(_scene(), camera="CAM_BACK_WIDE")
 
 
+class TestGroundTruthGrid:
+    """The white line is drawn on the grid the plans use, not the default."""
+
+    def test_a_longer_manifest_horizon_extends_the_recorded_future(self, tmp_path):
+        from t4_e2e_devkit.visualization.planning_video import _longest_sampling
+
+        long_plan = Trajectory(
+            poses=np.column_stack([np.linspace(2.5, 30.0, 12), np.zeros(12), np.zeros(12)]).astype(
+                np.float32
+            ),
+            trajectory_sampling=TrajectorySampling(num_poses=12, interval_length=0.5),
+        )
+        assert _longest_sampling([("model", long_plan)]).num_poses == 12
+        # Drawn on the plan's 6 s grid, the two lines end at the same instant; on
+        # the 4 s default the model would look like it overshot by 10 m.
+        scene = _scene()
+        frame = render_planning_frame(scene, {"model": long_plan}, panel_height=48)
+        assert frame.ndim == 3
+
+    def test_no_plans_keeps_the_contract_default(self):
+        from t4_e2e_devkit.visualization.planning_video import _longest_sampling
+
+        assert _longest_sampling([]) is None
+        assert _longest_sampling([("model", None)]) is None
+
+
+class TestWindowShapeFollowsTheList:
+    def test_the_list_manifest_supplies_the_window_shape(self):
+        from t4_e2e_devkit.common.dataclasses import SceneFilter
+        from t4_e2e_devkit.dataset.datalist import DataList
+        from t4_e2e_devkit.visualization.planning_video import data_list_scene_filter
+
+        data_list = DataList(
+            root=Path("/nowhere"),
+            rows=[(SCENE_DIR, 40)],
+            manifest={"history_frames": 21, "gt_future_frames": 60, "center_stride": 2},
+        )
+        scene_filter = data_list_scene_filter(data_list, SceneFilter)
+        assert scene_filter.num_history_frames == 21
+        assert scene_filter.num_future_frames == 60
+        assert scene_filter.frame_interval == 2
+
+    def test_an_unrecorded_shape_falls_back_to_the_contract(self):
+        from t4_e2e_devkit.common.dataclasses import SceneFilter
+        from t4_e2e_devkit.dataset.datalist import DataList
+        from t4_e2e_devkit.visualization.planning_video import data_list_scene_filter
+
+        default = SceneFilter()
+        resolved = data_list_scene_filter(
+            DataList(root=Path("/nowhere"), rows=[(SCENE_DIR, 40)]), SceneFilter
+        )
+        assert resolved.num_history_frames == default.num_history_frames
+        assert resolved.num_future_frames == default.num_future_frames
+
+
+class TestManifestProvenance:
+    def test_a_manifest_from_another_list_warns(self, tmp_path, caplog):
+        from t4_e2e_devkit.dataset.datalist import DataList
+        from t4_e2e_devkit.visualization.planning_video import warn_on_data_list_mismatch
+
+        listed = DataList(root=tmp_path, rows=[(SCENE_DIR, 10)])
+        path = listed.write(tmp_path / "rendered.datalist.json")
+        other = DataList(root=tmp_path, rows=[(SCENE_DIR, 10), (SCENE_DIR, 11)])
+        other_path = other.write(tmp_path / "other.datalist.json")
+        manifest = _manifest(tmp_path, data_list=other_path)
+
+        rendered = DataList(root=tmp_path, rows=listed.rows, path=path)
+        with caplog.at_level("WARNING"):
+            warn_on_data_list_mismatch({"model": manifest}, rendered)
+        assert "different data list" in caplog.text
+
+    def test_the_matching_list_is_silent(self, tmp_path, caplog):
+        from t4_e2e_devkit.dataset.datalist import DataList
+        from t4_e2e_devkit.visualization.planning_video import warn_on_data_list_mismatch
+
+        listed = DataList(root=tmp_path, rows=[(SCENE_DIR, 10)])
+        path = listed.write(tmp_path / "rendered.datalist.json")
+        manifest = _manifest(tmp_path, data_list=path)
+        with caplog.at_level("WARNING"):
+            warn_on_data_list_mismatch(
+                {"model": manifest}, DataList(root=tmp_path, rows=listed.rows, path=path)
+            )
+        assert caplog.text == ""
+
+
 @needs_ffmpeg
 class TestFFmpegVideoWriter:
     def test_odd_dimensions_are_cropped_even(self, tmp_path):
@@ -355,3 +521,23 @@ class TestRenderPlanningVideo:
         scene.current_frame.cameras["CAM_FRONT_WIDE"].image = None
         without = render_planning_frame(scene, panel_height=48, camera_size=(64, 48))
         assert without.shape == with_image.shape
+
+    @pytest.mark.parametrize("width", [64, 65, 67])
+    def test_an_odd_scaled_width_still_matches(self, width):
+        """The decoded panel keeps an odd width; only the frame is cropped even.
+
+        Rounding the placeholder down to an even width made it two pixels narrow
+        per panel, which is the same aborted video the placeholder was meant to
+        prevent -- with several manifests, once per panel.
+        """
+        scene = _scene()
+        image = np.zeros((48, width, 3), dtype=np.uint8)
+        scene.current_frame.cameras["CAM_FRONT_WIDE"].image = image
+        decoded = render_planning_frame(
+            scene, {"a": None, "b": None}, panel_height=48, camera_size=(width, 48)
+        )
+        scene.current_frame.cameras["CAM_FRONT_WIDE"].image = None
+        placeholder = render_planning_frame(
+            scene, {"a": None, "b": None}, panel_height=48, camera_size=(width, 48)
+        )
+        assert placeholder.shape == decoded.shape
