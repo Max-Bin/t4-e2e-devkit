@@ -5,7 +5,7 @@ from __future__ import annotations
 import argparse
 import json
 from pathlib import Path
-from typing import Any, Mapping, Optional, Sequence
+from typing import Any, Optional, Sequence
 
 from omegaconf import OmegaConf
 
@@ -18,6 +18,7 @@ from t4_e2e_devkit.evaluation.batch import (
     write_family_csv,
     write_json,
 )
+from t4_e2e_devkit.script.utils import manifest_tokens, read_run
 
 _VOLATILE = {
     "status",
@@ -50,7 +51,10 @@ def merge_evaluation_reports(
     destination = Path(output_dir).resolve()
     if destination in sources:
         raise ValueError("output directory must differ from every input directory")
-    runs = [_read_run(source) for source in sources]
+    runs = [
+        read_run(source, kind="evaluation", run_format=RUN_FORMAT, run_version=RUN_VERSION)
+        for source in sources
+    ]
     signatures = [
         {key: value for key, value in run.items() if key not in _VOLATILE} for run in runs
     ]
@@ -72,7 +76,7 @@ def merge_evaluation_reports(
     failures: list[tuple[str, str]] = []
     for source, run in zip(sources, runs, strict=True):
         record_files = sorted((source / "records").glob("record-*.json"))
-        expected_tokens = _manifest_tokens(source, run)
+        expected_tokens = manifest_tokens(source, run, kind="evaluation")
         actual_tokens: set[str] = set()
         for path in record_files:
             try:
@@ -131,39 +135,6 @@ def merge_evaluation_reports(
         },
     )
     return report
-
-
-def _read_run(directory: Path) -> dict[str, Any]:
-    try:
-        value = json.loads((directory / "run.json").read_text(encoding="utf-8"))
-    except (OSError, json.JSONDecodeError) as error:
-        raise ValueError(f"cannot read {directory / 'run.json'}") from error
-    if (
-        not isinstance(value, dict)
-        or value.get("format") != RUN_FORMAT
-        or value.get("version") != RUN_VERSION
-    ):
-        raise ValueError(f"not an evaluation run directory: {directory}")
-    if value.get("status") not in {"completed", "failed"}:
-        raise ValueError(f"evaluation run is not finished: {directory}")
-    return value
-
-
-def _manifest_tokens(directory: Path, run: Mapping[str, Any]) -> set[str] | None:
-    manifest_name = run.get("manifest")
-    if not manifest_name:
-        return None
-    path = directory / str(manifest_name)
-    if not path.is_file():
-        raise ValueError(f"evaluation run is missing its worker manifest: {path}")
-    from t4_e2e_devkit.evaluation.distributed import WorkerManifest
-
-    manifest = WorkerManifest.read(path)
-    if manifest.run_id != str(run.get("run_id")):
-        raise ValueError(f"worker manifest belongs to a different run: {path}")
-    if manifest.rank != int(run.get("rank", 0)):
-        raise ValueError(f"worker manifest rank does not match run.json: {path}")
-    return set(manifest.task_ids)
 
 
 def _csv(value: str) -> str:

@@ -6,7 +6,7 @@ import argparse
 import csv
 import json
 from pathlib import Path
-from typing import Any, Mapping, Optional, Sequence
+from typing import Any, Optional, Sequence
 
 from omegaconf import OmegaConf
 
@@ -17,7 +17,7 @@ from t4_e2e_devkit.evaluation.batch import (
     write_family_csv,
     write_json,
 )
-from t4_e2e_devkit.evaluation.distributed import WorkerManifest
+from t4_e2e_devkit.script.utils import manifest_tokens, read_run
 
 RUN_FORMAT = "t4.submission-score.run"
 RUN_VERSION = 1
@@ -52,7 +52,10 @@ def merge_submission_scores(
     if destination in sources:
         raise ValueError("output directory must differ from every input directory")
 
-    runs = [_read_run(source) for source in sources]
+    runs = [
+        read_run(source, kind="submission-score", run_format=RUN_FORMAT, run_version=RUN_VERSION)
+        for source in sources
+    ]
     signatures = [
         {key: value for key, value in run.items() if key not in _VOLATILE} for run in runs
     ]
@@ -74,7 +77,7 @@ def merge_submission_scores(
     failures: list[tuple[str, str]] = []
     seen: set[str] = set()
     for source, run in zip(sources, runs, strict=True):
-        expected_tokens = _manifest_tokens(source, run)
+        expected_tokens = manifest_tokens(source, run, kind="submission-score")
         actual_tokens: set[str] = set()
         for path in sorted((source / "records").glob("record-*.json")):
             try:
@@ -135,36 +138,6 @@ def merge_submission_scores(
         },
     )
     return report
-
-
-def _read_run(directory: Path) -> dict[str, Any]:
-    try:
-        value = json.loads((directory / "run.json").read_text(encoding="utf-8"))
-    except (OSError, json.JSONDecodeError) as error:
-        raise ValueError(f"cannot read {directory / 'run.json'}") from error
-    if (
-        not isinstance(value, dict)
-        or value.get("format") != RUN_FORMAT
-        or value.get("version") != RUN_VERSION
-        or value.get("status") not in {"completed", "failed"}
-    ):
-        raise ValueError(f"not a completed submission-score run directory: {directory}")
-    return value
-
-
-def _manifest_tokens(directory: Path, run: Mapping[str, Any]) -> set[str] | None:
-    manifest_name = run.get("manifest")
-    if not manifest_name:
-        return None
-    path = directory / str(manifest_name)
-    if not path.is_file():
-        raise ValueError(f"submission-score run is missing its worker manifest: {path}")
-    manifest = WorkerManifest.read(path)
-    if manifest.run_id != str(run.get("run_id")):
-        raise ValueError(f"worker manifest belongs to a different run: {path}")
-    if manifest.rank != int(run.get("rank", 0)):
-        raise ValueError(f"worker manifest rank does not match run.json: {path}")
-    return set(manifest.task_ids)
 
 
 def main(argv: Optional[list[str]] = None) -> int:

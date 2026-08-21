@@ -18,7 +18,11 @@ from t4_e2e_devkit.dataset.dataset import T4Dataset
 from t4_e2e_devkit.evaluation.navsim_score import T4NavSimScorer
 from t4_e2e_devkit.evaluation.open_loop import OpenLoopMetrics, compute_open_loop_metrics
 from t4_e2e_devkit.evaluation.report import aggregate_evaluation
-from t4_e2e_devkit.script.utils import build_reader_config, build_scorer_config
+from t4_e2e_devkit.script.utils import (
+    build_reader_config,
+    build_scorer_config,
+    load_agent_checkpoint,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -36,7 +40,7 @@ def run_pdm_score(cfg: DictConfig) -> dict[str, dict[str, float]]:
 
     agent = build_agent(cfg.agent.name, **OmegaConf.to_container(cfg.agent.get("params", {})))
     if cfg.get("checkpoint_path"):
-        _load_checkpoint(agent, cfg.checkpoint_path)
+        load_agent_checkpoint(agent, cfg.checkpoint_path)
     agent.initialize()
     device = torch.device(cfg.get("device") or ("cuda" if torch.cuda.is_available() else "cpu"))
     agent.to(device)
@@ -112,13 +116,6 @@ def _plan(agent: Any, scene: Any):
         if agent.requires_scene:
             return agent.compute_trajectory_from_scene(scene)
         return agent.compute_trajectory(scene.get_agent_input())
-
-
-def _load_checkpoint(agent: Any, path: str | Path) -> None:
-    checkpoint = torch.load(str(path), map_location="cpu", weights_only=False)
-    state = checkpoint.get("state_dict", checkpoint)
-    state = {str(key).removeprefix("agent."): value for key, value in state.items()}
-    agent.load_state_dict(state, strict=False)
 
 
 def _write_pdm_csv(path: Path, results: list[Mapping[str, float]]) -> None:

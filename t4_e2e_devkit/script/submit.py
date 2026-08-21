@@ -14,6 +14,7 @@ from t4_e2e_devkit.dataset.datalist import DataList, load_data_list
 from t4_e2e_devkit.evaluation.executor import rank_indices
 from t4_e2e_devkit.evaluation.submission import SubmissionPackage, TrajectorySubmission
 from t4_e2e_devkit.evaluation.worker_pool import WorkerPool, WorkerTask
+from t4_e2e_devkit.script.utils import file_digest, load_agent_checkpoint
 
 
 def generate_submission(
@@ -101,7 +102,7 @@ def generate_submission(
             "format": "t4.internal.submission",
             "agent": str(agent_name),
             "agent_params": dict(agent_params or {}),
-            "checkpoint_digest": _file_digest(checkpoint_path),
+            "checkpoint_digest": file_digest(checkpoint_path),
             "reader_config_digest": _mapping_digest(dict(reader_config or {})),
             "data_digest": _digest_rows(selected),
             "rank": int(rank),
@@ -164,7 +165,7 @@ def _predict_one(
     agent = build_agent(agent_name, **dict(agent_params))
     agent.initialize()
     if checkpoint_path is not None:
-        _load_checkpoint(agent, checkpoint_path)
+        load_agent_checkpoint(agent, checkpoint_path)
     active_device = device or ("cuda" if torch.cuda.is_available() else "cpu")
     agent.to(torch.device(active_device))
     builder = T4WindowBuilder(
@@ -194,15 +195,6 @@ def _predict_one(
         builder.close()
 
 
-def _load_checkpoint(agent: Any, path: str) -> None:
-    import torch
-
-    checkpoint = torch.load(path, map_location="cpu", weights_only=False)
-    state = checkpoint.get("state_dict", checkpoint)
-    state = {str(key).removeprefix("agent."): value for key, value in state.items()}
-    agent.load_state_dict(state, strict=False)
-
-
 def _digest_rows(data_list: DataList) -> str:
     payload = json.dumps(list(data_list.rows), sort_keys=True, separators=(",", ":"), default=str)
     return hashlib.sha256(payload.encode("utf-8")).hexdigest()
@@ -211,16 +203,6 @@ def _digest_rows(data_list: DataList) -> str:
 def _mapping_digest(value: Mapping[str, Any]) -> str:
     payload = json.dumps(dict(value), sort_keys=True, separators=(",", ":"), default=str)
     return hashlib.sha256(payload.encode("utf-8")).hexdigest()
-
-
-def _file_digest(path: str | Path | None) -> str | None:
-    if path is None:
-        return None
-    digest = hashlib.sha256()
-    with Path(path).open("rb") as stream:
-        for chunk in iter(lambda: stream.read(1024 * 1024), b""):
-            digest.update(chunk)
-    return digest.hexdigest()
 
 
 def main(argv: Optional[list[str]] = None) -> int:

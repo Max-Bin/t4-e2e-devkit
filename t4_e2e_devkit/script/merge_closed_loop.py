@@ -4,10 +4,9 @@ from __future__ import annotations
 
 import argparse
 import csv
-import hashlib
 import json
 from pathlib import Path
-from typing import Any, Mapping, Optional, Sequence
+from typing import Any, Optional, Sequence
 
 from omegaconf import OmegaConf
 
@@ -23,8 +22,8 @@ from t4_e2e_devkit.evaluation.closed_loop_report import (
     write_closed_loop_ticks,
     write_static_html_report,
 )
-from t4_e2e_devkit.evaluation.distributed import WorkerManifest
 from t4_e2e_devkit.evaluation.report import aggregate_evaluation
+from t4_e2e_devkit.script.utils import manifest_tokens, value_fingerprint, write_json
 
 RUN_FORMAT = "t4.closed_loop.run"
 RUN_VERSION = 1
@@ -93,7 +92,7 @@ def merge_closed_loop_reports(
                 f"{source} contains {len(paths)} artifacts, but run.json declares "
                 f"{expected_rows} rank rows"
             )
-        expected_tokens = _manifest_tokens(source, run)
+        expected_tokens = manifest_tokens(source, run, kind="closed-loop")
         actual_tokens: set[str] = set()
         for path in paths:
             payload = load_rollout_artifact(path)
@@ -130,7 +129,7 @@ def merge_closed_loop_reports(
         "merged": True,
         "source_world_size": source_world_size,
     }
-    config_fingerprint = _fingerprint(run_config)
+    config_fingerprint = value_fingerprint(run_config)
     output = Path(output_dir)
     (output / "rollouts").mkdir(parents=True, exist_ok=True)
     for index, (token, payload, _, _) in enumerate(entries):
@@ -154,13 +153,13 @@ def merge_closed_loop_reports(
     )
     write_closed_loop_csv(output / "closed_loop.csv", metrics)
     write_closed_loop_ticks(output / "closed_loop_ticks.csv", metrics)
-    _write_json(output / "aggregate.json", report)
+    write_json(output / "aggregate.json", report)
     OmegaConf.save(OmegaConf.create(report), output / "aggregate.yaml")
     with (output / "failures.csv").open("w", newline="", encoding="utf-8") as handle:
         writer = csv.writer(handle)
         writer.writerow(["token", "error"])
         writer.writerows(failures)
-    _write_json(
+    write_json(
         output / "run.json",
         {
             **run_config,
@@ -191,32 +190,8 @@ def _load_run(directory: Path) -> dict[str, Any]:
     return run
 
 
-def _manifest_tokens(directory: Path, run: Mapping[str, Any]) -> set[str] | None:
-    manifest_name = run.get("manifest")
-    if not manifest_name:
-        return None
-    path = directory / str(manifest_name)
-    if not path.is_file():
-        raise ValueError(f"closed-loop run is missing its worker manifest: {path}")
-    manifest = WorkerManifest.read(path)
-    if manifest.run_id != str(run.get("run_id")):
-        raise ValueError(f"worker manifest belongs to a different run: {path}")
-    if manifest.rank != int(run.get("rank", 0)):
-        raise ValueError(f"worker manifest rank does not match run.json: {path}")
-    return set(manifest.task_ids)
-
-
 def _run_signature(run: dict[str, Any]) -> dict[str, Any]:
     return {key: value for key, value in run.items() if key not in _VOLATILE_RUN_KEYS}
-
-
-def _fingerprint(value: Any) -> str:
-    encoded = json.dumps(value, sort_keys=True, separators=(",", ":"), ensure_ascii=True)
-    return hashlib.sha256(encoded.encode("utf-8")).hexdigest()
-
-
-def _write_json(path: Path, value: Any) -> None:
-    path.write_text(json.dumps(value, indent=2, sort_keys=True) + "\n", encoding="utf-8")
 
 
 def main(argv: Optional[list[str]] = None) -> int:
