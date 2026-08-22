@@ -274,34 +274,48 @@ def ego_is_comfortable(
     """pdm_comfort_metrics.py::ego_is_comfortable (verbatim; vehicle params dropped).
 
     ``states`` is ``[n_batch, n_time, STATE_SIZE]``; returns ``[n_batch, 6]``.
+
+    Every ``_compute_*`` in the upstream file passes ``window_length=n_time``.
+    The four accel/jerk metrics act on it -- dropping it would leave them on the
+    ``_extract_*`` defaults (8 for the accel smoother, 15 for the derivative)
+    instead of the full window, which flips lon_accel and lon_jerk on a third of
+    all windows. ``_extract_ego_yaw_rate`` never forwards it, so yaw runs at the
+    ``_approximate_derivatives`` default of 5 either way; it is passed here only
+    to keep the six call sites verbatim.
     """
     n_batch, n_time, n_states = states.shape
     assert n_time == len(time_point_s)
     assert n_states == STATE_SIZE
     metric_functions = [
         lambda s, t: _within_bound(
-            _extract_ego_acceleration(s, "x"), min_bound=MIN_LON_ACCEL, max_bound=MAX_LON_ACCEL
+            _extract_ego_acceleration(s, "x", window_length=n_time),
+            min_bound=MIN_LON_ACCEL,
+            max_bound=MAX_LON_ACCEL,
         ),
         lambda s, t: _within_bound(
-            _extract_ego_acceleration(s, "y"),
+            _extract_ego_acceleration(s, "y", window_length=n_time),
             min_bound=-MAX_ABS_LAT_ACCEL,
             max_bound=MAX_ABS_LAT_ACCEL,
         ),
         lambda s, t: _within_bound(
-            _extract_ego_jerk(s, "magnitude", t),
+            _extract_ego_jerk(s, "magnitude", t, window_length=n_time),
             min_bound=-MAX_ABS_MAG_JERK,
             max_bound=MAX_ABS_MAG_JERK,
         ),
         lambda s, t: _within_bound(
-            _extract_ego_jerk(s, "x", t), min_bound=-MAX_ABS_LON_JERK, max_bound=MAX_ABS_LON_JERK
+            _extract_ego_jerk(s, "x", t, window_length=n_time),
+            min_bound=-MAX_ABS_LON_JERK,
+            max_bound=MAX_ABS_LON_JERK,
         ),
         lambda s, t: _within_bound(
-            _extract_ego_yaw_rate(s, t, deriv_order=2, poly_order=3),
+            _extract_ego_yaw_rate(s, t, deriv_order=2, poly_order=3, window_length=n_time),
             min_bound=-MAX_ABS_YAW_ACCEL,
             max_bound=MAX_ABS_YAW_ACCEL,
         ),
         lambda s, t: _within_bound(
-            _extract_ego_yaw_rate(s, t), min_bound=-MAX_ABS_YAW_RATE, max_bound=MAX_ABS_YAW_RATE
+            _extract_ego_yaw_rate(s, t, window_length=n_time),
+            min_bound=-MAX_ABS_YAW_RATE,
+            max_bound=MAX_ABS_YAW_RATE,
         ),
     ]
     results = np.zeros((n_batch, len(metric_functions)), dtype=np.bool_)
