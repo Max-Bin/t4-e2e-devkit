@@ -8,7 +8,6 @@ comfort and profile aggregation stay there until one final result copy.
 from __future__ import annotations
 
 from dataclasses import dataclass, replace
-from math import ceil
 from typing import Any, Optional, Sequence
 
 import numpy as np
@@ -800,25 +799,32 @@ def _lane_keeping(poses: torch.Tensor, prepared: _PreparedScene, config: Any) ->
     if points.shape[0] > 1:
         step[1:] = torch.linalg.vector_norm(torch.diff(points, dim=0), dim=-1)
         step[0] = step[1]
-    speed = step / float(config.interval_s)
-    window = max(1, int(round(1.0 / float(config.interval_s))))
+    interval = float(config.interval_s)
+    speed = step / interval
+    # The analyzer's window is the trailing ``queue_window_s`` of travel, which
+    # is ``window`` inter-sample steps ending here -- so the subtrahend is
+    # ``window - 1`` back, not ``window``, which took in one step too many.
+    window = max(1, int(round(float(config.lane_keeping_queue_window_s) / interval)))
     cumulative = torch.cat((torch.zeros(1, device=points.device, dtype=points.dtype), torch.cumsum(step, dim=0)))
-    progress = cumulative[1:] - cumulative[torch.arange(points.shape[0], device=points.device).sub(window).clamp(min=0)]
-    queue = (speed <= 1.0) & (progress <= 1.5)
     indices = torch.arange(points.shape[0], device=points.device, dtype=torch.long)
+    progress = cumulative[1:] - cumulative[indices.sub(window - 1).clamp(min=0)]
+    queue = (speed <= float(config.lane_keeping_queue_speed_mps)) & (
+        progress <= float(config.lane_keeping_queue_progress_m)
+    )
     last_queue = torch.cummax(
         torch.where(queue, indices, torch.full_like(indices, -10**9)), dim=0
     ).values
     release = (~queue) & (
-        indices - last_queue <= int(round(1.5 / float(config.interval_s)))
+        indices - last_queue <= int(round(float(config.lane_keeping_queue_release_s) / interval))
     )
     violation = (distances > float(config.lane_keeping_deviation_m)) & ~in_intersection & ~queue & ~release
     last_clear = torch.cummax(
         torch.where(violation, torch.full_like(indices, -1), indices), dim=0
     ).values
     run = indices - last_clear
-    required = ceil(float(config.lane_keeping_horizon_s) / float(config.interval_s))
-    failed = ((run - 1) * float(config.interval_s) >= required * float(config.interval_s)).any()
+    # ``violation_duration >= max_continuous_violation_time`` measured from the
+    # first violating sample, which is one sample more than the horizon's worth.
+    failed = ((run - 1) * interval >= float(config.lane_keeping_horizon_s)).any()
     return (~failed).to(poses.dtype)
 
 

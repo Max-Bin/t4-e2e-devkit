@@ -961,7 +961,25 @@ def _lane_keeping(
     intersection_rings: list,
     config: T4NavSimScorerConfig,
 ) -> float:
-    """NavSim v2 lane keeping with its continuous sample-count threshold."""
+    """EPDMS lane keeping, ported from the Autoware planning_data_analyzer
+    (``epdms/subscores/lane_keeping.cpp``) with its shipped parameters.
+
+    The queue exemption is the load-bearing part: a sample at or under
+    ``queue_speed_threshold`` that also covered no more than
+    ``queue_progress_threshold`` over the last ``queue_progress_window_time``
+    does not count, and neither does any sample within
+    ``queue_release_grace_time`` of one. A car waiting at a light drifts off its
+    centerline without failing to keep a lane, and without this the metric
+    scored 2% of validation windows as violations.
+
+    Failure is ``violation_duration >= max_continuous_violation_time`` measured
+    from the FIRST violating sample, so the run needs one sample more than
+    ``horizon / interval`` -- counting the samples instead fires a step early.
+
+    T4 substitution: the analyzer reads speed and cumulative progress off its
+    evaluation point, and a scored plan carries neither, so both come from the
+    spacing of consecutive poses.
+    """
 
     from shapely.geometry import LineString, Point, Polygon
 
@@ -975,16 +993,42 @@ def _lane_keeping(
         polygon = Polygon(np.asarray(ring, dtype=np.float64))
         if polygon.is_valid and not polygon.is_empty:
             intersections.append(polygon)
-    required = int(ceil(config.lane_keeping_horizon_s / config.interval_s))
-    consecutive = 0
-    for pose in poses:
-        point = Point(float(pose[0]), float(pose[1]))
-        if any(polygon.covers(point) for polygon in intersections):
-            consecutive = 0
+
+    interval = float(config.interval_s)
+    count = poses.shape[0]
+    points = np.asarray(poses[:, :2], dtype=np.float64)
+    step = np.zeros(count, dtype=np.float64)
+    if count > 1:
+        step[1:] = np.linalg.norm(np.diff(points, axis=0), axis=-1)
+        step[0] = step[1]
+    speed = step / interval
+    # ``C[i] - C[max(0, i - window)]`` in the analyzer, which is the last
+    # ``window`` inter-sample steps ending at ``i``.
+    window = max(1, int(round(float(config.lane_keeping_queue_window_s) / interval)))
+    cumulative = np.concatenate(([0.0], np.cumsum(step)))
+    index = np.arange(count)
+    progress = cumulative[index + 1] - cumulative[np.maximum(index - window + 1, 0)]
+    grace = int(round(float(config.lane_keeping_queue_release_s) / interval))
+
+    release_until: float | None = None
+    violation_start: int | None = None
+    for i in range(count):
+        point = Point(float(points[i, 0]), float(points[i, 1]))
+        queue = bool(
+            speed[i] <= config.lane_keeping_queue_speed_mps
+            and progress[i] <= config.lane_keeping_queue_progress_m
+        )
+        if queue:
+            release_until = float(i + grace)
+        released = not queue and release_until is not None and i <= release_until
+        in_intersection = any(polygon.covers(point) for polygon in intersections)
+        over = min(point.distance(line) for line in lines) > config.lane_keeping_deviation_m
+        if in_intersection or queue or released or not over:
+            violation_start = None
             continue
-        distance = min(point.distance(line) for line in lines)
-        consecutive = consecutive + 1 if distance > config.lane_keeping_deviation_m else 0
-        if consecutive >= required:
+        if violation_start is None:
+            violation_start = i
+        if (i - violation_start) * interval >= float(config.lane_keeping_horizon_s):
             return 0.0
     return 1.0
 
