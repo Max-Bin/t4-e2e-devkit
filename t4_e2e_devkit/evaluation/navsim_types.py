@@ -40,16 +40,62 @@ NAVSIM_COMPONENT_METRICS = (
 NAVSIM_V1_METRICS = NAVSIM_COMPONENT_METRICS + ("score",)
 NAVSIM_V2_METRICS = NAVSIM_COMPONENT_METRICS + ("extended_comfort", "score")
 NAVSIM_METRICS = NAVSIM_V2_METRICS
-_V1_SCORE_DEPENDENCIES = frozenset(
-    {
-        "no_at_fault_collisions",
-        "drivable_area_compliance",
-        "ego_progress",
-        "time_to_collision_within_bound",
-        "history_comfort",
-    }
-)
-_V2_SCORE_DEPENDENCIES = frozenset(NAVSIM_COMPONENT_METRICS) | {"extended_comfort"}
+
+
+@dataclass(frozen=True)
+class NavSimAggregation:
+    """How one version's metrics combine into ``score``.
+
+    The aggregation reads this instead of naming metrics inline, so it is the
+    definition rather than a description of one: moving a metric between the two
+    groups is a single edit, and a consumer that has to mirror the formula --
+    a differentiable batched rewrite, say -- can assert against it rather than
+    keep a parallel table that drifts without complaining.
+    """
+
+    #: Multiply the weighted mean; any zero zeroes the score.
+    multiplicative: tuple[str, ...]
+    #: ``(metric, the weight's field on T4NavSimScorerConfig)``.
+    weighted: tuple[tuple[str, str], ...]
+    #: Weighted as well, but only over the windows where it is available.
+    extended: tuple[str, str] | None = None
+
+    @property
+    def dependencies(self) -> frozenset[str]:
+        """Every metric ``score`` needs."""
+        names = {name for name, _ in self.weighted} | set(self.multiplicative)
+        if self.extended is not None:
+            names.add(self.extended[0])
+        return frozenset(names)
+
+
+NAVSIM_AGGREGATION: Mapping[str, NavSimAggregation] = {
+    "v1": NavSimAggregation(
+        multiplicative=("no_at_fault_collisions", "drivable_area_compliance"),
+        weighted=(
+            ("ego_progress", "progress_weight"),
+            ("time_to_collision_within_bound", "ttc_weight"),
+            ("history_comfort", "history_comfort_weight"),
+        ),
+    ),
+    "v2": NavSimAggregation(
+        multiplicative=(
+            "no_at_fault_collisions",
+            "drivable_area_compliance",
+            "driving_direction_compliance",
+            "traffic_light_compliance",
+        ),
+        weighted=(
+            ("ego_progress", "progress_weight"),
+            ("time_to_collision_within_bound", "ttc_weight"),
+            ("lane_keeping", "lane_keeping_weight"),
+            ("history_comfort", "history_comfort_weight"),
+        ),
+        extended=("extended_comfort", "extended_comfort_weight"),
+    ),
+}
+_V1_SCORE_DEPENDENCIES = NAVSIM_AGGREGATION["v1"].dependencies
+_V2_SCORE_DEPENDENCIES = NAVSIM_AGGREGATION["v2"].dependencies
 
 
 def resolve_navsim_metric_names(

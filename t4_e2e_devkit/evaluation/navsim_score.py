@@ -21,6 +21,7 @@ from t4_e2e_devkit.evaluation.gpu.navsim import score_navsim_batch
 from t4_e2e_devkit.evaluation.navsim_types import (  # noqa: F401
     _V1_SCORE_DEPENDENCIES,
     _V2_SCORE_DEPENDENCIES,
+    NAVSIM_AGGREGATION,
     NAVSIM_COMPONENT_METRICS,
     NAVSIM_METRICS,
     NAVSIM_V1_METRICS,
@@ -625,54 +626,37 @@ class T4NavSimScorer:
         return values
 
     def _aggregate(self, values: Mapping[str, float], extended: Optional[float]) -> float:
-        if self.config.version == "v1":
-            multiplier = values["no_at_fault_collisions"] * values["drivable_area_compliance"]
-            weighted = (
-                self.config.progress_weight * values["ego_progress"]
-                + self.config.ttc_weight * values["time_to_collision_within_bound"]
-                + self.config.history_comfort_weight * values["history_comfort"]
-            )
-            denominator = (
-                self.config.progress_weight
-                + self.config.ttc_weight
-                + self.config.history_comfort_weight
-            )
-            return float(multiplier * weighted / denominator)
-        if extended is None and self.config.require_extended_comfort:
+        """``prod(multiplicative) * weighted mean``, per ``NAVSIM_AGGREGATION``.
+
+        Which metrics fall in which group is the spec's to say, not this
+        function's; naming them here is what let the two live apart.
+        """
+
+        spec = NAVSIM_AGGREGATION[self.config.version]
+        if spec.extended is not None and extended is None and self.config.require_extended_comfort:
             raise NavSimScoringError("v2 EPDMS cannot aggregate without extended comfort")
         weighted = [
-            (self.config.progress_weight, values["ego_progress"]),
-            (self.config.ttc_weight, values["time_to_collision_within_bound"]),
-            (self.config.lane_keeping_weight, values["lane_keeping"]),
-            (self.config.history_comfort_weight, values["history_comfort"]),
+            (float(getattr(self.config, attribute)), values[name])
+            for name, attribute in spec.weighted
         ]
-        if extended is not None:
-            weighted.append((self.config.extended_comfort_weight, float(extended)))
+        if spec.extended is not None and extended is not None:
+            weighted.append((float(getattr(self.config, spec.extended[1])), float(extended)))
         denominator = sum(weight for weight, _ in weighted)
         if denominator <= 0.0:
-            raise NavSimScoringError("EPDMS weighted metric denominator is zero")
-        multiplier = (
-            values["no_at_fault_collisions"]
-            * values["drivable_area_compliance"]
-            * values["driving_direction_compliance"]
-            * values["traffic_light_compliance"]
-        )
+            raise NavSimScoringError("weighted metric denominator is zero")
+        multiplier = 1.0
+        for name in spec.multiplicative:
+            multiplier *= values[name]
         return float(multiplier * sum(weight * value for weight, value in weighted) / denominator)
 
     def _available_weight(self, extended: Optional[float]) -> float:
-        if self.config.version == "v1":
-            return (
-                self.config.progress_weight
-                + self.config.ttc_weight
-                + self.config.history_comfort_weight
-            )
-        return (
-            self.config.progress_weight
-            + self.config.ttc_weight
-            + self.config.lane_keeping_weight
-            + self.config.history_comfort_weight
-            + (self.config.extended_comfort_weight if extended is not None else 0.0)
-        )
+        """The weight actually in play, which ``extended`` can be missing from."""
+
+        spec = NAVSIM_AGGREGATION[self.config.version]
+        total = sum(float(getattr(self.config, attribute)) for _, attribute in spec.weighted)
+        if spec.extended is not None and extended is not None:
+            total += float(getattr(self.config, spec.extended[1]))
+        return total
 
     def _human_trajectory(self, scene: T4Scene) -> Trajectory:
         try:
