@@ -49,6 +49,7 @@ from t4_e2e_devkit.common.constants import (
     SEGMENT_POINT_DIM,
 )
 from t4_e2e_devkit.common.temporal import DEFAULT_TEMPORAL_SPEC, TemporalSpec
+from t4_e2e_devkit.dataset.lidar_pack import lidar_pack_location
 from t4_e2e_devkit.dataset.scene import T4BundleReader, T4LidarPackReader
 
 log = logging.getLogger(__name__)
@@ -205,16 +206,11 @@ class _LazyLidarFrames:
 
     def __init__(self, meta: dict, root: Path):
         self._reader: T4LidarPackReader | None = None
-        pack = meta.get("lidar_pack")
-        self._path: Path | None = None
-        if pack is not None:
-            path = Path(pack)
-            self._path = path if path.is_absolute() else root / path
-        self._first = int(meta.get("lidar_first_frame", 0))
-        self._count = int(meta.get("lidar_frames") or 0)
-        self._offset = int(meta.get("frame_offset", 0))
-        if self._first < 0 or (self._path is not None and self._count <= 0):
-            raise ValueError("T4 metadata has an invalid LiDAR frame range")
+        location = lidar_pack_location(meta, root)
+        self._path = location.path
+        self._first = location.first_frame
+        self._count = location.frames
+        self._offset = location.frame_offset
 
     def _open(self) -> T4LidarPackReader:
         """Open the pack and check the scene's range against it, once.

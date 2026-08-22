@@ -17,12 +17,80 @@ import json
 import os
 import struct
 import threading
+from dataclasses import dataclass
 from pathlib import Path
-from typing import Dict, Sequence
+from typing import Dict, Mapping, Sequence
 
 import numpy as np
 
 _LIDAR_TLS = threading.local()
+
+
+@dataclass(frozen=True)
+class LidarPackLocation:
+    """Where a scene's sweeps live, and how scene indices map into the pack.
+
+    ``derived/meta.json`` states this in four fields and every consumer used to
+    re-read them: ``lidar_pack`` (absolute, or relative to the T4 root),
+    ``lidar_first_frame`` and ``lidar_frames`` bounding which scene indices carry
+    a sweep, and ``frame_offset`` mapping a scene index to a pack index. Reading
+    a subset of them is the failure this exists to prevent -- taking the offset
+    without the range silently accepts an index the pack never covered.
+
+    ``path is None`` when the export ships no pack. A scene without sweeps is a
+    fact about the export, not an error.
+    """
+
+    path: Path | None
+    first_frame: int
+    frames: int
+    frame_offset: int
+
+    def pack_index(self, scene_index: int) -> int | None:
+        """The pack index for ``scene_index``, or ``None`` if it has no sweep."""
+
+        if self.path is None:
+            return None
+        if not self.first_frame <= scene_index < self.first_frame + self.frames:
+            return None
+        return scene_index + self.frame_offset
+
+
+def lidar_pack_location(meta: Mapping, root: Path | str) -> LidarPackLocation:
+    """Resolve a scene's pack location from its ``derived/meta.json``."""
+
+    pack = meta.get("lidar_pack")
+    path: Path | None = None
+    if pack is not None:
+        candidate = Path(pack)
+        path = candidate if candidate.is_absolute() else Path(root) / candidate
+    location = LidarPackLocation(
+        path=path,
+        first_frame=int(meta.get("lidar_first_frame", 0)),
+        frames=int(meta.get("lidar_frames") or 0),
+        frame_offset=int(meta.get("frame_offset", 0)),
+    )
+    if location.first_frame < 0 or (path is not None and location.frames <= 0):
+        raise ValueError("T4 metadata has an invalid LiDAR frame range")
+    return location
+
+
+def scene_lidar_pack_location(scene_dir: Path | str, root: Path | str) -> LidarPackLocation:
+    """:func:`lidar_pack_location` straight from a scene directory.
+
+    Saves a consumer from parsing ``derived/meta.json`` to find the pack: the
+    file's layout is this package's, and a caller that only wants the sweeps
+    should not have to know it.
+    """
+
+    meta_path = Path(scene_dir) / "derived" / "meta.json"
+    try:
+        meta = json.loads(meta_path.read_text(encoding="utf-8"))
+    except (OSError, ValueError) as error:
+        raise ValueError(f"unreadable T4 scene metadata: {meta_path}") from error
+    if not isinstance(meta, dict):
+        raise ValueError(f"T4 scene metadata must be a JSON object: {meta_path}")
+    return lidar_pack_location(meta, root)
 
 
 class T4LidarPackReader:
