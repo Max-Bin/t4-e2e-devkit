@@ -82,8 +82,6 @@ class TestPresenceGate:
     def _args():
         return argparse.Namespace(
             limit_per_scene=None,
-            history_frames=31,
-            future_frames=80,
             max_window_gap_frames=None,
             center_stride=5,
             center_pair_period=None,
@@ -99,6 +97,8 @@ class TestPresenceGate:
             ["CAM_FRONT", "CAM_BACK"],
             self._args(),
             dropped,
+            31,
+            80,
         )
         assert rows == [("x2_dev/scene", 45)]
         assert dropped["rows_dropped_by_camera"] == 1
@@ -108,7 +108,7 @@ class TestPresenceGate:
         presence[40, 0] = False  # CAM_BACK absent, but only CAM_FRONT required
         dropped = {"rows_dropped_by_camera": 0, "rows_dropped_by_window_gap": 0}
         rows = build_datalist._scene_rows(
-            self._builder(presence), "x2_dev/scene", ["CAM_FRONT"], self._args(), dropped
+            self._builder(presence), "x2_dev/scene", ["CAM_FRONT"], self._args(), dropped, 31, 80
         )
         assert len(rows) == 2
         assert dropped["rows_dropped_by_camera"] == 0
@@ -184,3 +184,53 @@ class TestCenterPairs:
     def test_a_period_below_two_cannot_hold_a_pair(self):
         with pytest.raises(SystemExit):
             build_datalist._center_pairs([("s", 0)], period=1, stride=5)
+
+
+class TestTemporalSurface:
+    """The window is specified at the model rate; SceneFilter counts source frames.
+
+    ``TemporalSpec`` owns that conversion, so the CLI cannot describe a window no
+    spec produces -- which a raw frame count could.
+    """
+
+    @staticmethod
+    def _spec(argv_extra):
+        from t4_e2e_devkit.common.temporal import TemporalSpec
+
+        args = build_datalist.parse_args(
+            [
+                "--root",
+                "/x",
+                "--glob",
+                "g",
+                "--out",
+                "o.json",
+                "--camera-names",
+                "none",
+                *argv_extra,
+            ]
+        )
+        return TemporalSpec(
+            history_seconds=args.history_seconds,
+            future_seconds=args.future_seconds,
+            hz=args.hz,
+        )
+
+    def test_the_defaults_are_the_frame_counts_they_replaced(self):
+        from t4_e2e_devkit.common.constants import FUTURE_FRAMES, PAST_FRAMES
+
+        spec = self._spec([])
+        assert spec.history_span + 1 == PAST_FRAMES
+        assert spec.future_span == FUTURE_FRAMES
+
+    def test_a_span_off_the_rate_grid_is_refused(self):
+        # At 2 Hz the grid is half a second, so 2.3 s has no whole-sample form.
+        # A frame count would have been accepted and the window silently rounded.
+        with pytest.raises(ValueError, match="grid"):
+            self._spec(["--history-seconds", "2.3", "--hz", "2"])
+
+    def test_the_source_span_does_not_depend_on_the_rate(self):
+        # Three seconds of history is thirty source frames however densely the
+        # window is read; only the sample count changes.
+        assert self._spec(["--hz", "10"]).history_span == self._spec(["--hz", "5"]).history_span
+        assert self._spec(["--hz", "10"]).past_frames != self._spec(["--hz", "5"]).past_frames

@@ -43,17 +43,20 @@ from typing import Any, Dict, List, Optional, Sequence
 
 from t4_e2e_devkit.common.constants import (
     DEFAULT_CENTER_STRIDE,
-    FUTURE_FRAMES,
-    PAST_FRAMES,
     T4_CAMERA_PROFILES,
 )
 from t4_e2e_devkit.common.dataclasses import SceneFilter, SensorConfig
+from t4_e2e_devkit.common.temporal import TemporalSpec
 from t4_e2e_devkit.dataset.datalist import DataList, is_e2e_scene_path
 from t4_e2e_devkit.dataset.rigs import RigMismatch, sensor_config_for_scene
 from t4_e2e_devkit.dataset.scene_tags import T4SceneTagIndex
 from t4_e2e_devkit.dataset.window import T4WindowBuilder
 
 logger = logging.getLogger(__name__)
+
+
+#: Defaults come from the spec itself, so the CLI cannot drift from it.
+_DEFAULT_TEMPORAL = TemporalSpec()
 
 
 def parse_args(argv: Optional[Sequence[str]] = None) -> argparse.Namespace:
@@ -115,16 +118,22 @@ def parse_args(argv: Optional[Sequence[str]] = None) -> argparse.Namespace:
         help="keep scenes carrying one of these tag statuses; repeatable",
     )
     parser.add_argument(
-        "--history-frames",
-        type=int,
-        default=PAST_FRAMES,
-        help="history frames including the current one (default: %(default)s)",
+        "--history-seconds",
+        type=float,
+        default=_DEFAULT_TEMPORAL.history_seconds,
+        help="history span before the current frame (default: %(default)s)",
     )
     parser.add_argument(
-        "--future-frames",
+        "--future-seconds",
+        type=float,
+        default=_DEFAULT_TEMPORAL.future_seconds,
+        help="future span after the current frame (default: %(default)s)",
+    )
+    parser.add_argument(
+        "--hz",
         type=int,
-        default=FUTURE_FRAMES,
-        help="recorded future frames per window (default: %(default)s)",
+        default=_DEFAULT_TEMPORAL.hz,
+        help="model rate; must divide the 10 Hz source rate (default: %(default)s)",
     )
     parser.add_argument(
         "--center-stride",
@@ -181,9 +190,20 @@ def build(args: argparse.Namespace) -> DataList:
     if not root.is_dir():
         raise SystemExit(f"T4 root is not a directory: {root}")
 
+    # ``SceneFilter`` counts SOURCE frames, while a window is specified at the
+    # model rate. ``TemporalSpec`` owns that conversion -- including the current
+    # frame riding on top of the history span -- so the two never disagree, and
+    # a caller cannot describe a window that no spec produces.
+    spec = TemporalSpec(
+        history_seconds=args.history_seconds,
+        future_seconds=args.future_seconds,
+        hz=args.hz,
+    )
+    history_frames = spec.history_span + 1
+    future_frames = spec.future_span
     scene_filter = SceneFilter(
-        num_history_frames=args.history_frames,
-        num_future_frames=args.future_frames,
+        num_history_frames=history_frames,
+        num_future_frames=future_frames,
         frame_interval=args.center_stride,
     )
 
@@ -296,7 +316,9 @@ def build(args: argparse.Namespace) -> DataList:
             continue
 
         try:
-            scene_rows = _scene_rows(builder, relative, required, args, dropped)
+            scene_rows = _scene_rows(
+                builder, relative, required, args, dropped, history_frames, future_frames
+            )
         finally:
             builder.close()
 
@@ -322,9 +344,13 @@ def build(args: argparse.Namespace) -> DataList:
             {"register": list(register), "scenes": count}
             for register, count in sorted(registers.items(), key=lambda item: -item[1])
         ],
-        "history_frames": args.history_frames,
-        "gt_future_frames": args.future_frames,
+        "history_frames": history_frames,
+        "gt_future_frames": future_frames,
+        # Source frames between centres, not model-rate samples: a centre is a
+        # window, and how densely windows are sampled is independent of the rate
+        # the window is read at.
         "center_stride": args.center_stride,
+        "temporal": spec.as_dict(),
         "center_pair_period": args.center_pair_period,
         # Recorded apart from camera_names because they are allowed to differ:
         # what the model reads and what a window must have are two decisions.
@@ -387,6 +413,8 @@ def _scene_rows(
     require_cameras: Sequence[str],
     args: argparse.Namespace,
     dropped: Dict[str, int],
+    history_frames: int,
+    future_frames: int,
 ) -> List[tuple]:
     """Enumerate the accepted centres of one scene."""
     presence = builder.reader.scalars.get("cam_presence")
@@ -407,8 +435,8 @@ def _scene_rows(
         if args.limit_per_scene is not None and len(rows) >= args.limit_per_scene:
             break
 
-        first = center - args.history_frames + 1
-        last = center + args.future_frames
+        first = center - history_frames + 1
+        last = center + future_frames
 
         if args.max_window_gap_frames is not None and valid_mask is not None:
             gaps = int((~valid_mask[first : last + 1]).sum())
