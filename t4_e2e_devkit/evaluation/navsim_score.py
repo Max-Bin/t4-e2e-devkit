@@ -8,7 +8,7 @@ recorded future boxes, vehicle dimensions and consecutive-plan state.
 from __future__ import annotations
 
 from dataclasses import replace
-from math import ceil, isfinite
+from math import isfinite
 from typing import Any, Mapping, Optional, Sequence
 
 import numpy as np
@@ -33,8 +33,8 @@ from t4_e2e_devkit.evaluation.navsim_types import (  # noqa: F401
     required_navsim_metric_names,
     resolve_navsim_metric_names,
 )
-from t4_e2e_devkit.evaluation.gpu.scene import associate_boxes, lane_change_exempt
 from t4_e2e_devkit.evaluation.reference import pdms_navsim as formulas
+from t4_e2e_devkit.evaluation.window_arrays import associate_boxes, lane_change_exempt
 from t4_e2e_devkit.planning.simulation.pdm_sim.simulator import simulate_proposals
 from t4_e2e_devkit.planning.simulation.trajectory.trajectory_sampling import (
     TrajectorySampling,

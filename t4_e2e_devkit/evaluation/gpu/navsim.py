@@ -30,13 +30,13 @@ from t4_e2e_devkit.evaluation.gpu.oracle import (
     WindowScene,
     score_simulated_window,
 )
-from t4_e2e_devkit.evaluation.gpu.scene import (
+from t4_e2e_devkit.evaluation.gpu.precision import simulate_proposals_fp32
+from t4_e2e_devkit.evaluation.gpu.scene import window_scene_from_arrays
+from t4_e2e_devkit.evaluation.gpu.simulate import TorchSimulatorConfig
+from t4_e2e_devkit.evaluation.window_arrays import (
     extract_window_scene_arrays,
-    window_scene_from_arrays,
     lane_change_exempt,
 )
-from t4_e2e_devkit.evaluation.gpu.precision import simulate_proposals_fp32
-from t4_e2e_devkit.evaluation.gpu.simulate import TorchSimulatorConfig
 from t4_e2e_devkit.planning.simulation.planner.pdm_planner.utils.pdm_enums import (
     StateIndex,
 )

@@ -1,6 +1,21 @@
 {
-  "note": "Recorded mypy debt. Run tools/typecheck.py --update to refresh.",
-  "total": 235,
+  "codes": {
+    "arg-type": 100,
+    "assignment": 25,
+    "attr-defined": 24,
+    "call-arg": 1,
+    "call-overload": 8,
+    "dict-item": 2,
+    "index": 1,
+    "misc": 12,
+    "name-defined": 1,
+    "no-redef": 1,
+    "operator": 8,
+    "override": 6,
+    "return-value": 3,
+    "union-attr": 39,
+    "var-annotated": 4
+  },
   "files": {
     "t4_e2e_devkit/agents/builders.py": 1,
     "t4_e2e_devkit/agents/registry.py": 1,
@@ -20,11 +35,9 @@
     "t4_e2e_devkit/evaluation/batch.py": 1,
     "t4_e2e_devkit/evaluation/closed_loop.py": 1,
     "t4_e2e_devkit/evaluation/closed_loop_artifact.py": 2,
-    "t4_e2e_devkit/evaluation/gpu/areas.py": 1,
     "t4_e2e_devkit/evaluation/gpu/geometry.py": 1,
     "t4_e2e_devkit/evaluation/gpu/geometry_ops.py": 2,
     "t4_e2e_devkit/evaluation/gpu/navsim.py": 13,
-    "t4_e2e_devkit/evaluation/gpu/scene.py": 4,
     "t4_e2e_devkit/evaluation/metric_engine.py": 7,
     "t4_e2e_devkit/evaluation/metrics/metric_dataframe.py": 1,
     "t4_e2e_devkit/evaluation/navsim_score.py": 11,
@@ -64,21 +77,6 @@
     "t4_e2e_devkit/visualization/planning_video.py": 1,
     "t4_e2e_devkit/visualization/plots.py": 6
   },
-  "codes": {
-    "arg-type": 100,
-    "union-attr": 39,
-    "assignment": 25,
-    "attr-defined": 24,
-    "misc": 12,
-    "call-overload": 8,
-    "operator": 8,
-    "override": 6,
-    "var-annotated": 4,
-    "return-value": 3,
-    "dict-item": 2,
-    "call-arg": 1,
-    "index": 1,
-    "name-defined": 1,
-    "no-redef": 1
-  }
+  "note": "Recorded mypy debt. Run tools/typecheck.py --update to refresh.",
+  "total": 230
 }

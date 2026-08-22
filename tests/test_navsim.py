@@ -199,7 +199,7 @@ class TestLaneChangeExemption:
 
     @staticmethod
     def _mask(values, pre=0.0, post=0.0, interval=0.1):
-        from t4_e2e_devkit.evaluation.gpu.scene import lane_change_exempt
+        from t4_e2e_devkit.evaluation.window_arrays import lane_change_exempt
 
         return lane_change_exempt(np.asarray(values), interval, pre, post).astype(int).tolist()
 
