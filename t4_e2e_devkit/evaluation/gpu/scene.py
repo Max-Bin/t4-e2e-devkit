@@ -187,7 +187,7 @@ def _red_light_rings(route: np.ndarray) -> list[np.ndarray]:
     return rings
 
 
-def _associate_boxes(
+def associate_boxes(
     boxes_per_frame: Sequence[np.ndarray], labels_per_frame: Sequence[np.ndarray]
 ) -> list[list[str]]:
     """Greedy nearest-neighbour tracking over a window's annotation frames.
@@ -291,7 +291,7 @@ def extract_track_arrays(
     ``unique_objects``.
     """
 
-    tokens_per_frame = _associate_boxes(boxes, labels)
+    tokens_per_frame = associate_boxes(boxes, labels)
 
     # One pass to assign columns and record first-appearance snapshots.
     token_index: dict[str, int] = {}

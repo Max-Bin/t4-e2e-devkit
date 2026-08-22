@@ -33,6 +33,7 @@ from t4_e2e_devkit.evaluation.navsim_types import (  # noqa: F401
     required_navsim_metric_names,
     resolve_navsim_metric_names,
 )
+from t4_e2e_devkit.evaluation.gpu.scene import associate_boxes
 from t4_e2e_devkit.evaluation.reference import pdms_navsim as formulas
 from t4_e2e_devkit.planning.simulation.pdm_sim.simulator import simulate_proposals
 from t4_e2e_devkit.planning.simulation.trajectory.trajectory_sampling import (
@@ -467,6 +468,8 @@ class T4NavSimScorer:
                     "no_at_fault_collisions",
                     "time_to_collision_within_bound",
                     "history_comfort",
+                    # Upstream reads DAC off the LQR rollout, not the raw plan.
+                    "drivable_area_compliance",
                 }
             )
         )
@@ -513,16 +516,28 @@ class T4NavSimScorer:
 
         boxes: list[np.ndarray] = []
         labels: list[np.ndarray] = []
+        tokens: list[list[str]] = []
         if needs_annotations:
             assert scene.future_annotations is not None
+            # ``num_steps + 10``, the same span the annotation gate above
+            # demands: TTC projects the last ego state 9 frames past the
+            # proposal, and slicing to the proposal alone left those frames
+            # unobservable, so the metric quietly stopped 0.9 s early.
+            observed = self.config.num_steps + 10
             boxes = [
                 np.asarray(annotation.boxes, dtype=np.float64)
-                for annotation in scene.future_annotations[: self.config.num_steps + 1]
+                for annotation in scene.future_annotations[:observed]
             ]
             labels = [
                 np.asarray(annotation.labels, dtype=np.int64)
-                for annotation in scene.future_annotations[: self.config.num_steps + 1]
+                for annotation in scene.future_annotations[:observed]
             ]
+            # T4 GT boxes carry no track id, and both collision metrics need one:
+            # navsim retires a track after its first not-at-fault contact and
+            # reads the track's heading and stopped state from its first
+            # appearance. The association is the shared numpy one the GPU
+            # backend uses, so both agree on identity by construction.
+            tokens = associate_boxes(boxes, labels)
 
         values: dict[str, float] = {}
         if "no_at_fault_collisions" in required:
@@ -536,12 +551,15 @@ class T4NavSimScorer:
                     agent_labels_per_t=labels,
                     center_offset=shape.rear_axle_to_center,
                     area_flags=area_flags,
+                    tokens_per_t=tokens,
                 )
             )
         if "drivable_area_compliance" in required:
+            assert states is not None
             values["drivable_area_compliance"] = float(
                 _drivable_score(
                     poses,
+                    _state_poses(states),
                     lane_rings,
                     intersection_rings,
                     borders,
@@ -565,6 +583,7 @@ class T4NavSimScorer:
                     self.config.interval_s,
                     center_offset=shape.rear_axle_to_center,
                     area_flags=area_flags,
+                    tokens_per_t=tokens,
                 )
             )
         if "traffic_light_compliance" in required:
@@ -863,8 +882,28 @@ def _lane_ring(row: np.ndarray) -> Optional[np.ndarray]:
     return ring if ring.shape[0] >= 3 else None
 
 
+def _state_poses(states: np.ndarray) -> np.ndarray:
+    """Simulated footprint poses as ``[T, 4]`` (x, y, cos, sin).
+
+    ``pdm_scorer.py`` builds ``_ego_coords`` from ``self._states``, the LQR
+    rollout, so a plan the controller cannot track is judged on where the car
+    actually ends up rather than on the waypoints that were asked for.
+    """
+
+    heading = states[:, formulas.STATE_HEADING]
+    return np.column_stack(
+        (
+            states[:, formulas.STATE_X],
+            states[:, formulas.STATE_Y],
+            np.cos(heading),
+            np.sin(heading),
+        )
+    )
+
+
 def _drivable_score(
     poses: np.ndarray,
+    state_poses: np.ndarray,
     lane_rings: list,
     intersection_rings: list,
     borders: list,
@@ -872,11 +911,14 @@ def _drivable_score(
     width: float,
     center_offset: float,
 ) -> float:
+    # The border probe is a T4 addition with no upstream counterpart and reads
+    # the plan on both backends; only the semantic union is the ported metric,
+    # and that one follows upstream onto the simulated states.
     if borders:
         return float(formulas.dac_from_road_borders(poses, borders, length, width, center_offset))
     return float(
         formulas.dac_semantic(
-            poses,
+            state_poses,
             {"road": lane_rings, "intersection": intersection_rings, "border": []},
             length,
             width,
