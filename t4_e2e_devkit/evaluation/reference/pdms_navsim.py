@@ -633,22 +633,34 @@ def is_track_stopped(
 
 
 def get_collision_type(
-    ego_xyh, ego_speed: float, ego_poly, agent_box: npt.NDArray[np.float64], agent_poly
+    ego_xyh,
+    ego_speed: float,
+    ego_poly,
+    agent_box: npt.NDArray[np.float64],
+    agent_poly,
+    snapshot_box: "npt.NDArray[np.float64] | None" = None,
 ) -> CollisionType:
     """pdm_scorer_utils.py::get_collision_type (verbatim logic).
 
     ``ego_xyh`` = (x, y, heading) at ego rear-axle/reference; ``ego_speed`` the
     ego speed magnitude; ``ego_poly``/``agent_poly`` shapely polygons.
+
+    Upstream splits the track between two sources: the position comes from the
+    polygon at THIS timestep, while the heading and the stopped test come from
+    ``unique_objects[token]`` -- the box at the track's first appearance. Pass
+    that box as ``snapshot_box``; without it both read the current box, which
+    reclassifies a track that changes heading or starts/stops mid-window.
     """
     from shapely.geometry import LineString
 
+    snapshot = agent_box if snapshot_box is None else snapshot_box
     is_ego_stopped = float(ego_speed) <= COLLISION_STOPPED_SPEED_THRESHOLD
     centroid = agent_poly.centroid
-    agent_xyh = (centroid.x, centroid.y, float(agent_box[6]))
+    agent_xyh = (centroid.x, centroid.y, float(snapshot[6]))
 
     if is_ego_stopped:
         return CollisionType.STOPPED_EGO_COLLISION
-    if is_track_stopped(agent_box):
+    if is_track_stopped(snapshot):
         return CollisionType.STOPPED_TRACK_COLLISION
     if is_agent_behind(ego_xyh, agent_xyh):
         return CollisionType.ACTIVE_REAR_COLLISION
@@ -671,6 +683,7 @@ def no_at_fault_collision(
     static_labels: set | None = None,
     center_offset: float = 0.0,
     area_flags: "npt.NDArray[np.bool_] | None" = None,
+    tokens_per_t: list | None = None,
 ) -> float:
     """1:1 port of NC. Returns 1.0 (no at-fault collision), 0.5 (static object)
     or 0.0 (dynamic agent), the min over the horizon.
@@ -683,21 +696,28 @@ def no_at_fault_collision(
     every agent is dynamic (0.0), the conservative default for T4 GT which is
     dominated by vehicles/pedestrians/bicycles (all in nuplan AGENT_TYPES).
 
+    ``tokens_per_t[t][j]`` identifies box ``j`` across frames, which is what
+    upstream's ``proposal_collided_track_ids`` needs: a track whose FIRST
+    contact is not at fault is excluded from every later frame, so a contact
+    that would be at fault later never scores. Treating each frame
+    independently instead -- as this did -- can only over-count, and did so on
+    2% of validation windows.
+
     DEVIATIONS #2 (GT-future agents), #3 (lateral case needs maps => navsim's
     no-penalty else-branch). The front/stopped-track at-fault cases — the
     dominant ones — are map-INDEPENDENT and fully faithful.
     """
     T = ego_states.shape[0]
     score = 1.0
-    # navsim dedups by track token across time. Our GT-future boxes are not
-    # tracked across frames, so we conservatively treat each frame independently
-    # for the at-fault test but keep navsim's "already-collided => skip" within
-    # the SAME frame's repeated-geometry guard (no token => no cross-frame dedup;
-    # documented). This never under-counts a fresh at-fault collision.
+    # navsim starts this empty for a detections-tracks observation
+    # (pdm_observation.py::update_detections_tracks) and fills it as it goes.
+    collided: set = set()
+    snapshots = _track_snapshots(agent_boxes_per_t, tokens_per_t)
     for t in range(T):
         boxes = np.asarray(agent_boxes_per_t[t], dtype=np.float64).reshape(-1, 9)
         if boxes.shape[0] == 0:
             continue
+        tokens = tokens_per_t[t] if tokens_per_t is not None else None
         x, y, h = ego_states[t, STATE_X], ego_states[t, STATE_Y], ego_states[t, STATE_HEADING]
         ego_speed = float(np.hypot(ego_states[t, STATE_VEL_X], ego_states[t, STATE_VEL_Y]))
         # Footprint CENTER = trajectory point + center_offset along heading
@@ -719,10 +739,20 @@ def no_at_fault_collision(
         ego_poly = _polygon(ego_corners(cxs, cys, h, ego_length, ego_width))
         labels = agent_labels_per_t[t] if agent_labels_per_t is not None else None
         for j in cand:
+            token = None if tokens is None else tokens[int(j)]
+            if token is not None and token in collided:
+                continue
             agent_poly = _polygon(box_corners(boxes[j]))
             if not ego_poly.intersects(agent_poly):
                 continue
-            ctype = get_collision_type((x, y, h), ego_speed, ego_poly, boxes[j], agent_poly)
+            ctype = get_collision_type(
+                (x, y, h),
+                ego_speed,
+                ego_poly,
+                boxes[j],
+                agent_poly,
+                snapshot_box=None if token is None else snapshots[token],
+            )
             at_fault = ctype in (
                 CollisionType.ACTIVE_FRONT_COLLISION,
                 CollisionType.STOPPED_TRACK_COLLISION,
@@ -739,6 +769,10 @@ def no_at_fault_collision(
             ):
                 at_fault = True
             if not at_fault:
+                # navsim's else-branch: this track is settled, and a later
+                # frame cannot reopen it.
+                if token is not None:
+                    collided.add(token)
                 continue
             is_static = (
                 static_labels is not None and labels is not None and int(labels[j]) in static_labels
@@ -746,6 +780,25 @@ def no_at_fault_collision(
             this_score = 0.5 if is_static else 0.0
             score = min(score, this_score)
     return score
+
+
+def _track_snapshots(agent_boxes_per_t: list, tokens_per_t: list | None) -> dict:
+    """Each token's box at its first appearance: navsim's ``unique_objects``.
+
+    The heading and the stopped test read this rather than the current frame,
+    so a track that turns or stops mid-window keeps the class it was first
+    seen with.
+    """
+
+    if tokens_per_t is None:
+        return {}
+    snapshots: dict = {}
+    for boxes, tokens in zip(agent_boxes_per_t, tokens_per_t, strict=True):
+        rows = np.asarray(boxes, dtype=np.float64).reshape(-1, 9)
+        for index, token in enumerate(tokens):
+            if token not in snapshots:
+                snapshots[token] = rows[index]
+    return snapshots
 
 
 # ===========================================================================
@@ -759,6 +812,7 @@ def time_to_collision(
     dt: float,
     center_offset: float = 0.0,
     area_flags: "npt.NDArray[np.bool_] | None" = None,
+    tokens_per_t: list | None = None,
 ) -> float:
     """1:1 port of TTC. Returns 1.0 (ok) or 0.0 (infraction).
 
@@ -768,24 +822,33 @@ def time_to_collision(
     infraction is the agent being AHEAD (deviation #3: navsim's
     intersection/multi-lane branch needs maps). Skips when ego speed <
     ``STOPPED_SPEED_THRESHOLD``.
+
+    Every ego state is evaluated, as in ``pdm_scorer.py::_calculate_ttc``'s
+    ``range(num_poses + 1)``. That is why the observation has to run past the
+    proposal: the last state still projects ``max(future_time_idcs)`` frames
+    ahead, so ``agent_boxes_per_t`` needs ``len(ego_states) + 9`` frames, which
+    is what the scorer's ``num_steps + 10`` annotation gate requires. Stopping
+    the loop early instead -- as this did -- silently drops the last 0.9 s of
+    the horizon and scored a fifth of the disagreeing windows too high.
     """
     T = ego_states.shape[0]
     future_time_idcs = np.arange(0, int(FUTURE_COLLISION_HORIZON_WINDOW * 10), 3)
-    max_future = int(future_time_idcs.max())
+    observed = len(agent_boxes_per_t)
     speeds = np.hypot(ego_states[:, STATE_VEL_X], ego_states[:, STATE_VEL_Y])
     headings = ego_states[:, STATE_HEADING]
     # per-step world velocity for the constant-velocity projection
     dxy_per_s = np.stack([np.cos(headings) * speeds, np.sin(headings) * speeds], axis=-1)
 
     score = 1.0
-    n_eval = T - max_future
-    for t in range(max(0, n_eval)):
+    collided: set = set()
+    snapshots = _track_snapshots(agent_boxes_per_t, tokens_per_t)
+    for t in range(T):
         if speeds[t] < STOPPED_SPEED_THRESHOLD:
             continue
         x0, y0, h = ego_states[t, STATE_X], ego_states[t, STATE_Y], headings[t]
         for fidx in future_time_idcs:
             ct = t + int(fidx)
-            if ct >= T:
+            if ct >= observed:
                 continue
             boxes = np.asarray(agent_boxes_per_t[ct], dtype=np.float64).reshape(-1, 9)
             if boxes.shape[0] == 0:
@@ -811,12 +874,17 @@ def time_to_collision(
             # ends up behind the projected centre though the boxes intersect).
             ego_poly = _polygon(ego_corners(pcx, pcy, h, ego_length, ego_width))
             ego_xyh_current = (x0, y0, h)
+            tokens = tokens_per_t[ct] if tokens_per_t is not None else None
             for j in cand:
+                token = None if tokens is None else tokens[int(j)]
+                if token is not None and token in collided:
+                    continue
                 agent_poly = _polygon(box_corners(boxes[j]))
                 if not ego_poly.intersects(agent_poly):
                     continue
                 centroid = agent_poly.centroid
-                agent_xyh = (centroid.x, centroid.y, float(boxes[j][6]))
+                heading = boxes[j] if token is None else snapshots[token]
+                agent_xyh = (centroid.x, centroid.y, float(heading[6]))
                 # navsim widens the infraction when ego is in multiple lanes /
                 # non-drivable / an intersection: any projected collision with
                 # an agent NOT BEHIND counts (lateral included). Flags read at
@@ -828,6 +896,11 @@ def time_to_collision(
                     map_widened and not is_agent_behind(ego_xyh_current, agent_xyh)
                 ):
                     score = min(score, 0.0)
+                elif token is not None:
+                    # navsim's else-branch. The speed gate above skips a frame
+                    # WITHOUT settling the track, so only a real not-at-fault
+                    # contact retires it.
+                    collided.add(token)
     return score
 
 

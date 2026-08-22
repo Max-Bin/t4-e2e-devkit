@@ -8,7 +8,7 @@ recorded future boxes, vehicle dimensions and consecutive-plan state.
 from __future__ import annotations
 
 from dataclasses import replace
-from math import ceil, isfinite
+from math import isfinite
 from typing import Any, Mapping, Optional, Sequence
 
 import numpy as np
@@ -34,6 +34,7 @@ from t4_e2e_devkit.evaluation.navsim_types import (  # noqa: F401
     resolve_navsim_metric_names,
 )
 from t4_e2e_devkit.evaluation.reference import pdms_navsim as formulas
+from t4_e2e_devkit.evaluation.window_arrays import associate_boxes, lane_change_exempt
 from t4_e2e_devkit.planning.simulation.pdm_sim.simulator import simulate_proposals
 from t4_e2e_devkit.planning.simulation.trajectory.trajectory_sampling import (
     TrajectorySampling,
@@ -467,6 +468,8 @@ class T4NavSimScorer:
                     "no_at_fault_collisions",
                     "time_to_collision_within_bound",
                     "history_comfort",
+                    # Upstream reads DAC off the LQR rollout, not the raw plan.
+                    "drivable_area_compliance",
                 }
             )
         )
@@ -513,16 +516,28 @@ class T4NavSimScorer:
 
         boxes: list[np.ndarray] = []
         labels: list[np.ndarray] = []
+        tokens: list[list[str]] = []
         if needs_annotations:
             assert scene.future_annotations is not None
+            # ``num_steps + 10``, the same span the annotation gate above
+            # demands: TTC projects the last ego state 9 frames past the
+            # proposal, and slicing to the proposal alone left those frames
+            # unobservable, so the metric quietly stopped 0.9 s early.
+            observed = self.config.num_steps + 10
             boxes = [
                 np.asarray(annotation.boxes, dtype=np.float64)
-                for annotation in scene.future_annotations[: self.config.num_steps + 1]
+                for annotation in scene.future_annotations[:observed]
             ]
             labels = [
                 np.asarray(annotation.labels, dtype=np.int64)
-                for annotation in scene.future_annotations[: self.config.num_steps + 1]
+                for annotation in scene.future_annotations[:observed]
             ]
+            # T4 GT boxes carry no track id, and both collision metrics need one:
+            # navsim retires a track after its first not-at-fault contact and
+            # reads the track's heading and stopped state from its first
+            # appearance. The association is the shared numpy one the GPU
+            # backend uses, so both agree on identity by construction.
+            tokens = associate_boxes(boxes, labels)
 
         values: dict[str, float] = {}
         if "no_at_fault_collisions" in required:
@@ -536,12 +551,15 @@ class T4NavSimScorer:
                     agent_labels_per_t=labels,
                     center_offset=shape.rear_axle_to_center,
                     area_flags=area_flags,
+                    tokens_per_t=tokens,
                 )
             )
         if "drivable_area_compliance" in required:
+            assert states is not None
             values["drivable_area_compliance"] = float(
                 _drivable_score(
                     poses,
+                    _state_poses(states),
                     lane_rings,
                     intersection_rings,
                     borders,
@@ -565,6 +583,7 @@ class T4NavSimScorer:
                     self.config.interval_s,
                     center_offset=shape.rear_axle_to_center,
                     area_flags=area_flags,
+                    tokens_per_t=tokens,
                 )
             )
         if "traffic_light_compliance" in required:
@@ -584,7 +603,13 @@ class T4NavSimScorer:
             coverage["ego_progress_gated"] = float(ep_gated)
         if "lane_keeping" in required:
             values["lane_keeping"] = float(
-                _lane_keeping(poses, route_centerlines, intersection_rings, self.config)
+                _lane_keeping(
+                    poses,
+                    route_centerlines,
+                    intersection_rings,
+                    self.config,
+                    _lane_change_mask(scene, poses.shape[0], self.config),
+                )
             )
         if "history_comfort" in required:
             assert states is not None
@@ -863,8 +888,28 @@ def _lane_ring(row: np.ndarray) -> Optional[np.ndarray]:
     return ring if ring.shape[0] >= 3 else None
 
 
+def _state_poses(states: np.ndarray) -> np.ndarray:
+    """Simulated footprint poses as ``[T, 4]`` (x, y, cos, sin).
+
+    ``pdm_scorer.py`` builds ``_ego_coords`` from ``self._states``, the LQR
+    rollout, so a plan the controller cannot track is judged on where the car
+    actually ends up rather than on the waypoints that were asked for.
+    """
+
+    heading = states[:, formulas.STATE_HEADING]
+    return np.column_stack(
+        (
+            states[:, formulas.STATE_X],
+            states[:, formulas.STATE_Y],
+            np.cos(heading),
+            np.sin(heading),
+        )
+    )
+
+
 def _drivable_score(
     poses: np.ndarray,
+    state_poses: np.ndarray,
     lane_rings: list,
     intersection_rings: list,
     borders: list,
@@ -872,11 +917,14 @@ def _drivable_score(
     width: float,
     center_offset: float,
 ) -> float:
+    # The border probe is a T4 addition with no upstream counterpart and reads
+    # the plan on both backends; only the semantic union is the ported metric,
+    # and that one follows upstream onto the simulated states.
     if borders:
         return float(formulas.dac_from_road_borders(poses, borders, length, width, center_offset))
     return float(
         formulas.dac_semantic(
-            poses,
+            state_poses,
             {"road": lane_rings, "intersection": intersection_rings, "border": []},
             length,
             width,
@@ -913,13 +961,57 @@ def _traffic_light_compliance(
     return 1.0
 
 
+def _lane_change_mask(
+    scene: T4Scene, count: int, config: T4NavSimScorerConfig
+) -> Optional[np.ndarray]:
+    """The lane-change exemption over the scored poses, or ``None``.
+
+    ``future_turn_indicators`` is aligned so entry ``t`` is the scored pose
+    ``t``; a scene without the channel yields ``None`` and the metric behaves as
+    it did before the exemption existed, rather than silently treating an
+    unlabelled scene as one that never signalled.
+    """
+
+    indicators = scene.future_turn_indicators
+    if indicators is None or len(indicators) < count:
+        return None
+    return lane_change_exempt(
+        indicators[:count],
+        float(config.interval_s),
+        float(config.lane_keeping_lane_change_pre_s),
+        float(config.lane_keeping_lane_change_post_s),
+    )
+
+
 def _lane_keeping(
     poses: np.ndarray,
     centerlines: list,
     intersection_rings: list,
     config: T4NavSimScorerConfig,
+    lane_change: Optional[np.ndarray] = None,
 ) -> float:
-    """NavSim v2 lane keeping with its continuous sample-count threshold."""
+    """EPDMS lane keeping, ported from the Autoware planning_data_analyzer
+    (``epdms/subscores/lane_keeping.cpp``) with its shipped parameters.
+
+    The queue exemption is the load-bearing part: a sample at or under
+    ``queue_speed_threshold`` that also covered no more than
+    ``queue_progress_threshold`` over the last ``queue_progress_window_time``
+    does not count, and neither does any sample within
+    ``queue_release_grace_time`` of one. A car waiting at a light drifts off its
+    centerline without failing to keep a lane, and without this the metric
+    scored 2% of validation windows as violations.
+
+    Failure is ``violation_duration >= max_continuous_violation_time`` measured
+    from the FIRST violating sample, so the run needs one sample more than
+    ``horizon / interval`` -- counting the samples instead fires a step early.
+
+    Signalled samples are exempt too, via ``lane_change_exempt``; the caller
+    passes ``None`` for a scene with no turn-indicator channel.
+
+    T4 substitution: the analyzer reads speed and cumulative progress off its
+    evaluation point, and a scored plan carries neither, so both come from the
+    spacing of consecutive poses.
+    """
 
     from shapely.geometry import LineString, Point, Polygon
 
@@ -933,16 +1025,43 @@ def _lane_keeping(
         polygon = Polygon(np.asarray(ring, dtype=np.float64))
         if polygon.is_valid and not polygon.is_empty:
             intersections.append(polygon)
-    required = int(ceil(config.lane_keeping_horizon_s / config.interval_s))
-    consecutive = 0
-    for pose in poses:
-        point = Point(float(pose[0]), float(pose[1]))
-        if any(polygon.covers(point) for polygon in intersections):
-            consecutive = 0
+
+    interval = float(config.interval_s)
+    count = poses.shape[0]
+    points = np.asarray(poses[:, :2], dtype=np.float64)
+    step = np.zeros(count, dtype=np.float64)
+    if count > 1:
+        step[1:] = np.linalg.norm(np.diff(points, axis=0), axis=-1)
+        step[0] = step[1]
+    speed = step / interval
+    # ``C[i] - C[max(0, i - window)]`` in the analyzer, which is the last
+    # ``window`` inter-sample steps ending at ``i``.
+    window = max(1, int(round(float(config.lane_keeping_queue_window_s) / interval)))
+    cumulative = np.concatenate(([0.0], np.cumsum(step)))
+    index = np.arange(count)
+    progress = cumulative[index + 1] - cumulative[np.maximum(index - window + 1, 0)]
+    grace = int(round(float(config.lane_keeping_queue_release_s) / interval))
+
+    release_until: float | None = None
+    violation_start: int | None = None
+    for i in range(count):
+        point = Point(float(points[i, 0]), float(points[i, 1]))
+        queue = bool(
+            speed[i] <= config.lane_keeping_queue_speed_mps
+            and progress[i] <= config.lane_keeping_queue_progress_m
+        )
+        if queue:
+            release_until = float(i + grace)
+        released = not queue and release_until is not None and i <= release_until
+        in_intersection = any(polygon.covers(point) for polygon in intersections)
+        changing = lane_change is not None and bool(lane_change[i])
+        over = min(point.distance(line) for line in lines) > config.lane_keeping_deviation_m
+        if in_intersection or changing or queue or released or not over:
+            violation_start = None
             continue
-        distance = min(point.distance(line) for line in lines)
-        consecutive = consecutive + 1 if distance > config.lane_keeping_deviation_m else 0
-        if consecutive >= required:
+        if violation_start is None:
+            violation_start = i
+        if (i - violation_start) * interval >= float(config.lane_keeping_horizon_s):
             return 0.0
     return 1.0
 

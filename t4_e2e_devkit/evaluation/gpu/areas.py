@@ -32,42 +32,6 @@ from __future__ import annotations
 import torch
 
 
-def pack_rings_numpy(rings: list) -> "np.ndarray":
-    """Pad variable-length exterior rings into one [L, E+1, 2] buffer.
-
-    Padding repeats the closing vertex; a zero-length edge can never satisfy
-    the crossing predicate, so padded edges contribute nothing.
-    """
-
-    import numpy as np
-
-    arrays = [
-        ring.detach().cpu().numpy() if torch.is_tensor(ring) else np.asarray(ring)
-        for ring in rings
-    ]
-    max_vertices = max(a.shape[0] + (a[0] != a[-1]).any() for a in arrays) + 0
-    padded = np.empty((len(arrays), int(max_vertices), 2), dtype=np.float64)
-    for index, ring in enumerate(arrays):
-        length = ring.shape[0]
-        padded[index, :length] = ring
-        if (ring[0] != ring[-1]).any():
-            padded[index, length] = ring[0]
-            length += 1
-        padded[index, length:] = padded[index, length - 1]
-    return padded
-
-
-def pack_polygons(
-    rings: list,  # each [E_i, 2] numpy array or tensor, exterior ring
-    device: torch.device,
-    dtype: torch.dtype,
-) -> tuple[torch.Tensor, torch.Tensor]:
-    """[L, E, 2] edge starts + ends on the device; see ``pack_rings_numpy``."""
-
-    tensor = torch.from_numpy(pack_rings_numpy(rings)).to(device=device, dtype=dtype)
-    return tensor[:, :-1], tensor[:, 1:]
-
-
 def points_in_polygons_torch(
     points: torch.Tensor,  # [M, 2]
     edge_starts: torch.Tensor,  # [L, E, 2]

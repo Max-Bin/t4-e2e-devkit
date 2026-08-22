@@ -8,7 +8,6 @@ comfort and profile aggregation stay there until one final result copy.
 from __future__ import annotations
 
 from dataclasses import dataclass, replace
-from math import ceil
 from typing import Any, Optional, Sequence
 
 import numpy as np
@@ -31,12 +30,13 @@ from t4_e2e_devkit.evaluation.gpu.oracle import (
     WindowScene,
     score_simulated_window,
 )
-from t4_e2e_devkit.evaluation.gpu.scene import (
-    extract_window_scene_arrays,
-    window_scene_from_arrays,
-)
 from t4_e2e_devkit.evaluation.gpu.precision import simulate_proposals_fp32
+from t4_e2e_devkit.evaluation.gpu.scene import window_scene_from_arrays
 from t4_e2e_devkit.evaluation.gpu.simulate import TorchSimulatorConfig
+from t4_e2e_devkit.evaluation.window_arrays import (
+    extract_window_scene_arrays,
+    lane_change_exempt,
+)
 from t4_e2e_devkit.planning.simulation.planner.pdm_planner.utils.pdm_enums import (
     StateIndex,
 )
@@ -53,6 +53,7 @@ class _PreparedScene:
     intersection_ends: torch.Tensor
     border_starts: torch.Tensor
     border_ends: torch.Tensor
+    lane_change: Optional[torch.Tensor]
     vehicle: VehicleTensors
     metadata: dict[str, float]
 
@@ -303,6 +304,21 @@ def _prepare_scene(
     border_ends = torch.empty((0, 2), device=device, dtype=dtype)
     coverage: dict[str, float] = {}
 
+    # One numpy implementation feeds both backends; see ``lane_change_exempt``.
+    lane_change: Optional[torch.Tensor] = None
+    steps = int(config.num_steps) + 1
+    indicators = scene.future_turn_indicators
+    if indicators is not None and len(indicators) >= steps:
+        lane_change = torch.as_tensor(
+            lane_change_exempt(
+                indicators[:steps],
+                float(config.interval_s),
+                float(config.lane_keeping_lane_change_pre_s),
+                float(config.lane_keeping_lane_change_post_s),
+            ),
+            device=device,
+        )
+
     if needs_map:
         if map_tensors is None:
             raise ValueError("PDM GPU scoring requires current-frame map tensors")
@@ -388,6 +404,7 @@ def _prepare_scene(
         intersection_ends=intersection_ends,
         border_starts=border_starts,
         border_ends=border_ends,
+        lane_change=lane_change,
         vehicle=VehicleTensors(
             half_length=float(shape.length) / 2.0,
             half_width=float(shape.width) / 2.0,
@@ -800,25 +817,43 @@ def _lane_keeping(poses: torch.Tensor, prepared: _PreparedScene, config: Any) ->
     if points.shape[0] > 1:
         step[1:] = torch.linalg.vector_norm(torch.diff(points, dim=0), dim=-1)
         step[0] = step[1]
-    speed = step / float(config.interval_s)
-    window = max(1, int(round(1.0 / float(config.interval_s))))
+    interval = float(config.interval_s)
+    speed = step / interval
+    # The analyzer's window is the trailing ``queue_window_s`` of travel, which
+    # is ``window`` inter-sample steps ending here -- so the subtrahend is
+    # ``window - 1`` back, not ``window``, which took in one step too many.
+    window = max(1, int(round(float(config.lane_keeping_queue_window_s) / interval)))
     cumulative = torch.cat((torch.zeros(1, device=points.device, dtype=points.dtype), torch.cumsum(step, dim=0)))
-    progress = cumulative[1:] - cumulative[torch.arange(points.shape[0], device=points.device).sub(window).clamp(min=0)]
-    queue = (speed <= 1.0) & (progress <= 1.5)
     indices = torch.arange(points.shape[0], device=points.device, dtype=torch.long)
+    progress = cumulative[1:] - cumulative[indices.sub(window - 1).clamp(min=0)]
+    queue = (speed <= float(config.lane_keeping_queue_speed_mps)) & (
+        progress <= float(config.lane_keeping_queue_progress_m)
+    )
     last_queue = torch.cummax(
         torch.where(queue, indices, torch.full_like(indices, -10**9)), dim=0
     ).values
     release = (~queue) & (
-        indices - last_queue <= int(round(1.5 / float(config.interval_s)))
+        indices - last_queue <= int(round(float(config.lane_keeping_queue_release_s) / interval))
     )
-    violation = (distances > float(config.lane_keeping_deviation_m)) & ~in_intersection & ~queue & ~release
+    changing = (
+        prepared.lane_change
+        if prepared.lane_change is not None
+        else torch.zeros(points.shape[0], dtype=torch.bool, device=points.device)
+    )
+    violation = (
+        (distances > float(config.lane_keeping_deviation_m))
+        & ~in_intersection
+        & ~changing
+        & ~queue
+        & ~release
+    )
     last_clear = torch.cummax(
         torch.where(violation, torch.full_like(indices, -1), indices), dim=0
     ).values
     run = indices - last_clear
-    required = ceil(float(config.lane_keeping_horizon_s) / float(config.interval_s))
-    failed = ((run - 1) * float(config.interval_s) >= required * float(config.interval_s)).any()
+    # ``violation_duration >= max_continuous_violation_time`` measured from the
+    # first violating sample, which is one sample more than the horizon's worth.
+    failed = ((run - 1) * interval >= float(config.lane_keeping_horizon_s)).any()
     return (~failed).to(poses.dtype)
 
 

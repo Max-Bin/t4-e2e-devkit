@@ -129,6 +129,18 @@ class T4NavSimScorerConfig:
     extended_comfort_weight: float = formulas.EXTENDED_COMFORT_WEIGHT
     lane_keeping_deviation_m: float = 0.5
     lane_keeping_horizon_s: float = 2.0
+    # The analyzer's queue exemption (epdms/subscores/lane_keeping.hpp
+    # defaults): a sample this slow that also covered no more than
+    # ``queue_progress_m`` over the trailing ``queue_window_s`` is waiting, not
+    # drifting, and neither it nor the following ``queue_release_s`` counts.
+    lane_keeping_queue_speed_mps: float = 1.0
+    lane_keeping_queue_window_s: float = 1.0
+    lane_keeping_queue_progress_m: float = 1.5
+    lane_keeping_queue_release_s: float = 1.5
+    # The analyzer widens each signalled window by these before exempting it.
+    # Only the turn-indicator half is available on T4; see ``lane_change_exempt``.
+    lane_keeping_lane_change_pre_s: float = 1.0
+    lane_keeping_lane_change_post_s: float = 1.0
     use_simulator: bool = True
     # CUDA Graph capture is opt-in until a deployment validates numerical
     # parity against eager simulation on its target driver and GPU.
@@ -171,6 +183,12 @@ class T4NavSimScorerConfig:
             "extended_comfort_weight",
             "lane_keeping_deviation_m",
             "lane_keeping_horizon_s",
+            "lane_keeping_queue_speed_mps",
+            "lane_keeping_queue_window_s",
+            "lane_keeping_queue_progress_m",
+            "lane_keeping_queue_release_s",
+            "lane_keeping_lane_change_pre_s",
+            "lane_keeping_lane_change_post_s",
             "progress_distance_threshold",
         ):
             value = float(getattr(self, name))
