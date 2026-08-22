@@ -73,6 +73,33 @@ The repository does not contain scenes, maps, scene tags, checkpoints or
 generated reports. Keep data lists, manifests, images and reports under an
 ignored `results/` or `reports/` directory.
 
+### Using it from another project
+
+The devkit is an ordinary package, so a model repository depends on it directly
+and mirrors nothing:
+
+```bash
+uv add git+https://github.com/Max-Bin/t4-e2e-devkit
+```
+
+### On a shared filesystem
+
+`uv` picks an interpreter when it *creates* `.venv` and keeps whatever is already
+there on later runs. So when `/home` is per-node and the checkout is on shared
+storage, point only the **first** `uv sync` at an interpreter that is also on
+shared storage:
+
+```bash
+export UV_PYTHON_INSTALL_DIR=/shared/uv-python   # this shell only, once
+uv python install 3.12
+uv sync
+```
+
+After that, plain `uv sync` works from any node with no environment set. A venv
+whose interpreter is under `$HOME` while the checkout is not will only run on the
+machine that built it, so `tests/test_venv_interpreter_is_portable.py` fails if
+that setup step is missed.
+
 ## Quick start
 
 ### 1. Build and inspect a data list
