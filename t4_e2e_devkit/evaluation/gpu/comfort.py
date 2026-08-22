@@ -130,7 +130,12 @@ def ego_is_comfortable_torch(
 ) -> torch.Tensor:  # [N, 6] bool, column order as the reference
     """Faithful port of ``ego_is_comfortable`` over a tensor batch."""
 
-    n_time = states.shape[1]
+    # ``[-2]`` rather than ``[1]``: every helper below is written against the
+    # trailing axes, so the only thing tying this kernel to a rank-3 input was
+    # this line. Reading the time axis from the end lets a caller pass
+    # ``[B, N, T, 11]`` -- one call for a whole batch of windows instead of one
+    # per window -- with the same arithmetic on the same axes.
+    n_time = states.shape[-2]
     delta = float(torch.diff(time_steps_s).double().mean())
 
     accel_x = states[..., StateIndex.ACCELERATION_X]

@@ -111,11 +111,14 @@ def driving_direction_compliance_torch(
 ) -> torch.Tensor:  # [N] in {1.0, 0.5, 0.0}
     """Oncoming progress over a sliding horizon, thresholded like the CPU."""
 
+    # Trailing-axis indexing throughout, so ``centers`` may carry leading batch
+    # axes (``[B, N, T, 2]``) and be scored in one call rather than one per
+    # window. The arithmetic and the reduction axes are unchanged.
     displacement = torch.zeros(
-        centers.shape[:2], dtype=centers.dtype, device=centers.device
+        centers.shape[:-1], dtype=centers.dtype, device=centers.device
     )
-    displacement[:, 1:] = torch.linalg.vector_norm(
-        centers[:, 1:] - centers[:, :-1], dim=-1
+    displacement[..., 1:] = torch.linalg.vector_norm(
+        centers[..., 1:, :] - centers[..., :-1, :], dim=-1
     )
     displacement = torch.where(
         oncoming_traffic, displacement, torch.zeros_like(displacement)
@@ -129,7 +132,7 @@ def driving_direction_compliance_torch(
     windows = []
     for time_idx in range(n_time):
         lo = max(0, time_idx - horizon)
-        windows.append(cumulative[:, time_idx + 1] - cumulative[:, lo])
+        windows.append(cumulative[..., time_idx + 1] - cumulative[..., lo])
     worst = torch.stack(windows, dim=-1).max(dim=-1).values
 
     scores = torch.full_like(worst, 0.0, dtype=torch.float64)
