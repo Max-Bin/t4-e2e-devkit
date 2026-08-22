@@ -1,33 +1,24 @@
 """A venv outside ``$HOME`` must not borrow an interpreter from inside it.
 
-This repo is normally checked out on shared storage and run from several machines
--- a Slurm cluster where ``/home`` is per-node is the case that motivated this.
-In that layout a ``.venv`` whose ``bin/python`` symlinks into ``$HOME`` is broken
-everywhere except the node that created it, and it fails in a way that reads like
-a missing file rather than a misconfigured environment::
+On a cluster where ``/home`` is per-node, a ``.venv`` on shared storage whose
+``bin/python`` symlinks into ``$HOME`` starts only on the machine that built it.
+Elsewhere it fails as ``execve(): .../.venv/bin/python: No such file or
+directory`` -- which reads as a missing file, not a misconfigured environment,
+because ``site-packages`` is intact and only the interpreter is gone.
 
-    slurmstepd: error: execve(): /.../e2e-devkit/.venv/bin/python:
-                No such file or directory
+``uv`` chooses an interpreter when it *creates* the venv and keeps whatever is
+already there afterwards (verified), so this is a one-time setup mistake rather
+than something that recurs. That is why a guard is the whole mechanism and no
+wrapper is needed -- see the README for the one-time command.
 
-Every package in ``site-packages`` is reachable, ``sys.path`` is fine, the venv
-looks intact -- there simply is no interpreter to start. The usual workaround is
-to drive a different interpreter with ``PYTHONPATH`` pointed at the venv's
-``site-packages``, which works and quietly gives up the venv.
+The invariant is deliberately not "the interpreter must live at path X", which
+would only be true for one site. It is the portable half:
 
-The invariant asserted here is deliberately *not* "the interpreter must live at
-some specific path". It is the portable half of that:
+    if the venv is outside $HOME, its interpreter must be too.
 
-    if the venv is outside ``$HOME``, its interpreter must be too.
-
-So a laptop checkout under ``~/code`` with a ``~/.local`` interpreter passes --
-both sides move together, and nothing is shared. Only the mixed case fails, and
-the mixed case is broken for any machine that does not share that ``$HOME``.
-
-``uv`` recreates ``.venv`` from whichever interpreter it discovers, and plain
-``uv venv`` picks the one in ``$HOME`` -- verified, not assumed.  So repairing the
-symlink by hand holds only until the next ``uv sync``.  Use ``scripts/uv``, which
-carries the settings that keep the toolchain beside the checkout; a shell-profile
-export cannot do that job here because the profile is itself per-node.
+A laptop checkout under ``~/code`` on a ``~/.local`` interpreter passes: both
+sides move together and nothing is shared. Only the mixed case fails, and the
+mixed case is already broken for any machine not sharing that ``$HOME``.
 """
 
 from __future__ import annotations
@@ -40,72 +31,57 @@ import pytest
 REPO_ROOT = Path(__file__).resolve().parent.parent
 
 
-def _venv_interpreters() -> list[Path]:
-    """The ``.venv`` interpreter entry points that exist, resolved."""
+def _interpreters() -> list[Path]:
+    """The ``.venv`` interpreter symlinks that exist."""
     bin_dir = REPO_ROOT / ".venv" / "bin"
-    return [path for path in (bin_dir / "python", bin_dir / "python3") if path.is_symlink()]
+    return [p for p in (bin_dir / "python", bin_dir / "python3") if p.is_symlink()]
 
 
-def _is_relative_to(path: Path, other: Path) -> bool:
-    try:
-        path.relative_to(other)
-    except ValueError:
-        return False
-    return True
+def _inside(path: Path, parent: Path) -> bool:
+    return path == parent or parent in path.parents
 
 
-def test_venv_interpreter_is_not_inside_home_when_the_venv_is_not():
-    """The mixed case -- venv on shared storage, interpreter node-local -- fails."""
-    interpreters = _venv_interpreters()
-    if not interpreters:
-        pytest.skip("no .venv in this checkout; nothing to constrain")
-
-    home = os.environ.get("HOME")
-    if not home:
+def _home_or_skip() -> Path:
+    if not (home := os.environ.get("HOME")):
         pytest.skip("HOME is unset, so there is no 'inside $HOME' to test against")
     home_path = Path(home).resolve()
+    if _inside(REPO_ROOT, home_path):
+        pytest.skip(f"{REPO_ROOT} is itself under {home_path}, so both move together")
+    return home_path
 
-    if _is_relative_to(REPO_ROOT, home_path):
-        pytest.skip(
-            f"checkout {REPO_ROOT} is itself under {home_path}, so an interpreter "
-            "there moves with it"
-        )
+
+def test_interpreter_is_not_inside_home_when_the_venv_is_not():
+    if not (interpreters := _interpreters()):
+        pytest.skip("no .venv in this checkout")
+    home = _home_or_skip()
 
     offenders = []
     for interpreter in interpreters:
         # The raw link target matters as much as the resolved path: a dangling
-        # symlink into $HOME cannot be resolved on the node where it is broken,
-        # which is exactly the node where this needs to fail.
+        # link into $HOME cannot be resolved on the node where it is broken,
+        # which is exactly the node where this has to fail.
         target = Path(os.readlink(interpreter))
         if not target.is_absolute():
             target = (interpreter.parent / target).resolve()
-        if _is_relative_to(target, home_path):
+        if _inside(target, home):
             offenders.append(f"{interpreter} -> {target}")
 
     assert not offenders, (
-        "the venv lives outside $HOME but its interpreter is inside it, so this "
-        "venv only works on the machine that built it:\n  "
+        f"this venv only runs on the machine that built it ($HOME is {home}):\n  "
         + "\n  ".join(offenders)
-        + f"\n\n$HOME is {home_path}, the checkout is {REPO_ROOT}.\n"
-        "Rebuild it through the wrapper, which keeps the toolchain beside the\n"
-        "checkout instead of in $HOME:\n"
-        "  scripts/uv sync\n"
-        "Repairing .venv/bin/python by hand works until the next plain `uv sync`."
+        + "\nRecreate it against an interpreter that travels with the checkout --"
+        " see 'On a shared filesystem' in README.md."
     )
 
 
-def test_venv_interpreter_exists():
-    """A symlink that resolves nowhere is the failure this guards against."""
-    interpreters = _venv_interpreters()
-    if not interpreters:
+def test_interpreter_symlink_resolves():
+    """A link that resolves nowhere is the failure this guards against."""
+    if not (interpreters := _interpreters()):
         pytest.skip("no .venv in this checkout")
 
     missing = [
-        f"{interpreter} -> {os.readlink(interpreter)}"
-        for interpreter in interpreters
-        if not interpreter.exists()
+        f"{p} -> {os.readlink(p)}" for p in interpreters if not p.exists()
     ]
-    assert not missing, (
-        "the venv interpreter symlink does not resolve on this machine:\n  "
-        + "\n  ".join(missing)
+    assert not missing, "the venv interpreter does not resolve on this machine:\n  " + (
+        "\n  ".join(missing)
     )
