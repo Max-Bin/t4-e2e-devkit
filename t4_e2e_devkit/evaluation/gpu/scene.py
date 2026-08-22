@@ -190,10 +190,25 @@ def _red_light_rings(route: np.ndarray) -> list[np.ndarray]:
 def _associate_boxes(
     boxes_per_frame: Sequence[np.ndarray], labels_per_frame: Sequence[np.ndarray]
 ) -> list[list[str]]:
+    """Greedy nearest-neighbour tracking over a window's annotation frames.
+
+    Track state lives in parallel arrays rather than a dict of per-box dicts:
+    the frame loop is inherently sequential, so its cost was the Python it did
+    per box per frame (a dict each) plus a rescan of every token ever seen.
+    Tracks past the gap can never match again -- ``frame_index`` only grows --
+    so they are dropped instead of refiltered every frame.
+
+    Order matters and is preserved: candidate rows keep first-appearance order,
+    which is what decides how ``linear_sum_assignment`` breaks ties.
+    """
+
     if len(boxes_per_frame) != len(labels_per_frame):
         raise ValueError("T4 box/label frame counts differ")
     next_token = 0
-    tracks: dict[str, dict[str, object]] = {}
+    tokens: list[str] = []
+    states = np.empty((0, 9), dtype=np.float64)
+    seen = np.empty(0, dtype=np.float64)
+    kinds = np.empty(0, dtype=np.int64)
     output: list[list[str]] = []
     for frame_index, (raw_boxes, raw_labels) in enumerate(
         zip(boxes_per_frame, labels_per_frame, strict=True)
@@ -202,42 +217,48 @@ def _associate_boxes(
         labels = np.asarray(raw_labels, dtype=np.int64).reshape(-1)
         if boxes.shape[0] != labels.shape[0]:
             raise ValueError(f"T4 frame {frame_index} box/label count mismatch")
-        active = [
-            (token, state)
-            for token, state in tracks.items()
-            if frame_index - int(state["frame"]) <= _ASSOCIATION_MAX_GAP_FRAMES
-        ]
-        assignment: list[str | None] = [None] * boxes.shape[0]
-        if active and boxes.shape[0]:
-            previous = np.stack([np.asarray(state["box"]) for _, state in active])
-            track_frames = np.asarray([state["frame"] for _, state in active], dtype=np.float64)
-            track_labels = np.asarray([state["label"] for _, state in active], dtype=np.int64)
-            elapsed = frame_index - track_frames
-            predicted = previous[:, :2] + previous[:, 7:9] * (
-                elapsed * T4_INTERVAL_LENGTH
-            )[:, None]
-            speed = np.hypot(previous[:, 7], previous[:, 8])
+        live = np.flatnonzero(frame_index - seen <= _ASSOCIATION_MAX_GAP_FRAMES)
+        if live.shape[0] != len(tokens):
+            tokens = [tokens[index] for index in live]
+            states, seen, kinds = states[live], seen[live], kinds[live]
+        # ``-1`` marks a box that matched no track and so opens one.
+        assigned = np.full(boxes.shape[0], -1, dtype=np.int64)
+        if len(tokens) and boxes.shape[0]:
+            elapsed = frame_index - seen
+            predicted = states[:, :2] + states[:, 7:9] * (elapsed * T4_INTERVAL_LENGTH)[:, None]
+            speed = np.hypot(states[:, 7], states[:, 8])
             gate = np.maximum(
                 _ASSOCIATION_BASE_GATE_M,
                 2.0 + speed * elapsed * T4_INTERVAL_LENGTH * 2.0,
             )
             distance = np.linalg.norm(boxes[None, :, :2] - predicted[:, None, :], axis=-1)
-            eligible = (track_labels[:, None] == labels[None, :]) & (
-                distance <= gate[:, None]
-            )
+            eligible = (kinds[:, None] == labels[None, :]) & (distance <= gate[:, None])
             rows, columns = linear_sum_assignment(np.where(eligible, distance, 1.0e6))
-            for row, column in zip(rows, columns, strict=True):
-                if distance[row, column] <= gate[row]:
-                    assignment[int(column)] = active[int(row)][0]
+            matched = distance[rows, columns] <= gate[rows]
+            assigned[columns[matched]] = rows[matched]
+
+        hit = assigned >= 0
+        continuing = assigned[hit]
+        states[continuing] = boxes[hit]
+        seen[continuing] = frame_index
+        kinds[continuing] = labels[hit]
 
         frame_tokens: list[str] = []
-        for box_index, (box, label) in enumerate(zip(boxes, labels, strict=True)):
-            token = assignment[box_index]
-            if token is None:
-                token = f"t4-agent-{next_token:08d}"
+        opened = np.flatnonzero(~hit)
+        for box_index in range(boxes.shape[0]):
+            row = int(assigned[box_index])
+            if row >= 0:
+                frame_tokens.append(tokens[row])
+            else:
+                frame_tokens.append(f"t4-agent-{next_token:08d}")
                 next_token += 1
-            frame_tokens.append(token)
-            tracks[token] = {"frame": frame_index, "box": box.copy(), "label": int(label)}
+        if opened.shape[0]:
+            tokens = tokens + [frame_tokens[index] for index in opened]
+            states = np.concatenate((states, boxes[opened]))
+            seen = np.concatenate(
+                (seen, np.full(opened.shape[0], frame_index, dtype=np.float64))
+            )
+            kinds = np.concatenate((kinds, labels[opened]))
         output.append(frame_tokens)
     return output
 

@@ -85,6 +85,8 @@ class TestPresenceGate:
             history_frames=31,
             future_frames=80,
             max_window_gap_frames=None,
+            center_stride=5,
+            center_pair_period=None,
         )
 
     def test_a_window_missing_a_required_frame_is_dropped(self):
@@ -161,3 +163,24 @@ class TestCameraGate:
         data_list = _build(t4_root, rig_scene_dir, ["none"])
         assert data_list.rows
         assert data_list.manifest["camera_registers"] == [{"register": [], "scenes": 1}]
+
+
+class TestCenterPairs:
+    """``--center-pair-period`` keeps pairs, and reads adjacency off the centres."""
+
+    def test_pairs_shrink_the_list_by_half_the_period(self):
+        rows = [("s", 5 * index) for index in range(20)]
+        kept = build_datalist._center_pairs(rows, period=10, stride=5)
+        assert kept == [("s", 0), ("s", 5), ("s", 50), ("s", 55)]
+
+    def test_a_first_centre_whose_successor_was_dropped_stays_unpaired(self):
+        # The gap and camera gates leave holes, so the row after a kept centre
+        # is not always one stride later; pairing it anyway would hand extended
+        # comfort a predecessor from the wrong planning cycle.
+        rows = [("s", 0), ("s", 25), ("s", 30)]
+        kept = build_datalist._center_pairs(rows, period=10, stride=5)
+        assert kept == [("s", 0)]
+
+    def test_a_period_below_two_cannot_hold_a_pair(self):
+        with pytest.raises(SystemExit):
+            build_datalist._center_pairs([("s", 0)], period=1, stride=5)
