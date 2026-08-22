@@ -41,6 +41,7 @@ from __future__ import annotations
 
 import math
 from dataclasses import dataclass
+from typing import Sequence
 
 import torch
 
@@ -76,6 +77,79 @@ class TrackTensors:
             is_agent_type=self.is_agent_type[kept],
             bboxes=None if self.bboxes is None else self.bboxes[kept],
         )
+
+
+def pad_and_stack_tracks(tracks: Sequence[TrackTensors]) -> TrackTensors:
+    """Stack per-window track sets on a leading batch axis, padding the track axis.
+
+    Windows keep different numbers of tracks, so batching them needs a common
+    width.  Pad columns get ``valid=False``, and that is what makes the padding
+    *exact* rather than approximate: both track metrics ``and`` ``valid`` into
+    their hit mask and gate every later term on a hit, so a pad column can neither
+    reach ``at_fault`` nor trigger TTC nor move either reduction.
+
+    The other pad fields are consequently never read.  They are filled with
+    zeros/``False`` rather than left arbitrary so that the tensors still mean
+    something if a future kernel does read them -- a zero-extent quad at the
+    origin with zero velocity and no agent flag, which is inert under every
+    existing term.
+
+    ``bboxes`` is dropped: it exists for the reach prefilter, which has already
+    run by the time anything is stacked.
+    """
+    if not tracks:
+        raise ValueError("no track sets to stack")
+    frames = {int(t.corners.shape[0]) for t in tracks}
+    if len(frames) != 1:
+        raise ValueError(
+            f"track sets disagree about the observation-frame count {sorted(frames)}; "
+            "batched scoring needs one window length for all of them"
+        )
+    n_frames = frames.pop()
+    width = max(int(t.corners.shape[1]) for t in tracks)
+    device, dtype = tracks[0].corners.device, tracks[0].corners.dtype
+
+    def _pad(track: TrackTensors) -> TrackTensors:
+        gap = width - int(track.corners.shape[1])
+        if gap == 0:
+            return track
+
+        def _column(values: torch.Tensor) -> torch.Tensor:
+            shape = (gap,) + tuple(values.shape[1:])
+            return torch.cat(
+                (values, torch.zeros(shape, device=device, dtype=values.dtype)), dim=0
+            )
+
+        return TrackTensors(
+            corners=torch.cat(
+                (
+                    track.corners,
+                    torch.zeros((n_frames, gap, 4, 2), device=device, dtype=dtype),
+                ),
+                dim=1,
+            ),
+            valid=torch.cat(
+                (
+                    track.valid,
+                    torch.zeros((n_frames, gap), device=device, dtype=torch.bool),
+                ),
+                dim=1,
+            ),
+            is_agent_instance=_column(track.is_agent_instance),
+            velocity=_column(track.velocity),
+            is_agent_type=_column(track.is_agent_type),
+            bboxes=None,
+        )
+
+    padded = [_pad(track) for track in tracks]
+    return TrackTensors(
+        corners=torch.stack([t.corners for t in padded]),
+        valid=torch.stack([t.valid for t in padded]),
+        is_agent_instance=torch.stack([t.is_agent_instance for t in padded]),
+        velocity=torch.stack([t.velocity for t in padded]),
+        is_agent_type=torch.stack([t.is_agent_type for t in padded]),
+        bboxes=None,
+    )
 
 
 def _project(corners: torch.Tensor, axes: torch.Tensor) -> tuple[torch.Tensor, torch.Tensor]:
@@ -193,24 +267,35 @@ def no_at_fault_collision_torch(
 ) -> torch.Tensor:  # [N] NC score in {1.0, 0.5, 0.0}
     from t4_e2e_devkit.planning.simulation.planner.pdm_planner.utils.pdm_enums import StateIndex
 
-    n_proposals, n_time = ego_corners.shape[:2]
-    track_quads = tracks.corners[:n_time]  # [T, A, 4, 2]
-    track_valid = tracks.valid[:n_time]
+    # Every axis is addressed from the end, and the "state at the first hit"
+    # lookups go through ``torch.gather`` rather than ``ego_states[rows, first_t]``.
+    # Positional advanced indexing is what tied this kernel to a rank-3 input;
+    # gather expresses the same take-along-the-time-axis for any number of leading
+    # batch axes. So ``[N, T, ...]`` still works unchanged and ``[B, N, T, ...]``
+    # scores a whole batch of windows in one call, with the tracks broadcast per
+    # window instead of shared. Pad columns are neutralised by ``valid``, which is
+    # already anded into ``hits`` below -- a padded track can never hit, so it
+    # cannot reach ``at_fault`` and cannot lower the ``amin``.
+    n_time = ego_corners.shape[-3]
+    num_tracks = tracks.corners.shape[-3]
+    track_quads = tracks.corners[..., :n_time, :, :, :]  # [..., T, A, 4, 2]
+    track_valid = tracks.valid[..., :n_time, :]
 
     hits = quads_intersect(
-        ego_corners[:, :, None], track_quads[None]
-    ) & track_valid[None]  # [N, T, A]
+        ego_corners[..., None, :, :], track_quads[..., None, :, :, :, :]
+    ) & track_valid[..., None, :, :]  # [..., N, T, A]
 
-    any_hit = hits.any(dim=1)  # [N, A]
-    time_index = torch.arange(n_time, device=hits.device)[None, :, None]
+    any_hit = hits.any(dim=-2)  # [..., N, A]
+    time_index = torch.arange(n_time, device=hits.device)[:, None]  # [T, 1]
     first_t = (
         torch.where(hits, time_index, torch.full_like(time_index, n_time))
-        .amin(dim=1)
+        .amin(dim=-2)
         .clamp(max=n_time - 1)
-    )  # [N, A]; guaranteed-first, sentinel clamped for the no-hit rows
+    )  # [..., N, A]; guaranteed-first, sentinel clamped for the no-hit rows
 
-    rows = torch.arange(n_proposals, device=hits.device)[:, None]
-    ego_at_hit = ego_states[rows, first_t]  # [N, A, 11]
+    ego_at_hit = torch.gather(
+        ego_states, -2, first_t[..., None].expand(*first_t.shape, ego_states.shape[-1])
+    )  # [..., N, A, 11]
     ego_speed = torch.hypot(
         ego_at_hit[..., StateIndex.VELOCITY_X], ego_at_hit[..., StateIndex.VELOCITY_Y]
     )
@@ -218,33 +303,49 @@ def no_at_fault_collision_torch(
 
     track_stopped = (~tracks.is_agent_instance) | (
         tracks.velocity <= stopped_speed_threshold
-    )  # [A]
+    )  # [..., A]
 
-    track_at_hit = track_quads[first_t, torch.arange(track_quads.shape[1])[None, :]]
+    # Take each track's quad at its own first-hit timestep. gather cannot drop a
+    # rank, so the proposal axis is carried through as a singleton and squeezed.
+    track_at_hit = torch.gather(
+        track_quads[..., None, :, :, :, :].expand(
+            *first_t.shape[:-1], n_time, num_tracks, 4, 2
+        ),
+        -4,
+        first_t[..., None, :, None, None].expand(
+            *first_t.shape[:-1], 1, num_tracks, 4, 2
+        ),
+    ).squeeze(-4)  # [..., N, A, 4, 2]
     centroid = track_at_hit.mean(dim=-2)  # rectangle centroid == corner mean
     angle = _relative_angle(
         ego_at_hit[..., :2], ego_at_hit[..., StateIndex.HEADING], centroid
     )
     behind = angle > _BEHIND_RAD
 
-    ego_at_hit_corners = ego_corners[rows, first_t]  # [N, A, 4, 2]
+    ego_at_hit_corners = torch.gather(
+        ego_corners, -3, first_t[..., None, None].expand(*first_t.shape, 4, 2)
+    )  # [..., N, A, 4, 2]
     front_hit = segment_intersects_quad(
         ego_at_hit_corners[..., 0, :], ego_at_hit_corners[..., 3, :], track_at_hit
     )
 
-    fault_area = ego_area_fault[rows, first_t]  # [N, A]
+    fault_area = torch.gather(ego_area_fault, -1, first_t)  # [..., N, A]
 
     at_fault = (~ego_stopped) & (
-        track_stopped[None]
+        track_stopped[..., None, :]
         | ((~behind) & front_hit)
         | ((~behind) & (~front_hit) & fault_area)
     )
     at_fault = at_fault & any_hit
 
-    if tracks.corners.shape[1] == 0:
-        return torch.ones(n_proposals, dtype=ego_states.dtype, device=hits.device)
+    if num_tracks == 0:
+        return torch.ones(
+            ego_states.shape[:-2], dtype=ego_states.dtype, device=hits.device
+        )
     penalty = torch.where(
-        tracks.is_agent_type[None], torch.zeros_like(ego_speed), torch.full_like(ego_speed, 0.5)
+        tracks.is_agent_type[..., None, :],
+        torch.zeros_like(ego_speed),
+        torch.full_like(ego_speed, 0.5),
     )
     scores = torch.where(at_fault, penalty, torch.ones_like(penalty))
     return scores.amin(dim=-1)
@@ -261,7 +362,12 @@ def ttc_torch(
 ) -> torch.Tensor:  # [N] TTC score in {1.0, 0.0}
     from t4_e2e_devkit.planning.simulation.planner.pdm_planner.utils.pdm_enums import StateIndex
 
-    n_proposals, n_time = ego_corners.shape[:2]
+    # Rank-generic for the same reason as ``no_at_fault_collision_torch``: axes
+    # addressed from the end, and the first-hit lookups through ``gather`` /
+    # ``index_select`` instead of positional advanced indexing. ``[B, N, T, ...]``
+    # therefore scores a batch of windows in one call.
+    n_time = ego_corners.shape[-3]
+    num_tracks = tracks.corners.shape[-3]
     future_steps = torch.arange(0, 10, 3, device=ego_corners.device)  # 0,3,6,9
     n_steps = future_steps.shape[0]
 
@@ -278,45 +384,65 @@ def ttc_torch(
 
     delta_t = future_steps.to(ego_corners.dtype) * interval_length  # [S]
     projected = (
-        ego_corners[:, :, None]
-        + (direction[:, :, None, :] * delta_t[None, None, :, None])[..., None, :]
-    )  # [N, T, S, 4, 2]
+        ego_corners[..., None, :, :]
+        + (direction[..., None, :] * delta_t[:, None])[..., None, :]
+    )  # [..., N, T, S, 4, 2]
 
     obs_index = torch.arange(n_time, device=ego_corners.device)[:, None] + future_steps[None]
-    # [T, S] observation timestep per pair
-    track_quads = tracks.corners[obs_index]  # [T, S, A, 4, 2]
-    track_valid = tracks.valid[obs_index]  # [T, S, A]
+    # [T, S] observation timestep per pair. ``index_select`` on the observation
+    # axis, then split it back into (T, S) -- ``corners[obs_index]`` would only
+    # index axis 0, which forecloses a batch axis in front of it.
+    flat_obs = obs_index.reshape(-1)
+    track_quads = tracks.corners.index_select(-4, flat_obs).unflatten(
+        -4, (n_time, n_steps)
+    )  # [..., T, S, A, 4, 2]
+    track_valid = tracks.valid.index_select(-2, flat_obs).unflatten(
+        -2, (n_time, n_steps)
+    )  # [..., T, S, A]
 
     hits = quads_intersect(
-        projected[:, :, :, None], track_quads[None]
-    ) & track_valid[None]  # [N, T, S, A]
+        projected[..., None, :, :], track_quads[..., None, :, :, :, :, :]
+    ) & track_valid[..., None, :, :, :]  # [..., N, T, S, A]
 
     # The deciding pair: first (t, s) lexicographically whose ego speed at t
     # passes the config threshold.
     speed_ok = speeds >= stopped_speed_threshold  # [N, T]
-    qualifying = hits & speed_ok[:, :, None, None]
-    flat = qualifying.reshape(n_proposals, n_time * n_steps, -1)  # [N, TS, A]
-    any_hit = flat.any(dim=1)
-    pair_index = torch.arange(n_time * n_steps, device=hits.device)[None, :, None]
+    qualifying = hits & speed_ok[..., None, None]
+    n_pairs = n_time * n_steps
+    flat = qualifying.flatten(-3, -2)  # [..., N, TS, A]
+    any_hit = flat.any(dim=-2)
+    pair_index = torch.arange(n_pairs, device=hits.device)[:, None]  # [TS, 1]
     first_pair = (
-        torch.where(flat, pair_index, torch.full_like(pair_index, n_time * n_steps))
-        .amin(dim=1)
-        .clamp(max=n_time * n_steps - 1)
-    )  # [N, A]; lexicographic-first by construction
+        torch.where(flat, pair_index, torch.full_like(pair_index, n_pairs))
+        .amin(dim=-2)
+        .clamp(max=n_pairs - 1)
+    )  # [..., N, A]; lexicographic-first by construction
     first_t = first_pair // n_steps
-    first_s = first_pair % n_steps
 
-    rows = torch.arange(n_proposals, device=hits.device)[:, None]
-    cols = torch.arange(flat.shape[-1], device=hits.device)[None, :]
-    ego_at = ego_states[rows, first_t]  # [N, A, 11]
+    ego_at = torch.gather(
+        ego_states, -2, first_t[..., None].expand(*first_t.shape, ego_states.shape[-1])
+    )  # [..., N, A, 11]
 
-    track_at = track_quads[first_t, first_s, cols]  # [N, A, 4, 2]
+    # The (T, S) pair axes are already flattened in ``first_pair``, so flatten
+    # them in the quads too and take along that single axis -- same element as
+    # ``track_quads[first_t, first_s, cols]``, without positional indexing.
+    track_at = torch.gather(
+        track_quads.flatten(-5, -4)[..., None, :, :, :, :].expand(
+            *first_pair.shape[:-1], n_pairs, num_tracks, 4, 2
+        ),
+        -4,
+        first_pair[..., None, :, None, None].expand(
+            *first_pair.shape[:-1], 1, num_tracks, 4, 2
+        ),
+    ).squeeze(-4)  # [..., N, A, 4, 2]
     centroid = track_at.mean(dim=-2)
     angle = _relative_angle(ego_at[..., :2], ego_at[..., StateIndex.HEADING], centroid)
     ahead = angle < _AHEAD_RAD
     behind = angle > _BEHIND_RAD
 
-    area_fault = ego_area_fault[rows, first_t] | rear_axle_in_intersection[rows, first_t]
+    area_fault = torch.gather(ego_area_fault, -1, first_t) | torch.gather(
+        rear_axle_in_intersection, -1, first_t
+    )
     triggers = ahead | (area_fault & (~behind))
     triggers = triggers & any_hit
 
