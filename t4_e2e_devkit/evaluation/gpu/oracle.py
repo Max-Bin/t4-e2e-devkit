@@ -69,7 +69,6 @@ def score_simulated_window(
     vehicle: VehicleTensors,
     interval_length: float,
     progress_distance_threshold: float = 5.0,
-    normalize_progress_across_proposals: bool = False,
 ) -> tuple[torch.Tensor, torch.Tensor]:  # total [P], core components [P, 6]
     n_proposals, n_time = simulated.shape[:2]
     dtype, device = simulated.dtype, simulated.device
@@ -175,10 +174,20 @@ def score_simulated_window(
     # the public scorer.
     multiplicative = nc.to(dtype) * dac
     raw = raw_progress * multiplicative
-    if normalize_progress_across_proposals:
-        max_raw = raw.max()
-    else:
-        max_raw = raw.max()
+    # ``ego_progress`` is normalised across the proposals in *this call*, and that
+    # is the contract rather than a default: the official scorer's form saturates
+    # to 1.0 for every proposal short of ``progress_distance_threshold`` and so
+    # cannot rank proposals at all, which is the one job a proposal oracle has.
+    # A caller that wants the official quantity goes through the public scorer,
+    # which overrides this component anyway.
+    #
+    # A ``normalize_progress_across_proposals`` flag used to sit here promising to
+    # switch this. Both of its branches computed this same reduction, so it never
+    # switched anything, and it defaulted to ``False`` while behaving like
+    # ``True``. Removed rather than implemented: no caller passed it, so dropping
+    # it changes no score, whereas giving the ``False`` branch its literal meaning
+    # would have silently re-normalised every existing caller's labels.
+    max_raw = raw.max()
     fast = max_raw > progress_distance_threshold
     ep = torch.ones_like(raw)
     ep = torch.where(fast, raw / torch.where(fast, max_raw, torch.ones_like(max_raw)), ep)
