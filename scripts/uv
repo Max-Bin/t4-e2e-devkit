@@ -1,0 +1,59 @@
+#!/usr/bin/env bash
+# Run uv against the toolchain that lives beside this checkout, never $HOME's.
+#
+# Why this exists
+# ---------------
+# On a cluster where /home is per-node, three things default into $HOME and each
+# one breaks the checkout on every other node:
+#
+#   1. the managed interpreters   ->  $HOME/.local/share/uv/python
+#   2. the uv binary itself       ->  $HOME/.local/bin/uv   (often absent elsewhere)
+#   3. uv's caches                ->  $HOME/.cache/uv
+#
+# (1) is the one that bites hardest: `uv sync` writes .venv/bin/python as a
+# symlink into $HOME, so the venv only starts on the node that built it and fails
+# elsewhere as `execve(): .../.venv/bin/python: No such file or directory` --
+# which reads as a missing file, not a misconfigured environment. See
+# tests/test_venv_interpreter_is_portable.py, which fails when that happens.
+#
+# Fixing it by exporting UV_PYTHON_INSTALL_DIR from a shell profile does not
+# work here: the profile is itself per-node, so it has to be set up again on
+# every machine and silently stops applying on any node that was missed. This
+# script carries the setting instead, so a correct invocation is
+# `scripts/uv sync` from anywhere, with nothing to configure first.
+#
+# Nothing below is site-specific: the shared root is *derived* as the parent of
+# the checkout, on the theory that a checkout on shared storage has shared
+# storage next to it. Override any of the three with the environment if that
+# assumption does not hold.
+set -euo pipefail
+
+here="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
+share="${T4_SHARE_ROOT:-$(dirname "$here")}"
+
+export UV_PYTHON_INSTALL_DIR="${UV_PYTHON_INSTALL_DIR:-$share/uv-python}"
+export UV_CACHE_DIR="${UV_CACHE_DIR:-$share/uv-cache}"
+# Only ever use interpreters uv manages in the directory above. Without this uv
+# may discover a system or $HOME python and link the venv against it again.
+export UV_PYTHON_PREFERENCE="${UV_PYTHON_PREFERENCE:-only-managed}"
+# Keep the venv with the checkout rather than wherever the caller happens to be.
+export UV_PROJECT_ENVIRONMENT="${UV_PROJECT_ENVIRONMENT:-$here/.venv}"
+
+# The uv binary, in order: an explicit override, the copy beside the checkout,
+# then PATH. PATH is last on purpose -- it is the one that resolves into $HOME.
+if [[ -n "${UV:-}" ]]; then
+  uv_bin="$UV"
+elif [[ -x "$share/uv-bin/uv" ]]; then
+  uv_bin="$share/uv-bin/uv"
+elif uv_bin="$(command -v uv 2>/dev/null)"; then
+  echo "scripts/uv: warning: falling back to $uv_bin on PATH; no uv at" \
+       "$share/uv-bin/uv, so this node may not match the others" >&2
+else
+  echo "scripts/uv: no uv binary found." >&2
+  echo "  looked at: \$UV, $share/uv-bin/uv, then PATH" >&2
+  echo "  install one onto shared storage so every node sees the same version:" >&2
+  echo "    mkdir -p $share/uv-bin && cp \"\$(command -v uv)\" $share/uv-bin/uv" >&2
+  exit 1
+fi
+
+exec "$uv_bin" "$@"
