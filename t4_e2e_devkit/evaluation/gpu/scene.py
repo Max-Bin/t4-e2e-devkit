@@ -187,6 +187,46 @@ def _red_light_rings(route: np.ndarray) -> list[np.ndarray]:
     return rings
 
 
+_TURN_INDICATOR_SIGNALLED = (2, 3)  # left, right; 0/1 straight, 4 keep
+
+
+def lane_change_exempt(
+    indicators: np.ndarray,
+    interval_s: float,
+    pre_s: float,
+    post_s: float,
+) -> np.ndarray:
+    """Samples the analyzer's lane-change exemption covers, as a ``[T]`` mask.
+
+    ``trajectory_metrics.cpp`` collects the windows where the turn indicator is
+    active, widens each by ``lane_change_pre_grace_time`` before and
+    ``lane_change_post_grace_time`` after, merges them, and exempts any lane
+    keeping sample inside one -- deviating from the current lane's centerline is
+    the point of a signalled manoeuvre.
+
+    PARTIAL PORT: upstream also collects hazard-lights windows, and T4 carries
+    no hazard channel (``derived/scalars.npz`` has ``turn`` and nothing else for
+    this), so only the turn-indicator half exists here.
+
+    Both backends read this one implementation. The mask is index-aligned with
+    the scored poses, and being off by a sample silently exempts or convicts a
+    frame, so the alignment is pinned by test rather than by inspection.
+    """
+
+    values = np.asarray(indicators).reshape(-1)
+    active = np.isin(values, _TURN_INDICATOR_SIGNALLED)
+    if not active.any():
+        return active
+    before = max(0, int(round(float(pre_s) / float(interval_s))))
+    after = max(0, int(round(float(post_s) / float(interval_s))))
+    exempt = active.copy()
+    for offset in range(1, before + 1):
+        exempt[:-offset] |= active[offset:]
+    for offset in range(1, after + 1):
+        exempt[offset:] |= active[:-offset]
+    return exempt
+
+
 def associate_boxes(
     boxes_per_frame: Sequence[np.ndarray], labels_per_frame: Sequence[np.ndarray]
 ) -> list[list[str]]:

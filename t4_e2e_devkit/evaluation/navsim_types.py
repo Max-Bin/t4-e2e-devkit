@@ -137,6 +137,10 @@ class T4NavSimScorerConfig:
     lane_keeping_queue_window_s: float = 1.0
     lane_keeping_queue_progress_m: float = 1.5
     lane_keeping_queue_release_s: float = 1.5
+    # The analyzer widens each signalled window by these before exempting it.
+    # Only the turn-indicator half is available on T4; see ``lane_change_exempt``.
+    lane_keeping_lane_change_pre_s: float = 1.0
+    lane_keeping_lane_change_post_s: float = 1.0
     use_simulator: bool = True
     # CUDA Graph capture is opt-in until a deployment validates numerical
     # parity against eager simulation on its target driver and GPU.
@@ -183,6 +187,8 @@ class T4NavSimScorerConfig:
             "lane_keeping_queue_window_s",
             "lane_keeping_queue_progress_m",
             "lane_keeping_queue_release_s",
+            "lane_keeping_lane_change_pre_s",
+            "lane_keeping_lane_change_post_s",
             "progress_distance_threshold",
         ):
             value = float(getattr(self, name))

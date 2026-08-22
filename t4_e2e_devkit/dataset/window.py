@@ -248,7 +248,11 @@ class T4WindowBuilder:
         # by the closed loop alike.
         ego_status_array = build_ego_status(trajectory[history_indices], center_pose, T4_FRAME_DT_S)
         ego_shape = EgoShape.from_array(self.reader.scalars["shape"])
-        turn = np.asarray(self.reader.scalars.get("turn", np.zeros(self.num_frames)))
+        # Absent channel stays ``None`` rather than becoming zeros: zero reads as
+        # "signalled straight", and a consumer that exempts signalled samples
+        # would then score an unlabelled scene as though it never indicated.
+        raw_turn = self.reader.scalars.get("turn")
+        turn = None if raw_turn is None else np.asarray(raw_turn).reshape(-1)
 
         frames: List[T4Frame] = []
         for step, frame_index in enumerate(history_indices):
@@ -264,7 +268,7 @@ class T4WindowBuilder:
                         ego_velocity=ego_status_array[step, 3:5],
                         ego_acceleration=ego_status_array[step, 5:7],
                         ego_shape=ego_shape,
-                        turn_indicator=int(turn[frame_index]) if turn.size else None,
+                        turn_indicator=int(turn[frame_index]) if turn is not None else None,
                         control_state=self.read_control_state(frame_index),
                     ),
                     map_tensors=self.read_map(frame_index) if frame_index == center else None,
@@ -278,11 +282,14 @@ class T4WindowBuilder:
                 )
             )
 
-        future_poses, future_annotations = None, None
+        future_poses, future_annotations, future_turn = None, None, None
         if future > 0:
             future_indices = list(range(center + 1, last + 1))
             future_poses = global_to_ego(trajectory[future_indices], center_pose).astype(np.float32)
             future_annotations = self.read_future_annotations(center, future)
+            if turn is not None:
+                # ``center`` first, matching ``future_annotations``.
+                future_turn = turn[center : last + 1].astype(np.int64)
 
         window_timestamps = np.asarray(
             [self._timestamp_us(frame_index) for frame_index in range(first, last + 1)],
@@ -306,6 +313,7 @@ class T4WindowBuilder:
             frames=frames,
             future_ego_poses=future_poses,
             future_annotations=future_annotations,
+            future_turn_indicators=future_turn,
             goal_pose=self.read_goal(center_pose),
         )
 

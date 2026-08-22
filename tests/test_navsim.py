@@ -188,3 +188,36 @@ def test_extended_comfort_scores_a_pair_of_consecutive_plans():
     differing = extended_comfort_navsim(straight, swerve, dt=dt, observation_interval=0.5)
     assert 0.0 <= differing <= 1.0
     assert differing < same
+
+
+class TestLaneChangeExemption:
+    """The mask's alignment and widening, which nothing else would catch.
+
+    Off by one sample here silently exempts a drifting frame or convicts a
+    signalled one, and the aggregate moves by too little to notice.
+    """
+
+    @staticmethod
+    def _mask(values, pre=0.0, post=0.0, interval=0.1):
+        from t4_e2e_devkit.evaluation.gpu.scene import lane_change_exempt
+
+        return lane_change_exempt(np.asarray(values), interval, pre, post).astype(int).tolist()
+
+    def test_only_left_and_right_signal(self):
+        # 0/1 are straight and 4 is "keep"; none of them is a manoeuvre.
+        assert self._mask([0, 1, 4, 2, 3]) == [0, 0, 0, 1, 1]
+
+    def test_grace_widens_both_ways_by_its_own_amount(self):
+        assert self._mask([1, 1, 1, 2, 1, 1, 1], pre=0.2, post=0.1) == [0, 1, 1, 1, 1, 0, 0]
+
+    def test_no_signal_exempts_nothing(self):
+        assert self._mask([1] * 5, pre=1.0, post=1.0) == [0] * 5
+
+    def test_entry_t_is_the_scored_pose_t(self):
+        # ``future_turn_indicators`` puts the current frame at index 0, the same
+        # alignment ``future_annotations`` uses, so the mask indexes the scored
+        # poses directly with no shift.
+        from t4_e2e_devkit.common.dataclasses import T4Scene
+
+        assert "future_turn_indicators" in T4Scene.__dataclass_fields__
+        assert self._mask([2] + [1] * 4) == [1, 0, 0, 0, 0]

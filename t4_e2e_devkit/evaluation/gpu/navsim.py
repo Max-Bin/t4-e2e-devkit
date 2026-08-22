@@ -33,6 +33,7 @@ from t4_e2e_devkit.evaluation.gpu.oracle import (
 from t4_e2e_devkit.evaluation.gpu.scene import (
     extract_window_scene_arrays,
     window_scene_from_arrays,
+    lane_change_exempt,
 )
 from t4_e2e_devkit.evaluation.gpu.precision import simulate_proposals_fp32
 from t4_e2e_devkit.evaluation.gpu.simulate import TorchSimulatorConfig
@@ -52,6 +53,7 @@ class _PreparedScene:
     intersection_ends: torch.Tensor
     border_starts: torch.Tensor
     border_ends: torch.Tensor
+    lane_change: Optional[torch.Tensor]
     vehicle: VehicleTensors
     metadata: dict[str, float]
 
@@ -302,6 +304,21 @@ def _prepare_scene(
     border_ends = torch.empty((0, 2), device=device, dtype=dtype)
     coverage: dict[str, float] = {}
 
+    # One numpy implementation feeds both backends; see ``lane_change_exempt``.
+    lane_change: Optional[torch.Tensor] = None
+    steps = int(config.num_steps) + 1
+    indicators = scene.future_turn_indicators
+    if indicators is not None and len(indicators) >= steps:
+        lane_change = torch.as_tensor(
+            lane_change_exempt(
+                indicators[:steps],
+                float(config.interval_s),
+                float(config.lane_keeping_lane_change_pre_s),
+                float(config.lane_keeping_lane_change_post_s),
+            ),
+            device=device,
+        )
+
     if needs_map:
         if map_tensors is None:
             raise ValueError("PDM GPU scoring requires current-frame map tensors")
@@ -387,6 +404,7 @@ def _prepare_scene(
         intersection_ends=intersection_ends,
         border_starts=border_starts,
         border_ends=border_ends,
+        lane_change=lane_change,
         vehicle=VehicleTensors(
             half_length=float(shape.length) / 2.0,
             half_width=float(shape.width) / 2.0,
@@ -817,7 +835,18 @@ def _lane_keeping(poses: torch.Tensor, prepared: _PreparedScene, config: Any) ->
     release = (~queue) & (
         indices - last_queue <= int(round(float(config.lane_keeping_queue_release_s) / interval))
     )
-    violation = (distances > float(config.lane_keeping_deviation_m)) & ~in_intersection & ~queue & ~release
+    changing = (
+        prepared.lane_change
+        if prepared.lane_change is not None
+        else torch.zeros(points.shape[0], dtype=torch.bool, device=points.device)
+    )
+    violation = (
+        (distances > float(config.lane_keeping_deviation_m))
+        & ~in_intersection
+        & ~changing
+        & ~queue
+        & ~release
+    )
     last_clear = torch.cummax(
         torch.where(violation, torch.full_like(indices, -1), indices), dim=0
     ).values

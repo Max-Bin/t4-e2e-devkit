@@ -33,7 +33,7 @@ from t4_e2e_devkit.evaluation.navsim_types import (  # noqa: F401
     required_navsim_metric_names,
     resolve_navsim_metric_names,
 )
-from t4_e2e_devkit.evaluation.gpu.scene import associate_boxes
+from t4_e2e_devkit.evaluation.gpu.scene import associate_boxes, lane_change_exempt
 from t4_e2e_devkit.evaluation.reference import pdms_navsim as formulas
 from t4_e2e_devkit.planning.simulation.pdm_sim.simulator import simulate_proposals
 from t4_e2e_devkit.planning.simulation.trajectory.trajectory_sampling import (
@@ -603,7 +603,13 @@ class T4NavSimScorer:
             coverage["ego_progress_gated"] = float(ep_gated)
         if "lane_keeping" in required:
             values["lane_keeping"] = float(
-                _lane_keeping(poses, route_centerlines, intersection_rings, self.config)
+                _lane_keeping(
+                    poses,
+                    route_centerlines,
+                    intersection_rings,
+                    self.config,
+                    _lane_change_mask(scene, poses.shape[0], self.config),
+                )
             )
         if "history_comfort" in required:
             assert states is not None
@@ -955,11 +961,34 @@ def _traffic_light_compliance(
     return 1.0
 
 
+def _lane_change_mask(
+    scene: T4Scene, count: int, config: T4NavSimScorerConfig
+) -> Optional[np.ndarray]:
+    """The lane-change exemption over the scored poses, or ``None``.
+
+    ``future_turn_indicators`` is aligned so entry ``t`` is the scored pose
+    ``t``; a scene without the channel yields ``None`` and the metric behaves as
+    it did before the exemption existed, rather than silently treating an
+    unlabelled scene as one that never signalled.
+    """
+
+    indicators = scene.future_turn_indicators
+    if indicators is None or len(indicators) < count:
+        return None
+    return lane_change_exempt(
+        indicators[:count],
+        float(config.interval_s),
+        float(config.lane_keeping_lane_change_pre_s),
+        float(config.lane_keeping_lane_change_post_s),
+    )
+
+
 def _lane_keeping(
     poses: np.ndarray,
     centerlines: list,
     intersection_rings: list,
     config: T4NavSimScorerConfig,
+    lane_change: Optional[np.ndarray] = None,
 ) -> float:
     """EPDMS lane keeping, ported from the Autoware planning_data_analyzer
     (``epdms/subscores/lane_keeping.cpp``) with its shipped parameters.
@@ -975,6 +1004,9 @@ def _lane_keeping(
     Failure is ``violation_duration >= max_continuous_violation_time`` measured
     from the FIRST violating sample, so the run needs one sample more than
     ``horizon / interval`` -- counting the samples instead fires a step early.
+
+    Signalled samples are exempt too, via ``lane_change_exempt``; the caller
+    passes ``None`` for a scene with no turn-indicator channel.
 
     T4 substitution: the analyzer reads speed and cumulative progress off its
     evaluation point, and a scored plan carries neither, so both come from the
@@ -1022,8 +1054,9 @@ def _lane_keeping(
             release_until = float(i + grace)
         released = not queue and release_until is not None and i <= release_until
         in_intersection = any(polygon.covers(point) for polygon in intersections)
+        changing = lane_change is not None and bool(lane_change[i])
         over = min(point.distance(line) for line in lines) > config.lane_keeping_deviation_m
-        if in_intersection or queue or released or not over:
+        if in_intersection or changing or queue or released or not over:
             violation_start = None
             continue
         if violation_start is None:

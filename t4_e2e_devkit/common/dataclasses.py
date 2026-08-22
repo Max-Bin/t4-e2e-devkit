@@ -725,6 +725,11 @@ class T4Scene:
     future_ego_poses: Optional[npt.NDArray[np.float32]] = None  # [F, 3] in centre frame
     # Includes the current frame at index 0, followed by recorded future frames.
     future_annotations: Optional[List[Annotations]] = None
+    # Same alignment as ``future_annotations``: index 0 is the current frame, so
+    # entry ``t`` belongs to the scored pose ``t``.  ``None`` when the scene
+    # carries no turn-indicator channel at all, which is not the same as a scene
+    # that signalled nothing.
+    future_turn_indicators: Optional[npt.NDArray[np.int64]] = None  # [F + 1]
     goal_pose: Optional[npt.NDArray[np.float32]] = None  # [4] x, y, cos, sin
 
     @property
