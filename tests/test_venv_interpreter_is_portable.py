@@ -23,9 +23,11 @@ So a laptop checkout under ``~/code`` with a ``~/.local`` interpreter passes --
 both sides move together, and nothing is shared. Only the mixed case fails, and
 the mixed case is broken for any machine that does not share that ``$HOME``.
 
-``uv`` recreates ``.venv`` from whichever interpreter it discovers, so the fix is
-to give it a non-``$HOME`` install directory (``UV_PYTHON_INSTALL_DIR``) rather
-than to repair the symlink by hand and wait for the next ``uv sync``.
+``uv`` recreates ``.venv`` from whichever interpreter it discovers, and plain
+``uv venv`` picks the one in ``$HOME`` -- verified, not assumed.  So repairing the
+symlink by hand holds only until the next ``uv sync``.  Use ``scripts/uv``, which
+carries the settings that keep the toolchain beside the checkout; a shell-profile
+export cannot do that job here because the profile is itself per-node.
 """
 
 from __future__ import annotations
@@ -85,11 +87,10 @@ def test_venv_interpreter_is_not_inside_home_when_the_venv_is_not():
         "venv only works on the machine that built it:\n  "
         + "\n  ".join(offenders)
         + f"\n\n$HOME is {home_path}, the checkout is {REPO_ROOT}.\n"
-        "Point uv at an interpreter that travels with the checkout, e.g.\n"
-        "  export UV_PYTHON_INSTALL_DIR=<dir beside the checkout>\n"
-        "  uv python install 3.12\n"
-        "  uv sync\n"
-        "Repairing .venv/bin/python by hand works until the next `uv sync`."
+        "Rebuild it through the wrapper, which keeps the toolchain beside the\n"
+        "checkout instead of in $HOME:\n"
+        "  scripts/uv sync\n"
+        "Repairing .venv/bin/python by hand works until the next plain `uv sync`."
     )
 
 
