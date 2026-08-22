@@ -54,6 +54,7 @@ class OfficialDevkitScoreCallback(pl.Callback):
         batch_size: int = 128,
         scene_cache_size: int | None = 0,
         scene_workers: int = 0,
+        max_consecutive_failures: int = 3,
         compile_rollout: bool = False,
         log_prefix: str = "devkit",
     ) -> None:
@@ -64,6 +65,8 @@ class OfficialDevkitScoreCallback(pl.Callback):
             raise ValueError("official devkit scene_cache_size must be non-negative or None")
         if scene_workers < 0:
             raise ValueError("official devkit scene_workers must be non-negative")
+        if max_consecutive_failures < 1:
+            raise ValueError("official devkit max_consecutive_failures must be positive")
         if not math.isfinite(float(interval_seconds)) or interval_seconds <= 0.0:
             raise ValueError("official devkit trajectory interval must be positive")
         self.data_list = Path(data_list).expanduser().resolve()
@@ -74,11 +77,13 @@ class OfficialDevkitScoreCallback(pl.Callback):
         self.batch_size = int(batch_size)
         self.scene_cache_size = 0 if scene_cache_size is None else int(scene_cache_size)
         self.scene_workers = int(scene_workers)
+        self.max_consecutive_failures = int(max_consecutive_failures)
         self.compile_rollout = bool(compile_rollout)
         self.log_prefix = str(log_prefix).strip("/")
         if not self.log_prefix:
             raise ValueError("official devkit log_prefix must not be empty")
         self._active = False
+        self._consecutive_failures = 0
 
     @staticmethod
     def _barrier() -> None:
@@ -437,8 +442,10 @@ class OfficialDevkitScoreCallback(pl.Callback):
                     self._status_path(epoch, f"score-rank-{rank:05d}.failed"), repr(error)
                 )
 
-        if rank != 0:
-            self._wait_for_status(complete, failure_path=failed)
+        # Every rank polls the same pair, so every rank reaches the same
+        # verdict and they escalate together instead of one raising into a
+        # barrier the others are still waiting on.
+        scored = self._wait_for_status(complete, failure_path=failed)
         self._barrier()
         self._active = False
         pl_module._official_score_active = False
@@ -448,6 +455,38 @@ class OfficialDevkitScoreCallback(pl.Callback):
         pl_module._official_score_num_poses = None
         pl_module._official_score_pose_dim = None
         pl_module._official_score_interval_seconds = None
+        self._note_outcome(epoch, scored)
+
+    def _note_outcome(self, epoch: int, scored: bool) -> None:
+        """Stop a run that has scored nothing for several epochs running.
+
+        One failed epoch is absorbed: a wedged rank or an unreadable scene
+        should not end a training run that is otherwise healthy. A run that
+        keeps training while reporting no official score is not doing what it
+        was launched to do, and nothing else will say so -- the per-rank
+        failures are caught and written to disk, and the loop carries on.
+
+        Same shape as skipping an optimizer step on a non-finite gradient:
+        absorb the transient, abort on the pattern.
+        """
+
+        if scored:
+            self._consecutive_failures = 0
+            return
+        self._consecutive_failures += 1
+        if self._consecutive_failures < self.max_consecutive_failures:
+            LOG.warning(
+                "official scoring produced nothing at epoch %d (%d in a row, aborting at %d)",
+                epoch,
+                self._consecutive_failures,
+                self.max_consecutive_failures,
+            )
+            return
+        raise RuntimeError(
+            f"official scoring produced no score for {self._consecutive_failures} "
+            f"consecutive epochs, through epoch {epoch}; see "
+            f"{self.output_dir}/epoch-{epoch:04d}/score-failed"
+        )
 
 
 __all__ = ["OfficialDevkitScoreCallback"]

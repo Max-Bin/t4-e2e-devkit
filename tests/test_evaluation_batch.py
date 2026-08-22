@@ -155,3 +155,38 @@ def test_dashboard_links_files_when_written_outside_results_dir(tmp_path):
     assert "../results/pdm.csv" in document
     assert "const escapeHtml" in document
     assert str(tmp_path) not in document
+
+
+class TestScoringFailureEscalation:
+    """A run that scores nothing must stop, not train on in silence.
+
+    Per-rank scoring failures are caught and written to disk, so nothing else
+    in the loop notices; without this the run finishes its whole schedule with
+    no official score at all.
+    """
+
+    @staticmethod
+    def _callback(tmp_path, limit):
+        from t4_e2e_devkit.planning.training import OfficialDevkitScoreCallback
+
+        return OfficialDevkitScoreCallback(
+            data_list=tmp_path / "list.json",
+            output_dir=tmp_path / "out",
+            max_consecutive_failures=limit,
+        )
+
+    def test_a_single_failure_is_absorbed(self, tmp_path):
+        callback = self._callback(tmp_path, 3)
+        callback._note_outcome(0, scored=False)
+        callback._note_outcome(1, scored=True)
+        callback._note_outcome(2, scored=False)  # counter restarted, so no raise
+
+    def test_the_limit_aborts_the_run(self, tmp_path):
+        callback = self._callback(tmp_path, 2)
+        callback._note_outcome(0, scored=False)
+        with pytest.raises(RuntimeError, match="no score for 2 consecutive"):
+            callback._note_outcome(1, scored=False)
+
+    def test_the_limit_must_be_reachable(self, tmp_path):
+        with pytest.raises(ValueError, match="max_consecutive_failures"):
+            self._callback(tmp_path, 0)

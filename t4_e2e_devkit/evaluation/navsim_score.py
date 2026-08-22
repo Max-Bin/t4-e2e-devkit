@@ -17,6 +17,7 @@ from t4_e2e_devkit.common.dataclasses import T4Scene, Trajectory
 
 # Re-exported: the scorer's own types moved to evaluation.navsim_types, and every
 # caller keeps importing them from here.
+from t4_e2e_devkit.evaluation.gpu.navsim import score_navsim_batch
 from t4_e2e_devkit.evaluation.navsim_types import (  # noqa: F401
     _V1_SCORE_DEPENDENCIES,
     _V2_SCORE_DEPENDENCIES,
@@ -170,8 +171,6 @@ class T4NavSimScorer:
                     strict=True,
                 )
             )
-
-        from t4_e2e_devkit.evaluation.gpu.navsim import score_navsim_batch
 
         outputs = score_navsim_batch(
             trajectories,
